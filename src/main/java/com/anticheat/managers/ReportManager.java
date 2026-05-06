@@ -32,15 +32,27 @@ public class ReportManager {
         );
         reports.add(report);
 
-        String notification = String.format(
-                plugin.getConfigManager().getMessage("reportNotification"),
-                reporter.getName(),
-                target.getName(),
-                reason
-        );
-        Bukkit.broadcast(notification, "anticheat.notify");
+        String jsonMessage = createReportNotification(reporter.getName(), target.getName(), reason);
+        sendJsonMessageToAdmins(jsonMessage);
 
         saveReports();
+    }
+
+    private String createReportNotification(String reporterName, String targetName, String reason) {
+        return "{\"text\":\"§c[举报] §e" + reporterName + " §6举报了 §e" + targetName + " §7原因: §f" + reason + " \",\"extra\":[{\"text\":\"§a[点击前往]\",\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/goto " + reporterName + "\"},\"hoverEvent\":{\"action\":\"show_text\",\"value\":{\"text\":\"\",\"extra\":[{\"text\":\"点击传送至举报者身边\"}]}}}]}";
+    }
+
+    private void sendJsonMessageToAdmins(String jsonMessage) {
+        try {
+            net.minecraft.network.chat.Component component = net.minecraft.network.chat.Component.Serializer.fromJson(jsonMessage);
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (player.hasPermission("anticheat.notify")) {
+                    ((org.bukkit.craftbukkit.entity.CraftPlayer) player).getHandle().sendSystemMessage(component);
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().severe("发送举报通知失败: " + e.getMessage());
+        }
     }
 
     public List<Report> getReports() {
