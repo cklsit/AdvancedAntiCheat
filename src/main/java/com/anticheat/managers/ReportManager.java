@@ -69,6 +69,10 @@ public class ReportManager {
             return;
         }
 
+        if (reportsFile.length() == 0) {
+            return;
+        }
+
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(reportsFile))) {
             @SuppressWarnings("unchecked")
             List<Report> loaded = (List<Report>) ois.readObject();

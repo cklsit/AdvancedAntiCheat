@@ -140,6 +140,10 @@ public class BanManager {
             return;
         }
 
+        if (bansFile.length() == 0) {
+            return;
+        }
+
         try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(bansFile))) {
             @SuppressWarnings("unchecked")
             Map<UUID, BanInfo> loaded = (Map<UUID, BanInfo>) ois.readObject();
