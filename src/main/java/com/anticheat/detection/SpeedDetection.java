@@ -33,6 +33,11 @@ public class SpeedDetection extends Detection {
             return;
         }
 
+        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE || 
+            player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
+            return;
+        }
+
         if (player.isDead()) {
             return;
         }

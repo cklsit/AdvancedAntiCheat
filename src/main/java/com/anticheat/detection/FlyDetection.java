@@ -23,7 +23,10 @@ public class FlyDetection extends Detection {
             return;
         }
 
-        if (player.isFlying() || player.hasPermission("anticheat.bypass.fly")) {
+        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE || 
+            player.getGameMode() == org.bukkit.GameMode.SPECTATOR ||
+            player.isFlying() || 
+            player.hasPermission("anticheat.bypass.fly")) {
             return;
         }
 
