@@ -46,14 +46,5 @@ database:
     port: 27017
     database: "anticheat"
 
-messages:
-  prefix: "§8[§cAntiCheat§8]"
-  noPermission: "§c您没有权限执行此命令！"
-  playerNotFound: "§c未找到玩家: §e%s"
-  reportSuccess: "§a举报已提交！管理员将尽快处理。"
-  reportNotification: "§c[举报] §e%s §6举报了 §e%s §7原因: §f%s"
-  banSuccess: "§a玩家 §e%s §a已被封禁 §e%s"
-  unbanSuccess: "§a玩家 §e%s §a已被解封"
-  alreadyBanned: "§c玩家 §e%s §c已经被封禁！"
-  notBanned: "§c玩家 §e%s §c没有被封禁！"
-  gotoSuccess: "§a已传送到 §e%s §a身边"
+check-client:
+  timeout-minutes: 60

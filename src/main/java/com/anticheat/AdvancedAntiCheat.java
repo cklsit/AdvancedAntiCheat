@@ -14,6 +14,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private ReportManager reportManager;
     private DetectionManager detectionManager;
     private ConfigManager configManager;
+    private CheckClientManager checkClientManager;
 
     @Override
     public void onEnable() {
@@ -29,6 +30,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     public void onDisable() {
         banManager.saveBans();
         reportManager.saveReports();
+        checkClientManager.saveCheckData();
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
 
@@ -42,6 +44,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         banManager = new BanManager(this);
         reportManager = new ReportManager(this);
         detectionManager = new DetectionManager(this);
+        checkClientManager = new CheckClientManager(this);
     }
 
     private void registerListeners() {
@@ -49,6 +52,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerCommandListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerLoginListener(this), this);
+        getServer().getPluginManager().registerEvents(new PlayerCheckListener(this), this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
         getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", new BungeeCordMessageListener(this));
     }
@@ -60,6 +64,8 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getCommand("unban").setExecutor(new UnbanCommand(this));
         getCommand("anticheat").setExecutor(new AntiCheatCommand(this));
         getCommand("ac").setExecutor(new AntiCheatCommand(this));
+        getCommand("checkclient").setExecutor(new CheckClientCommand(this));
+        getCommand("checkdone").setExecutor(new CheckDoneCommand(this));
     }
 
     public BanManager getBanManager() {
@@ -76,5 +82,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public ConfigManager getConfigManager() {
         return configManager;
+    }
+
+    public CheckClientManager getCheckClientManager() {
+        return checkClientManager;
     }
 }

@@ -35,6 +35,14 @@ commands:
     description: 反作弊插件快捷指令
     usage: /ac <reload|stats|help>
     permission: anticheat.admin
+  checkclient:
+    description: 对玩家进行客户端检查
+    usage: /checkclient <玩家> <QQ号>
+    permission: anticheat.checkclient
+  checkdone:
+    description: 解除玩家的检查状态（通过检查）
+    usage: /checkdone <玩家>
+    permission: anticheat.checkclient
 
 permissions:
   anticheat.report:
@@ -54,4 +62,7 @@ permissions:
     default: op
   anticheat.notify:
     description: 接收举报通知
+    default: op
+  anticheat.checkclient:
+    description: 允许进行客户端检查
     default: op
