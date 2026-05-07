@@ -2,9 +2,13 @@ name: AdvancedAntiCheat
 version: 1.0.0
 main: com.anticheat.AdvancedAntiCheat
 api-version: 1.21
-description: 高级反作弊插件，支持自动封禁和玩家举报系统
+description: 高级反作弊插件，支持自动封禁、玩家举报系统和跨服务器数据库同步
 author: AntiCheatTeam
-website: https://anticheat.example.com
+website: https://github.com/cklsit/AntiCheat
+
+softdepend:
+  - BungeeCord
+  - Velocity
 
 commands:
   report:
@@ -12,15 +16,15 @@ commands:
     usage: /report <玩家> <原因>
     permission: anticheat.report
   goto:
-    description: 传送至指定玩家身边
+    description: 传送至指定玩家身边（支持跨服传送）
     usage: /goto <玩家>
     permission: anticheat.goto
   ban:
-    description: 封禁玩家
+    description: 封禁玩家（支持数据库同步）
     usage: /ban <玩家> <时间(可选)> <原因(可选)>
     permission: anticheat.ban
   unban:
-    description: 解封玩家
+    description: 解封玩家（支持数据库同步）
     usage: /unban <玩家>
     permission: anticheat.unban
   anticheat:

@@ -8,10 +8,10 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.io.ByteArrayDataInput;
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
-import java.util.Arrays;
 
 public class GotoCommand implements CommandExecutor {
 
@@ -88,7 +88,8 @@ public class GotoCommand implements CommandExecutor {
 
     public void handleProxyResponse(Player player, byte[] data) {
         try {
-            ByteArrayDataInput input = ByteArrayDataInput.new(data);
+            ByteArrayInputStream bais = new ByteArrayInputStream(data);
+            DataInputStream input = new DataInputStream(bais);
             String subChannel = input.readUTF();
 
             if ("Goto".equals(subChannel)) {

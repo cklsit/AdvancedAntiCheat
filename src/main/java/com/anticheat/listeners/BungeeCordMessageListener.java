@@ -4,11 +4,11 @@ import com.anticheat.AdvancedAntiCheat;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
-public class PluginMessageListener implements PluginMessageListener {
+public class BungeeCordMessageListener implements PluginMessageListener {
 
     private final AdvancedAntiCheat plugin;
 
-    public PluginMessageListener(AdvancedAntiCheat plugin) {
+    public BungeeCordMessageListener(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
     }
 
