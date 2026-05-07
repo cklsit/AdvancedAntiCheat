@@ -48,6 +48,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerMoveListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerCommandListener(this), this);
+        getServer().getPluginManager().registerEvents(new PluginMessageListener(this), this);
+        getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
+        getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", new PluginMessageListener(this), "BungeeCord");
     }
 
     private void registerCommands() {

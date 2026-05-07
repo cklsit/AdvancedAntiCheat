@@ -6,6 +6,12 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
+
+import java.io.ByteArrayDataInput;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.util.Arrays;
 
 public class GotoCommand implements CommandExecutor {
 
@@ -29,20 +35,90 @@ public class GotoCommand implements CommandExecutor {
 
         if (args.length < 1) {
             player.sendMessage("§c用法: §e/goto <玩家>");
+            player.sendMessage("§7提示: §f支持跨服务器传送");
             return true;
         }
 
         String targetName = args[0];
-        Player target = Bukkit.getPlayer(targetName);
 
-        if (target == null) {
-            player.sendMessage(String.format(plugin.getConfigManager().getMessage("playerNotFound"), targetName));
+        Player target = Bukkit.getPlayer(targetName);
+        if (target != null) {
+            player.teleport(target.getLocation());
+            player.sendMessage("§a已传送到 §e" + target.getName() + " §a身边 §7(本服务器)");
             return true;
         }
 
-        player.teleport(target.getLocation());
-        player.sendMessage("§a已传送到 §e" + target.getName() + " §a身边");
+        player.sendMessage("§6正在查找玩家 §e" + targetName + " §6(可能跨服务器)...");
+
+        sendProxyGotoRequest(player, targetName);
 
         return true;
+    }
+
+    private void sendProxyGotoRequest(Player player, String targetName) {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        DataOutputStream dos = new DataOutputStream(baos);
+
+        try {
+            dos.writeUTF("Goto");
+            dos.writeUTF(player.getName());
+            dos.writeUTF(targetName);
+        } catch (Exception e) {
+            player.sendMessage("§c跨服传送请求失败！");
+            return;
+        }
+
+        player.sendPluginMessage(plugin, "BungeeCord", baos.toByteArray());
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (Bukkit.getPlayer(player.getUniqueId()) != null) {
+                    Player onlineTarget = Bukkit.getPlayer(targetName);
+                    if (onlineTarget != null) {
+                        player.teleport(onlineTarget.getLocation());
+                        player.sendMessage("§a已传送到 §e" + targetName + " §a身边 §7(跨服务器)");
+                    } else {
+                        player.sendMessage("§c玩家 §e" + targetName + " §c当前不在线或不存在");
+                    }
+                }
+            }
+        }.runTaskLater(plugin, 20L);
+    }
+
+    public void handleProxyResponse(Player player, byte[] data) {
+        try {
+            ByteArrayDataInput input = ByteArrayDataInput.new(data);
+            String subChannel = input.readUTF();
+
+            if ("Goto".equals(subChannel)) {
+                String result = input.readUTF();
+                String targetServer = input.readUTF();
+
+                if ("SUCCESS".equals(result)) {
+                    player.sendMessage("§a已发送跨服传送请求至 §e" + targetServer);
+                } else {
+                    player.sendMessage("§c跨服传送失败: §e" + result);
+                }
+            } else if ("PlayerList".equals(subChannel)) {
+                String serverName = input.readUTF();
+                String[] players = input.readUTF().split(", ");
+
+                if (players.length > 0 && !players[0].isEmpty()) {
+                    StringBuilder message = new StringBuilder();
+                    message.append("§6服务器 §e").append(serverName).append(" §6的在线玩家:\n");
+                    for (String p : players) {
+                        if (!p.isEmpty()) {
+                            message.append("§e- ").append(p).append("\n");
+                        }
+                    }
+                    player.sendMessage(message.toString());
+                } else {
+                    player.sendMessage("§c服务器 §e" + serverName + " §c没有在线玩家");
+                }
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("处理代理响应失败: " + e.getMessage());
+        }
     }
 }
