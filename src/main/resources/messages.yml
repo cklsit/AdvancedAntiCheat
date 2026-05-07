@@ -1,0 +1,53 @@
+# AntiCheat 消息配置文件
+# 您可以自定义所有显示给玩家的消息
+# 支持颜色代码: §0-§9, §a-§f, §k-§r
+# 可用变量:
+# {player} - 玩家名称
+# {reason} - 封禁/举报原因
+# {bannedBy} - 封禁执行者
+# {remainingTime} - 剩余封禁时间
+# {banTime} - 封禁时长
+# {reporter} - 举报者
+# {target} - 被举报者
+
+# 封禁界面 (被踢出时显示的消息)
+ban-screen:
+  # 每行内容，留空表示空行
+  lines:
+    - "§c§l═══════════════════════════════════════"
+    - "§c              §l⚠ 已被服务器封禁 ⚠"
+    - "§c§l═══════════════════════════════════════"
+    - ""
+    - "§7封禁原因: §f{reason}"
+    - ""
+    - "§7封禁时长: {banTime}"
+    - ""
+    - "§c§l═══════════════════════════════════════"
+    - "§6如有疑问请联系服务器管理员"
+    - "§c§l═══════════════════════════════════════"
+  # 永久封禁的显示文本
+  permanent-ban: "§c永久封禁"
+  # 时间格式 (天: {days}, 小时: {hours}, 分钟: {minutes}, 秒: {seconds})
+  time-format:
+    days: "{days} 天"
+    hours: "{hours} 小时"
+    minutes: "{minutes} 分钟"
+    seconds: "{seconds} 秒"
+    combined: "{days} 天 {hours} 小时"
+    combined-hours: "{hours} 小时 {minutes} 分钟"
+    combined-minutes: "{minutes} 分钟 {seconds} 秒"
+
+# 插件前缀
+prefix: "§8[§cAntiCheat§8]"
+
+# 命令消息
+commands:
+  no-permission: "§c您没有权限执行此命令！"
+  player-not-found: "§c未找到玩家: §e{player}"
+  report-success: "§a举报已提交！管理员将尽快处理。"
+  report-notification: "§c[举报] §e{reporter} §6举报了 §e{target} §7原因: §f{reason}"
+  ban-success: "§a玩家 §e{player} §a已被封禁 §e{banTime}"
+  unban-success: "§a玩家 §e{player} §a已被解封"
+  already-banned: "§c玩家 §e{player} §c已经被封禁！"
+  not-banned: "§c玩家 §e{player} §c没有被封禁！"
+  goto-success: "§a已传送到 §e{player} §a身边"

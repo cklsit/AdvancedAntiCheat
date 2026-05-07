@@ -18,7 +18,7 @@ public class BanCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("anticheat.ban")) {
-            sender.sendMessage(plugin.getConfigManager().getMessage("noPermission"));
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
             return true;
         }
 
@@ -32,12 +32,12 @@ public class BanCommand implements CommandExecutor {
         Player target = Bukkit.getPlayer(targetName);
 
         if (target == null && !Bukkit.getOfflinePlayer(targetName).hasPlayedBefore()) {
-            sender.sendMessage(String.format(plugin.getConfigManager().getMessage("playerNotFound"), targetName));
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.player-not-found").replace("{player}", targetName));
             return true;
         }
 
         if (plugin.getBanManager().isBanned(targetName)) {
-            sender.sendMessage(String.format(plugin.getConfigManager().getMessage("alreadyBanned"), targetName));
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.already-banned").replace("{player}", targetName));
             return true;
         }
 
@@ -70,6 +70,10 @@ public class BanCommand implements CommandExecutor {
         } else {
             plugin.getBanManager().banPlayer(Bukkit.getOfflinePlayer(targetName).getUniqueId(), targetName, duration, reason);
         }
+
+        sender.sendMessage(plugin.getConfigManager().getMessage("commands.ban-success")
+            .replace("{player}", targetName)
+            .replace("{banTime}", duration));
 
         return true;
     }

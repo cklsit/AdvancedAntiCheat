@@ -17,7 +17,7 @@ public class UnbanCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("anticheat.unban")) {
-            sender.sendMessage(plugin.getConfigManager().getMessage("noPermission"));
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
             return true;
         }
 
@@ -29,11 +29,12 @@ public class UnbanCommand implements CommandExecutor {
         String targetName = args[0];
 
         if (!plugin.getBanManager().isBanned(targetName)) {
-            sender.sendMessage(String.format(plugin.getConfigManager().getMessage("notBanned"), targetName));
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.not-banned").replace("{player}", targetName));
             return true;
         }
 
         plugin.getBanManager().unbanPlayer(targetName);
+        sender.sendMessage(plugin.getConfigManager().getMessage("commands.unban-success").replace("{player}", targetName));
 
         return true;
     }

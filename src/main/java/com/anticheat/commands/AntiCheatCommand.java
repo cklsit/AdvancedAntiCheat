@@ -29,7 +29,8 @@ public class AntiCheatCommand implements CommandExecutor {
         switch (args[0].toLowerCase()) {
             case "reload" -> {
                 plugin.reloadConfig();
-                sender.sendMessage("§a[AntiCheat] 配置已重新加载！");
+                plugin.getConfigManager().reloadMessagesConfig();
+                sender.sendMessage("§a[AntiCheat] 配置和消息文件已重新加载！");
             }
             case "stats" -> showStats(sender);
             case "reports" -> showReports(sender);

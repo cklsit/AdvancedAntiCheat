@@ -29,7 +29,7 @@ public class GotoCommand implements CommandExecutor {
         }
 
         if (!player.hasPermission("anticheat.goto")) {
-            player.sendMessage(plugin.getConfigManager().getMessage("noPermission"));
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
             return true;
         }
 
@@ -44,7 +44,7 @@ public class GotoCommand implements CommandExecutor {
         Player target = Bukkit.getPlayer(targetName);
         if (target != null) {
             player.teleport(target.getLocation());
-            player.sendMessage("§a已传送到 §e" + target.getName() + " §a身边 §7(本服务器)");
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.goto-success").replace("{player}", targetName));
             return true;
         }
 
@@ -77,7 +77,7 @@ public class GotoCommand implements CommandExecutor {
                     Player onlineTarget = Bukkit.getPlayer(targetName);
                     if (onlineTarget != null) {
                         player.teleport(onlineTarget.getLocation());
-                        player.sendMessage("§a已传送到 §e" + targetName + " §a身边 §7(跨服务器)");
+                        player.sendMessage(plugin.getConfigManager().getMessage("commands.goto-success").replace("{player}", targetName));
                     } else {
                         player.sendMessage("§c玩家 §e" + targetName + " §c当前不在线或不存在");
                     }

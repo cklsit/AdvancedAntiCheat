@@ -23,7 +23,7 @@ public class ReportCommand implements CommandExecutor {
         }
 
         if (!player.hasPermission("anticheat.report")) {
-            player.sendMessage(plugin.getConfigManager().getMessage("noPermission"));
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
             return true;
         }
 
@@ -36,7 +36,7 @@ public class ReportCommand implements CommandExecutor {
         Player target = Bukkit.getPlayer(targetName);
 
         if (target == null) {
-            player.sendMessage(String.format(plugin.getConfigManager().getMessage("playerNotFound"), targetName));
+            player.sendMessage(plugin.getConfigManager().getMessage("commands.player-not-found").replace("{player}", targetName));
             return true;
         }
 
@@ -52,16 +52,7 @@ public class ReportCommand implements CommandExecutor {
         }
 
         plugin.getReportManager().addReport(player, target, reason.toString());
-
-        player.sendMessage("");
-        player.sendMessage("§8§m────────────────────────");
-        player.sendMessage("§6[§c举报系统§6]");
-        player.sendMessage("§a举报已成功提交！");
-        player.sendMessage("§7被举报玩家: §e" + target.getName());
-        player.sendMessage("§7举报原因: §f" + reason);
-        player.sendMessage("§6管理员将尽快处理您的举报");
-        player.sendMessage("§8§m────────────────────────");
-        player.sendMessage("");
+        player.sendMessage(plugin.getConfigManager().getMessage("commands.report-success"));
 
         return true;
     }

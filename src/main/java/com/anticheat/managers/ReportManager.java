@@ -100,9 +100,10 @@ public class ReportManager {
         } catch (Exception e) {
             for (Player player : Bukkit.getOnlinePlayers()) {
                 if (player.hasPermission("anticheat.notify")) {
-                    player.sendMessage("§c[举报] §e" + reporterName + " §6举报了 §e" + targetName + " §7原因: §f" + reason);
-                    player.sendMessage("§a使用 /goto " + reporterName + " 前往举报者位置");
-                    player.sendMessage("§c使用 /goto " + targetName + " 前往被举报者位置");
+                    player.sendMessage(plugin.getConfigManager().getMessage("commands.report-notification")
+                        .replace("{reporter}", reporterName)
+                        .replace("{target}", targetName)
+                        .replace("{reason}", reason));
                 }
             }
         }
