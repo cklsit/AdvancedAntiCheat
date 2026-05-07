@@ -5,6 +5,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.io.*;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -32,27 +33,87 @@ public class ReportManager {
         );
         reports.add(report);
 
-        String jsonMessage = createReportNotification(reporter.getName(), target.getName(), reason);
-        sendJsonMessageToAdmins(jsonMessage);
+        sendReportNotification(reporter.getName(), target.getName(), reason);
 
         saveReports();
     }
 
-    private String createReportNotification(String reporterName, String targetName, String reason) {
-        return "{\"text\":\"§c[举报] §e" + reporterName + " §6举报了 §e" + targetName + " §7原因: §f" + reason + " \",\"extra\":[{\"text\":\"§a[点击前往]\",\"clickEvent\":{\"action\":\"run_command\",\"value\":\"/goto " + reporterName + "\"},\"hoverEvent\":{\"action\":\"show_text\",\"value\":{\"text\":\"\",\"extra\":[{\"text\":\"点击传送至举报者身边\"}]}}}]}";
-    }
-
-    private void sendJsonMessageToAdmins(String jsonMessage) {
+    private void sendReportNotification(String reporterName, String targetName, String reason) {
         try {
-            net.minecraft.network.chat.Component component = net.minecraft.network.chat.Component.Serializer.fromJson(jsonMessage);
+            Class<?> textComponentClass = Class.forName("net.md_5.bungee.api.chat.TextComponent");
+            Class<?> chatColorClass = Class.forName("net.md_5.bungee.api.ChatColor");
+            Class<?> clickEventClass = Class.forName("net.md_5.bungee.api.chat.ClickEvent");
+            Class<?> hoverEventClass = Class.forName("net.md_5.bungee.api.chat.HoverEvent");
+            Class<?> hoverTextClass = Class.forName("net.md_5.bungee.api.chat.hover.content.Text");
+
+            Object message = textComponentClass.getConstructor().newInstance();
+
+            addTextPart(message, "[举报] ", chatColorClass.getField("RED").get(null), textComponentClass);
+            addTextPart(message, reporterName, chatColorClass.getField("YELLOW").get(null), textComponentClass);
+            addTextPart(message, " 举报了 ", chatColorClass.getField("GOLD").get(null), textComponentClass);
+            addTextPart(message, targetName, chatColorClass.getField("YELLOW").get(null), textComponentClass);
+            addTextPart(message, " 原因: ", chatColorClass.getField("GRAY").get(null), textComponentClass);
+            addTextPart(message, reason, chatColorClass.getField("WHITE").get(null), textComponentClass);
+            addTextPart(message, " ", null, textComponentClass);
+
+            Object gotoReporter = textComponentClass.getConstructor(String.class).newInstance("[前往举报者]");
+            textComponentClass.getMethod("setColor", chatColorClass).invoke(gotoReporter, chatColorClass.getField("GREEN").get(null));
+            textComponentClass.getMethod("setBold", boolean.class).invoke(gotoReporter, true);
+            
+            Object[] clickEnumConstants = clickEventClass.getEnumConstants();
+            Object clickAction = clickEnumConstants[0];
+            Object clickEvent1 = clickEventClass.getConstructor(clickAction.getClass(), String.class)
+                    .newInstance(clickAction, "/goto " + reporterName);
+            textComponentClass.getMethod("setClickEvent", clickEventClass).invoke(gotoReporter, clickEvent1);
+            
+            Object hoverText1 = hoverTextClass.getConstructor(String.class).newInstance("点击传送至举报者身边");
+            Object[] hoverEnumConstants = hoverEventClass.getEnumConstants();
+            Object hoverAction = hoverEnumConstants[0];
+            Object hoverEvent1 = hoverEventClass.getConstructor(hoverAction.getClass(), Object.class)
+                    .newInstance(hoverAction, hoverText1);
+            textComponentClass.getMethod("setHoverEvent", hoverEventClass).invoke(gotoReporter, hoverEvent1);
+            textComponentClass.getMethod("addExtra", Object.class).invoke(message, gotoReporter);
+
+            addTextPart(message, " ", null, textComponentClass);
+
+            Object gotoTarget = textComponentClass.getConstructor(String.class).newInstance("[前往作弊者]");
+            textComponentClass.getMethod("setColor", chatColorClass).invoke(gotoTarget, chatColorClass.getField("RED").get(null));
+            textComponentClass.getMethod("setBold", boolean.class).invoke(gotoTarget, true);
+            
+            Object clickEvent2 = clickEventClass.getConstructor(clickAction.getClass(), String.class)
+                    .newInstance(clickAction, "/goto " + targetName);
+            textComponentClass.getMethod("setClickEvent", clickEventClass).invoke(gotoTarget, clickEvent2);
+            
+            Object hoverText2 = hoverTextClass.getConstructor(String.class).newInstance("点击传送至被举报者身边");
+            Object hoverEvent2 = hoverEventClass.getConstructor(hoverAction.getClass(), Object.class)
+                    .newInstance(hoverAction, hoverText2);
+            textComponentClass.getMethod("setHoverEvent", hoverEventClass).invoke(gotoTarget, hoverEvent2);
+            textComponentClass.getMethod("addExtra", Object.class).invoke(message, gotoTarget);
+
             for (Player player : Bukkit.getOnlinePlayers()) {
                 if (player.hasPermission("anticheat.notify")) {
-                    ((org.bukkit.craftbukkit.entity.CraftPlayer) player).getHandle().sendSystemMessage(component);
+                    Method spigotMethod = player.getClass().getMethod("spigot");
+                    Object spigot = spigotMethod.invoke(player);
+                    spigot.getClass().getMethod("sendMessage", textComponentClass).invoke(spigot, message);
                 }
             }
         } catch (Exception e) {
-            plugin.getLogger().severe("发送举报通知失败: " + e.getMessage());
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (player.hasPermission("anticheat.notify")) {
+                    player.sendMessage("§c[举报] §e" + reporterName + " §6举报了 §e" + targetName + " §7原因: §f" + reason);
+                    player.sendMessage("§a使用 /goto " + reporterName + " 前往举报者位置");
+                    player.sendMessage("§c使用 /goto " + targetName + " 前往被举报者位置");
+                }
+            }
         }
+    }
+
+    private void addTextPart(Object message, String text, Object color, Class<?> textComponentClass) throws Exception {
+        Object part = textComponentClass.getConstructor(String.class).newInstance(text);
+        if (color != null) {
+            textComponentClass.getMethod("setColor", Class.forName("net.md_5.bungee.api.ChatColor")).invoke(part, color);
+        }
+        textComponentClass.getMethod("addExtra", Object.class).invoke(message, part);
     }
 
     public List<Report> getReports() {
