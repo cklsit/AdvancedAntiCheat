@@ -25,8 +25,6 @@ public class PlayerCheckListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (event.isCancelled()) return;
-
         Player player = event.getPlayer();
         CheckClientManager checkManager = plugin.getCheckClientManager();
 
@@ -39,21 +37,12 @@ public class PlayerCheckListener implements Listener {
 
         if (to == null) return;
 
-        if (from.getX() != to.getX() || from.getZ() != to.getZ()) {
-            event.setTo(from);
-        }
-
-        if (from.getY() != to.getY()) {
-            Location newLoc = from.clone();
-            newLoc.setY(to.getY());
-            event.setTo(newLoc);
-        }
+        event.setCancelled(true);
+        player.teleport(from);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerTeleport(PlayerTeleportEvent event) {
-        if (event.isCancelled()) return;
-
         Player player = event.getPlayer();
         CheckClientManager checkManager = plugin.getCheckClientManager();
 
