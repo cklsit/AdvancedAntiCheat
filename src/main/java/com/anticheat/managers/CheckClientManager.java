@@ -11,7 +11,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.util.Vector;
 
 import java.io.File;
 import java.io.IOException;
@@ -120,7 +119,6 @@ public class CheckClientManager {
         UUID playerUUID = player.getUniqueId();
         if (checkingPlayers.containsKey(playerUUID)) {
             removeRestrictions(player);
-            player.sendMessage(Component.text("检查已被管理员强制解除!", NamedTextColor.YELLOW));
             checkingPlayers.remove(playerUUID);
             frozenLocations.remove(playerUUID);
             originalGameModes.remove(playerUUID);
@@ -134,6 +132,7 @@ public class CheckClientManager {
         player.setFlySpeed(0f);
         player.setAllowFlight(false);
         player.setFlying(false);
+        player.setVelocity(new org.bukkit.util.Vector(0, 0, 0));
     }
 
     private void removeRestrictions(Player player) {
@@ -259,38 +258,6 @@ public class CheckClientManager {
             frozenLocations.remove(playerUUID);
             originalGameModes.remove(playerUUID);
             saveCheckData();
-        }
-    }
-
-    public void onPlayerMove(Player player, Location from, Location to) {
-        UUID playerUUID = player.getUniqueId();
-        if (checkingPlayers.containsKey(playerUUID)) {
-            Location frozenLoc = frozenLocations.get(playerUUID);
-            if (frozenLoc != null && (to.getX() != frozenLoc.getX() || to.getZ() != frozenLoc.getZ())) {
-                player.teleport(from);
-            }
-        }
-    }
-
-    public void onPlayerTeleport(Player player, Location from, Location to) {
-        UUID playerUUID = player.getUniqueId();
-        if (checkingPlayers.containsKey(playerUUID)) {
-            player.teleport(from);
-        }
-    }
-
-    public void onPlayerInteract(Player player) {
-        UUID playerUUID = player.getUniqueId();
-        if (checkingPlayers.containsKey(playerUUID)) {
-            player.sendMessage(Component.text("§c您正在被管理员查端，无法进行此操作！", NamedTextColor.RED));
-        }
-    }
-
-    public void onPlayerAttack(Player attacker, Player victim) {
-        UUID attackerUUID = attacker.getUniqueId();
-        if (checkingPlayers.containsKey(attackerUUID)) {
-            attacker.sendMessage(Component.text("§c您正在被管理员查端，无法进行攻击！", NamedTextColor.RED));
-            attacker.setVelocity(new Vector(0, 0, 0));
         }
     }
 

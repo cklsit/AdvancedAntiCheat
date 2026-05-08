@@ -2,8 +2,6 @@ package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.managers.CheckClientManager;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -16,7 +14,6 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerVelocityEvent;
-import org.bukkit.util.Vector;
 
 public class PlayerCheckListener implements Listener {
 
@@ -65,7 +62,6 @@ public class PlayerCheckListener implements Listener {
         }
 
         event.setCancelled(true);
-        player.sendMessage(Component.text("§c您正在被管理员查端，无法传送！", NamedTextColor.RED));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -90,7 +86,6 @@ public class PlayerCheckListener implements Listener {
         }
 
         event.setCancelled(true);
-        player.sendMessage(Component.text("§c您正在被管理员查端，无法进行此操作！", NamedTextColor.RED));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -106,7 +101,6 @@ public class PlayerCheckListener implements Listener {
         }
 
         event.setCancelled(true);
-        victim.sendMessage(Component.text("§c您正在被管理员查端，受到保护！", NamedTextColor.YELLOW));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -122,8 +116,6 @@ public class PlayerCheckListener implements Listener {
         }
 
         event.setCancelled(true);
-        attacker.setVelocity(new Vector(0, 0, 0));
-        attacker.sendMessage(Component.text("§c您正在被管理员查端，无法进行攻击！", NamedTextColor.RED));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
