@@ -29,9 +29,10 @@ public class ReachDetection extends Detection {
     }
 
     public void onAttack(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player player)) {
+        if (!(event.getDamager() instanceof Player)) {
             return;
         }
+        Player player = (Player) event.getDamager();
 
         if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("reach")) {
             return;

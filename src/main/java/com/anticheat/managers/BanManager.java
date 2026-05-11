@@ -186,23 +186,45 @@ public class BanManager {
             return -1;
         }
 
-        long time = 0;
-        duration = duration.toLowerCase();
+        duration = duration.toLowerCase().trim();
 
-        if (duration.contains("d")) {
-            time += Long.parseLong(duration.replaceAll("[^0-9]", "")) * 24 * 60 * 60 * 1000;
-        } else if (duration.contains("h")) {
-            time += Long.parseLong(duration.replaceAll("[^0-9]", "")) * 60 * 60 * 1000;
-        } else if (duration.contains("m")) {
-            time += Long.parseLong(duration.replaceAll("[^0-9]", "")) * 60 * 1000;
-        } else if (duration.contains("s")) {
-            time += Long.parseLong(duration.replaceAll("[^0-9]", "")) * 1000;
-        } else {
-            try {
-                time = Long.parseLong(duration) * 24 * 60 * 60 * 1000;
-            } catch (NumberFormatException e) {
-                time = -1;
+        if (duration.equals("permanent") || duration.equals("perm") || duration.equals("forever")) {
+            return -1;
+        }
+
+        long time = 0;
+
+        try {
+            if (duration.contains("d")) {
+                String numStr = duration.replaceAll("[^0-9]", "");
+                if (!numStr.isEmpty()) {
+                    time = Long.parseLong(numStr) * 24 * 60 * 60 * 1000;
+                }
+            } else if (duration.contains("h")) {
+                String numStr = duration.replaceAll("[^0-9]", "");
+                if (!numStr.isEmpty()) {
+                    time = Long.parseLong(numStr) * 60 * 60 * 1000;
+                }
+            } else if (duration.contains("m")) {
+                String numStr = duration.replaceAll("[^0-9]", "");
+                if (!numStr.isEmpty()) {
+                    time = Long.parseLong(numStr) * 60 * 1000;
+                }
+            } else if (duration.contains("s")) {
+                String numStr = duration.replaceAll("[^0-9]", "");
+                if (!numStr.isEmpty()) {
+                    time = Long.parseLong(numStr) * 1000;
+                }
+            } else {
+                String numStr = duration.replaceAll("[^0-9]", "");
+                if (!numStr.isEmpty()) {
+                    time = Long.parseLong(numStr) * 24 * 60 * 60 * 1000;
+                } else {
+                    return -1;
+                }
             }
+        } catch (NumberFormatException e) {
+            return -1;
         }
 
         return time > 0 ? System.currentTimeMillis() + time : -1;
@@ -212,7 +234,10 @@ public class BanManager {
         if (duration == null || duration.isEmpty()) {
             return "永久";
         }
-        duration = duration.toLowerCase();
+        duration = duration.toLowerCase().trim();
+        if (duration.equals("permanent") || duration.equals("perm") || duration.equals("forever")) {
+            return "永久";
+        }
         if (duration.contains("d")) return duration.replace("d", " 天");
         if (duration.contains("h")) return duration.replace("h", " 小时");
         if (duration.contains("m")) return duration.replace("m", " 分钟");

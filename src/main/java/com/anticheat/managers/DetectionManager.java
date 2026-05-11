@@ -33,7 +33,7 @@ public class DetectionManager {
 
     public void addViolation(Player player, String type) {
         UUID uuid = player.getUniqueId();
-        violations.computeIfAbsent(uuid, k -> new HashMap<>());
+        violations.computeIfAbsent(uuid, k -> new HashMap<String, Integer>());
 
         Map<String, Integer> playerViolations = violations.get(uuid);
         int current = playerViolations.getOrDefault(type, 0) + 1;
@@ -50,7 +50,7 @@ public class DetectionManager {
 
     public int getViolations(Player player, String type) {
         UUID uuid = player.getUniqueId();
-        return violations.getOrDefault(uuid, new HashMap<>()).getOrDefault(type, 0);
+        return violations.getOrDefault(uuid, new HashMap<String, Integer>()).getOrDefault(type, 0);
     }
 
     public void clearViolations(UUID uuid) {
@@ -58,14 +58,20 @@ public class DetectionManager {
     }
 
     private String getDetectionName(String type) {
-        return switch (type.toLowerCase()) {
-            case "fly" -> "飞行作弊";
-            case "speed" -> "速度作弊";
-            case "esp" -> "透视作弊";
-            case "killaura" -> "杀戮光环";
-            case "reach" -> "攻击距离作弊";
-            default -> type;
-        };
+        String lowerType = type.toLowerCase();
+        if (lowerType.equals("fly")) {
+            return "飞行作弊";
+        } else if (lowerType.equals("speed")) {
+            return "速度作弊";
+        } else if (lowerType.equals("esp")) {
+            return "透视作弊";
+        } else if (lowerType.equals("killaura")) {
+            return "杀戮光环";
+        } else if (lowerType.equals("reach")) {
+            return "攻击距离作弊";
+        } else {
+            return type;
+        }
     }
 
     public AdvancedAntiCheat getPlugin() {

@@ -1,6 +1,7 @@
 package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.managers.BanManager.BanInfo;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -19,7 +20,7 @@ public class PlayerJoinListener implements Listener {
         Player player = event.getPlayer();
 
         if (plugin.getBanManager().isBanned(player.getUniqueId())) {
-            var banInfo = plugin.getBanManager().getBanInfo(player.getUniqueId());
+            BanInfo banInfo = plugin.getBanManager().getBanInfo(player.getUniqueId());
             if (banInfo != null) {
                 StringBuilder kickMessage = new StringBuilder();
                 kickMessage.append("§c§l═══════════════════════════\n");

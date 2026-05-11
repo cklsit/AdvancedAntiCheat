@@ -17,10 +17,11 @@ public class ReportCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player player)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage("§c此命令只能由玩家执行！");
             return true;
         }
+        Player player = (Player) sender;
 
         if (!player.hasPermission("anticheat.report")) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
@@ -52,7 +53,7 @@ public class ReportCommand implements CommandExecutor {
         }
 
         plugin.getReportManager().addReport(player, target, reason.toString());
-        player.sendMessage(plugin.getConfigManager().getMessage("commands.report-success"));
+        player.sendMessage(plugin.getConfigManager().getMessage("commands.report-success").replace("{player}", targetName));
 
         return true;
     }

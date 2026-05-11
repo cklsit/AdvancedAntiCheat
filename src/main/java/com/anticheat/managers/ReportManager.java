@@ -1,10 +1,8 @@
 package com.anticheat.managers;
 
 import com.anticheat.AdvancedAntiCheat;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
-import net.kyori.adventure.text.event.HoverEvent;
-import net.kyori.adventure.text.format.NamedTextColor;
+import com.anticheat.compat.ChatCompat;
+import com.anticheat.compat.CompatManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -18,10 +16,12 @@ public class ReportManager {
     private final AdvancedAntiCheat plugin;
     private final List<Report> reports = new ArrayList<>();
     private final File reportsFile;
+    private final ChatCompat chatCompat;
 
     public ReportManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
         this.reportsFile = new File(plugin.getDataFolder(), "reports.dat");
+        this.chatCompat = CompatManager.getChatCompat();
         loadReports();
     }
 
@@ -42,41 +42,18 @@ public class ReportManager {
     }
 
     private void sendReportNotification(String reporterName, String targetName, String reason) {
-        Component message = Component.text()
-                .append(Component.text("[举报] ", NamedTextColor.RED))
-                .append(Component.text(reporterName, NamedTextColor.YELLOW))
-                .append(Component.text(" 举报了 ", NamedTextColor.GOLD))
-                .append(Component.text(targetName, NamedTextColor.YELLOW))
-                .append(Component.text(" 原因: ", NamedTextColor.GRAY))
-                .append(Component.text(reason, NamedTextColor.WHITE))
-                .build();
+        StringBuilder message = new StringBuilder();
+        message.append("§c[举报] §e").append(reporterName).append(" §6举报了 §e").append(targetName);
+        message.append(" §7原因: §f").append(reason);
 
-        Component gotoReporterButton = Component.text()
-                .content("[前往举报者]")
-                .color(NamedTextColor.GREEN)
-                .clickEvent(ClickEvent.runCommand("/goto " + reporterName))
-                .hoverEvent(HoverEvent.showText(Component.text("点击传送至举报者身边", NamedTextColor.AQUA)))
-                .build();
-
-        Component gotoTargetButton = Component.text()
-                .content("[前往作弊者]")
-                .color(NamedTextColor.RED)
-                .clickEvent(ClickEvent.runCommand("/goto " + targetName))
-                .hoverEvent(HoverEvent.showText(Component.text("点击传送至被举报者身边", NamedTextColor.AQUA)))
-                .build();
-
-        Component fullMessage = Component.text()
-                .append(message)
-                .append(Component.newline())
-                .append(Component.text("  "))
-                .append(gotoReporterButton)
-                .append(Component.text("  "))
-                .append(gotoTargetButton)
-                .build();
+        String gotoReporterButton = "§a[前往举报者]";
+        String gotoTargetButton = "§c[前往作弊者]";
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (player.hasPermission("anticheat.notify")) {
-                player.sendMessage(fullMessage);
+                player.sendMessage(message.toString());
+                chatCompat.sendMessageWithButton(player, "  ", gotoReporterButton, "/goto " + reporterName);
+                chatCompat.sendMessageWithButton(player, "  ", gotoTargetButton, "/goto " + targetName);
             }
         }
     }

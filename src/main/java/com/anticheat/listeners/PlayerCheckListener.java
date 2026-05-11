@@ -2,6 +2,7 @@ package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.managers.CheckClientManager;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -9,11 +10,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.event.player.PlayerVelocityEvent;
+import org.bukkit.event.player.*;
 
 public class PlayerCheckListener implements Listener {
 
@@ -38,7 +35,6 @@ public class PlayerCheckListener implements Listener {
         if (to == null) return;
 
         event.setCancelled(true);
-        player.teleport(from);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -79,9 +75,10 @@ public class PlayerCheckListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onEntityDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) {
+        if (!(event.getEntity() instanceof Player)) {
             return;
         }
+        Player victim = (Player) event.getEntity();
 
         CheckClientManager checkManager = plugin.getCheckClientManager();
 
@@ -94,13 +91,50 @@ public class PlayerCheckListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player attacker)) {
+        if (!(event.getDamager() instanceof Player)) {
             return;
         }
+        Player attacker = (Player) event.getDamager();
 
         CheckClientManager checkManager = plugin.getCheckClientManager();
 
         if (!checkManager.isBeingChecked(attacker.getUniqueId())) {
+            return;
+        }
+
+        event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        Player player = event.getPlayer();
+        CheckClientManager checkManager = plugin.getCheckClientManager();
+
+        if (!checkManager.isBeingChecked(player.getUniqueId())) {
+            return;
+        }
+
+        event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPlayerChat(AsyncPlayerChatEvent event) {
+        Player player = event.getPlayer();
+        CheckClientManager checkManager = plugin.getCheckClientManager();
+
+        if (!checkManager.isBeingChecked(player.getUniqueId())) {
+            return;
+        }
+
+        event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPlayerGameModeChange(PlayerGameModeChangeEvent event) {
+        Player player = event.getPlayer();
+        CheckClientManager checkManager = plugin.getCheckClientManager();
+
+        if (!checkManager.isBeingChecked(player.getUniqueId())) {
             return;
         }
 
@@ -113,7 +147,8 @@ public class PlayerCheckListener implements Listener {
         CheckClientManager checkManager = plugin.getCheckClientManager();
 
         if (checkManager.isBeingChecked(player.getUniqueId())) {
-            checkManager.forceUnfreeze(player);
+            String ip = player.getAddress().getAddress().getHostAddress();
+            checkManager.banOnQuit(player.getUniqueId(), player.getName(), ip);
         }
     }
 }

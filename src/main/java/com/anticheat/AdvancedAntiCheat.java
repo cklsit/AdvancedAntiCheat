@@ -1,9 +1,11 @@
 package com.anticheat;
 
 import com.anticheat.commands.*;
-import com.anticheat.detection.*;
+import com.anticheat.compat.CompatManager;
 import com.anticheat.listeners.*;
 import com.anticheat.managers.*;
+import com.anticheat.profiles.BehaviorTracker;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -15,13 +17,23 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private DetectionManager detectionManager;
     private ConfigManager configManager;
     private CheckClientManager checkClientManager;
+    private CheckClientConfigManager checkClientConfigManager;
+    private BehaviorTracker behaviorTracker;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        
+        String version = VersionUtil.getVersion();
+        boolean isHighVersion = VersionUtil.isHighVersion();
+        
+        getLogger().info("§6[AdvancedAntiCheat] 检测到服务器版本: " + version);
+        getLogger().info("§6[AdvancedAntiCheat] 使用" + (isHighVersion ? "高版本" : "低版本") + "兼容模式");
+        
         initializeManagers();
         registerListeners();
         registerCommands();
+        
         getLogger().info("§2[AdvancedAntiCheat] 插件已成功启用！");
         getLogger().info("§6[AdvancedAntiCheat] 保护您的服务器免受作弊侵害！");
     }
@@ -31,6 +43,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         banManager.saveBans();
         reportManager.saveReports();
         checkClientManager.saveCheckData();
+        if (behaviorTracker != null) {
+            behaviorTracker.saveAllProfiles();
+        }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
 
@@ -41,10 +56,12 @@ public class AdvancedAntiCheat extends JavaPlugin {
         }
 
         configManager = new ConfigManager(this);
+        checkClientConfigManager = new CheckClientConfigManager(this);
         banManager = new BanManager(this);
         reportManager = new ReportManager(this);
         detectionManager = new DetectionManager(this);
         checkClientManager = new CheckClientManager(this);
+        behaviorTracker = new BehaviorTracker(this);
     }
 
     private void registerListeners() {
@@ -53,8 +70,12 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerCommandListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerLoginListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerCheckListener(this), this);
-        getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
-        getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", new BungeeCordMessageListener(this));
+        getServer().getPluginManager().registerEvents(new BehaviorListener(this), this);
+
+        if (VersionUtil.isHighVersion()) {
+            getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
+            getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", new BungeeCordMessageListener(this));
+        }
     }
 
     private void registerCommands() {
@@ -72,6 +93,10 @@ public class AdvancedAntiCheat extends JavaPlugin {
         return banManager;
     }
 
+    public DatabaseManager getDatabaseManager() {
+        return banManager.getDatabaseManager();
+    }
+
     public ReportManager getReportManager() {
         return reportManager;
     }
@@ -86,5 +111,13 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public CheckClientManager getCheckClientManager() {
         return checkClientManager;
+    }
+
+    public CheckClientConfigManager getCheckClientConfigManager() {
+        return checkClientConfigManager;
+    }
+
+    public BehaviorTracker getBehaviorTracker() {
+        return behaviorTracker;
     }
 }

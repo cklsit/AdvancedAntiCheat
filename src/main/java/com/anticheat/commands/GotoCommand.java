@@ -23,10 +23,11 @@ public class GotoCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof Player player)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage("§c此命令只能由玩家执行！");
             return true;
         }
+        Player player = (Player) sender;
 
         if (!player.hasPermission("anticheat.goto")) {
             player.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));

@@ -1,9 +1,9 @@
 package com.anticheat.managers;
 
 import com.anticheat.AdvancedAntiCheat;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.title.Title;
+import com.anticheat.compat.CompatManager;
+import com.anticheat.compat.ChatCompat;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -17,7 +17,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -28,10 +27,12 @@ public class CheckClientManager {
     private final Map<UUID, Location> frozenLocations = new ConcurrentHashMap<>();
     private final Map<UUID, GameMode> originalGameModes = new ConcurrentHashMap<>();
     private final File checkDataFile;
+    private final ChatCompat chatCompat;
 
     public CheckClientManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
         this.checkDataFile = new File(plugin.getDataFolder(), "checkdata.dat");
+        this.chatCompat = CompatManager.getChatCompat();
         loadCheckData();
     }
 
@@ -78,7 +79,7 @@ public class CheckClientManager {
         }
 
         removeRestrictions(player);
-        player.sendMessage(Component.text("玩家已被解除检查状态!", NamedTextColor.GREEN));
+        chatCompat.sendMessage(player, "§a玩家已被解除检查状态!");
 
         checkingPlayers.remove(playerUUID);
         frozenLocations.remove(playerUUID);
@@ -112,6 +113,22 @@ public class CheckClientManager {
         frozenLocations.remove(playerUUID);
         originalGameModes.remove(playerUUID);
 
+        saveCheckData();
+    }
+
+    public void banOnQuit(UUID playerUUID, String playerName, String ip) {
+        plugin.getBanManager().banPlayer(
+            playerUUID,
+            playerName,
+            "permanent",
+            "查端过程中退出服务器 - IP: " + ip
+        );
+
+        plugin.getLogger().info("玩家 " + playerName + " (IP: " + ip + ") 在查端过程中退出，已被永久封禁");
+
+        checkingPlayers.remove(playerUUID);
+        frozenLocations.remove(playerUUID);
+        originalGameModes.remove(playerUUID);
         saveCheckData();
     }
 
@@ -156,38 +173,38 @@ public class CheckClientManager {
     }
 
     private void applyBlindnessEffect(Player player) {
-        player.addPotionEffect(new PotionEffect(
-            PotionEffectType.BLINDNESS,
-            Integer.MAX_VALUE,
-            255,
-            false,
-            false,
-            false
-        ));
+        if (VersionUtil.isHighVersion()) {
+            player.addPotionEffect(new PotionEffect(
+                PotionEffectType.BLINDNESS,
+                Integer.MAX_VALUE,
+                255,
+                false,
+                false,
+                false
+            ));
+        } else {
+            player.addPotionEffect(new PotionEffect(
+                PotionEffectType.BLINDNESS,
+                Integer.MAX_VALUE,
+                255
+            ));
+        }
     }
 
     private void showTitle(Player player) {
-        Title title = Title.title(
-            Component.text("您正在被管理员查端!", NamedTextColor.RED),
-            Component.text("请看聊天框继续下一步", NamedTextColor.YELLOW),
-            Title.Times.times(
-                Duration.ofMillis(500),
-                Duration.ofMillis(5000),
-                Duration.ofMillis(1000)
-            )
-        );
-
-        player.showTitle(title);
+        String title = plugin.getCheckClientConfigManager().getTitle();
+        String subtitle = plugin.getCheckClientConfigManager().getSubtitle();
+        chatCompat.sendTitle(player, title, subtitle, 10, 100, 20);
     }
 
     private void showChatMessage(Player player, String adminName, String qqNumber) {
         String vaultGroup = getVaultGroup(player);
-
-        player.sendMessage(Component.text("§8§m------------------------------------------------"));
-        player.sendMessage(Component.text("§f您已被 §b" + vaultGroup + " §f成员 §c§l冻结所有操作.", NamedTextColor.WHITE));
-        player.sendMessage(Component.text("§f请在 §b5 §f分钟内添加 §c" + adminName + " §f的 §bQQ §f好友 §a" + qqNumber + " §f进行客户端核实。", NamedTextColor.WHITE));
-        player.sendMessage(Component.text("§f请不要退出此房间或关闭游戏,否则您的账号将会被封禁！", NamedTextColor.YELLOW));
-        player.sendMessage(Component.text("§8§m------------------------------------------------"));
+        int timeout = getCheckTimeout();
+        
+        List<String> messages = plugin.getCheckClientConfigManager().formatMessages(vaultGroup, adminName, qqNumber, timeout);
+        for (String message : messages) {
+            player.sendMessage(message);
+        }
     }
 
     private String getVaultGroup(Player player) {
@@ -195,7 +212,7 @@ public class CheckClientManager {
     }
 
     private int getCheckTimeout() {
-        return plugin.getConfig().getInt("check-client.timeout-minutes", 60);
+        return plugin.getCheckClientConfigManager().getTimeoutMinutes();
     }
 
     private void startTimeoutTask(UUID playerUUID) {
@@ -213,7 +230,7 @@ public class CheckClientManager {
 
                 Player player = Bukkit.getPlayer(playerUUID);
                 if (player != null && player.isOnline()) {
-                    player.sendMessage(Component.text("§c查段时间已到！您因未完成客户端检查被永久封禁！", NamedTextColor.RED));
+                    player.sendMessage("§c查段时间已到！您因未完成客户端检查被永久封禁！");
                     endCheckFail(player);
                 }
             }

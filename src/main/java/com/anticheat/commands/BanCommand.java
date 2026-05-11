@@ -24,7 +24,7 @@ public class BanCommand implements CommandExecutor {
 
         if (args.length < 1) {
             sender.sendMessage("§c用法: §e/ban <玩家> [时间] [原因]");
-            sender.sendMessage("§7时间格式: 1m(分钟), 1h(小时), 1d(天)");
+            sender.sendMessage("§7时间格式: 1m(分钟), 1h(小时), 1d(天), permanent(永久)");
             return true;
         }
 
@@ -41,11 +41,11 @@ public class BanCommand implements CommandExecutor {
             return true;
         }
 
-        String duration = "1d";
+        String duration = "permanent";
         String reason = "违规行为";
 
         if (args.length >= 2) {
-            if (args[1].matches("^\\d+[smhd]$")) {
+            if (args[1].matches("^\\d+[smhd]$") || args[1].equalsIgnoreCase("permanent") || args[1].equalsIgnoreCase("perm")) {
                 duration = args[1];
                 if (args.length >= 3) {
                     StringBuilder reasonBuilder = new StringBuilder();

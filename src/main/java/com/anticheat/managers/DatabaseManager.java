@@ -2,20 +2,25 @@ package com.anticheat.managers;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.managers.BanManager.BanRecord;
+import com.anticheat.profiles.PlayerProfile;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import org.bson.Document;
 import org.bukkit.scheduler.BukkitRunnable;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import java.io.*;
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-
 public class DatabaseManager {
 
     private final AdvancedAntiCheat plugin;
@@ -136,10 +141,19 @@ public class DatabaseManager {
                         "ban_time BIGINT NOT NULL, " +
                         "expiry_time BIGINT, " +
                         "server_name VARCHAR(32), " +
-                        "is_active BOOLEAN DEFAULT TRUE" +
+                        "is_active INTEGER DEFAULT 1" +
                         ")");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_bans_player ON bans(player_uuid)");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_bans_active ON bans(is_active)");
+
+                stmt.execute("CREATE TABLE IF NOT EXISTS player_profiles (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        "player_uuid VARCHAR(36) NOT NULL UNIQUE, " +
+                        "profile_data TEXT NOT NULL, " +
+                        "last_updated BIGINT NOT NULL" +
+                        ")");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_profiles_player ON player_profiles(player_uuid)");
+
                 plugin.getLogger().info("SQL数据库表初始化完成！");
             } catch (SQLException e) {
                 plugin.getLogger().severe("创建数据库表失败: " + e.getMessage());
@@ -171,7 +185,7 @@ public class DatabaseManager {
 
     private void banPlayerSQL(UUID playerUUID, String playerName, String reason, String bannedBy, long banTime, long expiryTime, String serverName) {
         try (PreparedStatement pstmt = sqlConnection.prepareStatement(
-                "INSERT INTO bans (player_uuid, player_name, reason, banned_by, ban_time, expiry_time, server_name, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, TRUE)")) {
+                "INSERT INTO bans (player_uuid, player_name, reason, banned_by, ban_time, expiry_time, server_name, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)")) {
             pstmt.setString(1, playerUUID.toString());
             pstmt.setString(2, playerName);
             pstmt.setString(3, reason);
@@ -206,8 +220,8 @@ public class DatabaseManager {
 
     private void banPlayerMongo(String playerUUID, String playerName, String reason, String bannedBy, long banTime, long expiryTime, String serverName) {
         try {
-            var collection = mongoDatabase.getCollection("bans");
-            var document = new org.bson.Document()
+            MongoCollection<Document> collection = mongoDatabase.getCollection("bans");
+            Document document = new Document()
                     .append("player_uuid", playerUUID)
                     .append("player_name", playerName)
                     .append("reason", reason)
@@ -239,7 +253,7 @@ public class DatabaseManager {
 
     private boolean isPlayerBannedSQL(String playerUUID) {
         try (PreparedStatement pstmt = sqlConnection.prepareStatement(
-                "SELECT expiry_time FROM bans WHERE player_uuid = ? AND is_active = TRUE ORDER BY ban_time DESC LIMIT 1")) {
+                "SELECT expiry_time FROM bans WHERE player_uuid = ? AND is_active = 1 ORDER BY ban_time DESC LIMIT 1")) {
             pstmt.setString(1, playerUUID);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
@@ -280,9 +294,9 @@ public class DatabaseManager {
 
     private boolean isPlayerBannedMongo(String playerUUID) {
         try {
-            var collection = mongoDatabase.getCollection("bans");
-            var filter = new org.bson.Document("player_uuid", playerUUID).append("is_active", true);
-            var result = collection.find(filter).first();
+            MongoCollection<Document> collection = mongoDatabase.getCollection("bans");
+            Document filter = new Document("player_uuid", playerUUID).append("is_active", true);
+            Document result = collection.find(filter).first();
             if (result != null) {
                 long expiryTime = result.getLong("expiry_time");
                 if (expiryTime > 0 && expiryTime < System.currentTimeMillis()) {
@@ -314,7 +328,7 @@ public class DatabaseManager {
 
     private BanRecord getBanRecordSQL(String playerUUID) {
         try (PreparedStatement pstmt = sqlConnection.prepareStatement(
-                "SELECT * FROM bans WHERE player_uuid = ? AND is_active = TRUE ORDER BY ban_time DESC LIMIT 1")) {
+                "SELECT * FROM bans WHERE player_uuid = ? AND is_active = 1 ORDER BY ban_time DESC LIMIT 1")) {
             pstmt.setString(1, playerUUID);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
@@ -361,9 +375,9 @@ public class DatabaseManager {
 
     private BanRecord getBanRecordMongo(String playerUUID) {
         try {
-            var collection = mongoDatabase.getCollection("bans");
-            var filter = new org.bson.Document("player_uuid", playerUUID).append("is_active", true);
-            var result = collection.find(filter).first();
+            MongoCollection<Document> collection = mongoDatabase.getCollection("bans");
+            Document filter = new Document("player_uuid", playerUUID).append("is_active", true);
+            Document result = collection.find(filter).first();
             if (result != null) {
                 return new BanRecord(
                         UUID.fromString(result.getString("player_uuid")),
@@ -405,7 +419,7 @@ public class DatabaseManager {
 
     private void unbanPlayerSQL(String playerUUID) {
         try (PreparedStatement pstmt = sqlConnection.prepareStatement(
-                "UPDATE bans SET is_active = FALSE WHERE player_uuid = ?")) {
+                "UPDATE bans SET is_active = 0 WHERE player_uuid = ?")) {
             pstmt.setString(1, playerUUID);
             pstmt.executeUpdate();
         } catch (SQLException e) {
@@ -426,9 +440,9 @@ public class DatabaseManager {
 
     private void unbanPlayerMongo(String playerUUID) {
         try {
-            var collection = mongoDatabase.getCollection("bans");
-            var filter = new org.bson.Document("player_uuid", playerUUID);
-            var update = new org.bson.Document("$set", new org.bson.Document("is_active", false));
+            MongoCollection<Document> collection = mongoDatabase.getCollection("bans");
+            Document filter = new Document("player_uuid", playerUUID);
+            Document update = new Document("$set", new Document("is_active", false));
             collection.updateMany(filter, update);
         } catch (Exception e) {
             plugin.getLogger().severe("解封玩家MongoDB失败: " + e.getMessage());
@@ -436,7 +450,7 @@ public class DatabaseManager {
     }
 
     public List<BanRecord> getAllBans() {
-        List<BanRecord> bans = new ArrayList<>();
+        List<BanRecord> bans = new ArrayList<BanRecord>();
         switch (databaseType) {
             case "mysql":
             case "h2":
@@ -452,9 +466,9 @@ public class DatabaseManager {
     }
 
     private List<BanRecord> getAllBansSQL() {
-        List<BanRecord> bans = new ArrayList<>();
+        List<BanRecord> bans = new ArrayList<BanRecord>();
         try (Statement stmt = sqlConnection.createStatement();
-             ResultSet rs = stmt.executeQuery("SELECT * FROM bans WHERE is_active = TRUE ORDER BY ban_time DESC")) {
+             ResultSet rs = stmt.executeQuery("SELECT * FROM bans WHERE is_active = 1 ORDER BY ban_time DESC")) {
             while (rs.next()) {
                 bans.add(new BanRecord(
                         UUID.fromString(rs.getString("player_uuid")),
@@ -473,7 +487,7 @@ public class DatabaseManager {
     }
 
     private List<BanRecord> getAllBansRedis() {
-        List<BanRecord> bans = new ArrayList<>();
+        List<BanRecord> bans = new ArrayList<BanRecord>();
         try (Jedis jedis = jedisPool.getResource()) {
             Set<String> bannedPlayers = jedis.smembers("anticheat:banned_players");
             for (String playerUUID : bannedPlayers) {
@@ -489,11 +503,13 @@ public class DatabaseManager {
     }
 
     private List<BanRecord> getAllBansMongo() {
-        List<BanRecord> bans = new ArrayList<>();
+        List<BanRecord> bans = new ArrayList<BanRecord>();
         try {
-            var collection = mongoDatabase.getCollection("bans");
-            var filter = new org.bson.Document("is_active", true);
-            for (var doc : collection.find(filter)) {
+            MongoCollection<Document> collection = mongoDatabase.getCollection("bans");
+            Document filter = new Document("is_active", true);
+            MongoCursor<Document> cursor = collection.find(filter).iterator();
+            while (cursor.hasNext()) {
+                Document doc = cursor.next();
                 bans.add(new BanRecord(
                         UUID.fromString(doc.getString("player_uuid")),
                         doc.getString("player_name"),
@@ -512,6 +528,155 @@ public class DatabaseManager {
 
     public String getDatabaseType() {
         return databaseType;
+    }
+
+    public void savePlayerProfile(PlayerProfile profile) {
+        if (profile == null) return;
+
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    ObjectOutputStream oos = new ObjectOutputStream(baos);
+                    oos.writeObject(profile);
+                    oos.close();
+                    String serialized = Base64.getEncoder().encodeToString(baos.toByteArray());
+
+                    switch (databaseType) {
+                        case "mysql":
+                        case "h2":
+                        case "sqlite":
+                            saveProfileSQL(profile.getPlayerUUID().toString(), serialized);
+                            break;
+                        case "redis":
+                            saveProfileRedis(profile.getPlayerUUID().toString(), serialized);
+                            break;
+                        case "mongodb":
+                        case "mongo":
+                            saveProfileMongo(profile.getPlayerUUID().toString(), serialized);
+                            break;
+                    }
+                } catch (Exception e) {
+                    plugin.getLogger().severe("保存玩家档案失败: " + e.getMessage());
+                }
+            }
+        }.runTaskAsynchronously(plugin);
+    }
+
+    private void saveProfileSQL(String playerUUID, String data) {
+        try (PreparedStatement pstmt = sqlConnection.prepareStatement(
+                "INSERT OR REPLACE INTO player_profiles (player_uuid, profile_data, last_updated) VALUES (?, ?, ?)")) {
+            pstmt.setString(1, playerUUID);
+            pstmt.setString(2, data);
+            pstmt.setLong(3, System.currentTimeMillis());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            plugin.getLogger().severe("保存玩家档案SQL失败: " + e.getMessage());
+        }
+    }
+
+    private void saveProfileRedis(String playerUUID, String data) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            String key = "anticheat:profile:" + playerUUID;
+            jedis.set(key, data);
+        } catch (Exception e) {
+            plugin.getLogger().severe("保存玩家档案Redis失败: " + e.getMessage());
+        }
+    }
+
+    private void saveProfileMongo(String playerUUID, String data) {
+        try {
+            MongoCollection<Document> collection = mongoDatabase.getCollection("player_profiles");
+            Document filter = new Document("player_uuid", playerUUID);
+            Document update = new Document("$set", new Document()
+                    .append("player_uuid", playerUUID)
+                    .append("profile_data", data)
+                    .append("last_updated", System.currentTimeMillis()));
+            collection.updateOne(filter, update, new com.mongodb.client.model.UpdateOptions().upsert(true));
+        } catch (Exception e) {
+            plugin.getLogger().severe("保存玩家档案MongoDB失败: " + e.getMessage());
+        }
+    }
+
+    public PlayerProfile loadPlayerProfile(UUID playerUUID) {
+        if (playerUUID == null) return null;
+
+        try {
+            switch (databaseType) {
+                case "mysql":
+                case "h2":
+                case "sqlite":
+                    return loadProfileSQL(playerUUID.toString());
+                case "redis":
+                    return loadProfileRedis(playerUUID.toString());
+                case "mongodb":
+                case "mongo":
+                    return loadProfileMongo(playerUUID.toString());
+            }
+        } catch (Exception e) {
+            plugin.getLogger().severe("加载玩家档案失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private PlayerProfile loadProfileSQL(String playerUUID) {
+        try (PreparedStatement pstmt = sqlConnection.prepareStatement(
+                "SELECT profile_data FROM player_profiles WHERE player_uuid = ?")) {
+            pstmt.setString(1, playerUUID);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    String data = rs.getString("profile_data");
+                    return deserializeProfile(data);
+                }
+            }
+        } catch (SQLException e) {
+            plugin.getLogger().severe("加载玩家档案SQL失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private PlayerProfile loadProfileRedis(String playerUUID) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            String key = "anticheat:profile:" + playerUUID;
+            String data = jedis.get(key);
+            if (data != null) {
+                return deserializeProfile(data);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().severe("加载玩家档案Redis失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private PlayerProfile loadProfileMongo(String playerUUID) {
+        try {
+            MongoCollection<Document> collection = mongoDatabase.getCollection("player_profiles");
+            Document filter = new Document("player_uuid", playerUUID);
+            Document result = collection.find(filter).first();
+            if (result != null) {
+                String data = result.getString("profile_data");
+                return deserializeProfile(data);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().severe("加载玩家档案MongoDB失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private PlayerProfile deserializeProfile(String data) {
+        if (data == null || data.isEmpty()) return null;
+        try {
+            byte[] bytes = Base64.getDecoder().decode(data);
+            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+            ObjectInputStream ois = new ObjectInputStream(bais);
+            PlayerProfile profile = (PlayerProfile) ois.readObject();
+            ois.close();
+            return profile;
+        } catch (Exception e) {
+            plugin.getLogger().severe("反序列化玩家档案失败: " + e.getMessage());
+            return null;
+        }
     }
 
     public void close() {

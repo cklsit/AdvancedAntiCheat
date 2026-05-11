@@ -1,8 +1,10 @@
 package com.anticheat.detection;
 
 import com.anticheat.managers.DetectionManager;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.entity.Player;
 import org.bukkit.Location;
+import org.bukkit.Material;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -43,6 +45,10 @@ public class SpeedDetection extends Detection {
         }
 
         if (player.isSleeping()) {
+            return;
+        }
+
+        if (getManager().getPlugin().getCheckClientManager().isBeingChecked(player.getUniqueId())) {
             return;
         }
 
@@ -95,11 +101,30 @@ public class SpeedDetection extends Detection {
             return SNEAK_SPEED;
         }
 
-        if (player.isInWater()) {
+        if (isInWater(player)) {
             return WATER_SPEED;
         }
 
         return WALK_SPEED;
+    }
+
+    private boolean isInWater(Player player) {
+        if (VersionUtil.isHighVersion()) {
+            return player.isInWater();
+        } else {
+            Location loc = player.getLocation();
+            Material material = loc.getBlock().getType();
+            return material == Material.WATER || isStationaryWater(material);
+        }
+    }
+
+    private boolean isStationaryWater(Material material) {
+        try {
+            Material stationaryWater = (Material) Material.class.getDeclaredField("STATIONARY_WATER").get(null);
+            return material == stationaryWater;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private double getTolerance(Player player) {

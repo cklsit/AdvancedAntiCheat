@@ -10,13 +10,14 @@
     <packaging>jar</packaging>
 
     <name>AdvancedAntiCheat</name>
-    <description>Advanced AntiCheat Plugin for Minecraft 1.21.x with Database Support</description>
+    <description>Advanced AntiCheat Plugin for Minecraft 1.8.x - 1.21.x with Database Support</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
         <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
+        <spigot.version>1.8.8-R0.1-SNAPSHOT</spigot.version>
     </properties>
 
     <repositories>
@@ -39,6 +40,12 @@
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>${paper.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.spigotmc</groupId>
+            <artifactId>spigot-api</artifactId>
+            <version>${spigot.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -65,6 +72,12 @@
             <groupId>org.mongodb</groupId>
             <artifactId>mongodb-driver-sync</artifactId>
             <version>4.11.1</version>
+        </dependency>
+        <dependency>
+            <groupId>net.md-5</groupId>
+            <artifactId>bungeecord-chat</artifactId>
+            <version>1.8-SNAPSHOT</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
@@ -96,6 +109,7 @@
                                 <excludes>
                                     <exclude>io.papermc.paper:*</exclude>
                                     <exclude>org.spigotmc:*</exclude>
+                                    <exclude>net.md-5:*</exclude>
                                 </excludes>
                             </artifactSet>
                             <relocations>
@@ -114,6 +128,10 @@
                                 <relocation>
                                     <pattern>redis.clients</pattern>
                                     <shadedPattern>com.anticheat.libs.redis</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>org.apache.commons</pattern>
+                                    <shadedPattern>com.anticheat.libs.apache.commons</shadedPattern>
                                 </relocation>
                                 <relocation>
                                     <pattern>com.mongodb</pattern>

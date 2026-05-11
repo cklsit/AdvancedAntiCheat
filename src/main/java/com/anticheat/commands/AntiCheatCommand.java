@@ -6,6 +6,8 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 
+import java.util.List;
+
 public class AntiCheatCommand implements CommandExecutor {
 
     private final AdvancedAntiCheat plugin;
@@ -26,16 +28,19 @@ public class AntiCheatCommand implements CommandExecutor {
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
-            case "reload" -> {
-                plugin.reloadConfig();
-                plugin.getConfigManager().reloadMessagesConfig();
-                sender.sendMessage("§a[AntiCheat] 配置和消息文件已重新加载！");
-            }
-            case "stats" -> showStats(sender);
-            case "reports" -> showReports(sender);
-            case "help" -> showHelp(sender);
-            default -> sender.sendMessage("§c未知子命令！使用 /ac help 查看帮助");
+        String subCommand = args[0].toLowerCase();
+        if (subCommand.equals("reload")) {
+            plugin.reloadConfig();
+            plugin.getConfigManager().reloadMessagesConfig();
+            sender.sendMessage("§a[AntiCheat] 配置和消息文件已重新加载！");
+        } else if (subCommand.equals("stats")) {
+            showStats(sender);
+        } else if (subCommand.equals("reports")) {
+            showReports(sender);
+        } else if (subCommand.equals("help")) {
+            showHelp(sender);
+        } else {
+            sender.sendMessage("§c未知子命令！使用 /ac help 查看帮助");
         }
 
         return true;
@@ -77,7 +82,7 @@ public class AntiCheatCommand implements CommandExecutor {
     }
 
     private void showReports(CommandSender sender) {
-        var reports = plugin.getReportManager().getReports();
+        List<ReportManager.Report> reports = plugin.getReportManager().getReports();
         sender.sendMessage("");
         sender.sendMessage("§c§l═══════════ §6待处理举报 §c§l═══════════");
         sender.sendMessage("");
