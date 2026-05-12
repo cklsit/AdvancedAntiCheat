@@ -118,6 +118,11 @@ public class CaptchaListener implements Listener {
         CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
         if (session != null) {
             Object currentTask = session.getCurrentTask();
+            
+            if (currentTask instanceof TypeB_PrecisionHit) {
+                return;
+            }
+            
             if (event.getAction() == Action.RIGHT_CLICK_BLOCK && currentTask instanceof TypeE_Puzzle) {
                 ((TypeE_Puzzle) currentTask).onButtonPress(player, event.getClickedBlock().getLocation());
             }
