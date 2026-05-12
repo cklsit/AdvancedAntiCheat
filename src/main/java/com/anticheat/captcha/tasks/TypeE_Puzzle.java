@@ -3,7 +3,6 @@ package com.anticheat.captcha.tasks;
 import com.anticheat.AdvancedAntiCheat;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -32,11 +31,11 @@ public class TypeE_Puzzle extends CaptchaTask {
             case PATTERN_MATCH:
                 startPatternMatch(player, location, info);
                 break;
-            case ARROW_DIRECTION:
-                startArrowDirection(player, location, info);
-                break;
             case COLOR_SELECT:
                 startColorSelect(player, location, info);
+                break;
+            case NUMBER_GUESS:
+                startNumberGuess(player, location, info);
                 break;
         }
     }
@@ -75,47 +74,6 @@ public class TypeE_Puzzle extends CaptchaTask {
         sendInstruction(player, "选择与上方图案数量匹配的按钮 (1-6)");
     }
 
-    private void startArrowDirection(Player player, Location location, PuzzleInfo info) {
-        String[] directions = {"北", "东", "南", "西"};
-        int targetIndex = random.nextInt(directions.length);
-        String targetDirection = directions[targetIndex];
-
-        info.targetAnswer = targetIndex;
-
-        player.sendMessage("§7目标方向: §e" + targetDirection);
-
-        ItemFrame.Rotation[] rotations = {
-                ItemFrame.Rotation.NONE,
-                ItemFrame.Rotation.CLOCKWISE_90,
-                ItemFrame.Rotation.CLOCKWISE_180,
-                ItemFrame.Rotation.CLOCKWISE_135
-        };
-
-        for (int i = 0; i < 4; i++) {
-            Location buttonLoc = location.clone().add(-3 + i, 0, 2);
-            org.bukkit.block.Block button = buttonLoc.getBlock();
-            button.setType(Material.STONE_BUTTON);
-
-            Location itemFrameLoc = buttonLoc.clone().add(0, 1, 0);
-            ItemFrame itemFrame = player.getWorld().spawn(itemFrameLoc, ItemFrame.class);
-
-            ItemStack arrow = new ItemStack(Material.ARROW);
-            itemFrame.setItem(arrow);
-            itemFrame.setRotation(rotations[i]);
-
-            if (info.itemFrames == null) {
-                info.itemFrames = new ArrayList<>();
-            }
-            info.itemFrames.add(itemFrame);
-            if (info.blocks == null) {
-                info.blocks = new ArrayList<>();
-            }
-            info.blocks.add(buttonLoc);
-        }
-
-        sendInstruction(player, "点击指向" + targetDirection + "的箭头按钮");
-    }
-
     private void startColorSelect(Player player, Location location, PuzzleInfo info) {
         Material[] colors = {
                 Material.RED_WOOL, Material.BLUE_WOOL,
@@ -141,6 +99,35 @@ public class TypeE_Puzzle extends CaptchaTask {
         sendInstruction(player, "选择与上方颜色相同的方块");
     }
 
+    private void startNumberGuess(Player player, Location location, PuzzleInfo info) {
+        int targetNumber = random.nextInt(9) + 1;
+        info.targetAnswer = targetNumber - 1;
+
+        player.sendMessage("§7目标数字: §e" + targetNumber);
+
+        for (int i = 0; i < 9; i++) {
+            Location buttonLoc = location.clone().add(-4 + i, 0, 0);
+            org.bukkit.block.Block button = buttonLoc.getBlock();
+            button.setType(Material.STONE_BUTTON);
+
+            Location signLoc = buttonLoc.clone().add(0, 1, 0);
+            org.bukkit.block.Sign sign = (org.bukkit.block.Sign) signLoc.getBlock().getState();
+            sign.setLine(0, String.valueOf(i + 1));
+            sign.update();
+
+            if (info.blocks == null) {
+                info.blocks = new ArrayList<>();
+            }
+            info.blocks.add(buttonLoc);
+            if (info.signs == null) {
+                info.signs = new ArrayList<>();
+            }
+            info.signs.add(signLoc);
+        }
+
+        sendInstruction(player, "点击显示数字 " + targetNumber + " 的按钮");
+    }
+
     @Override
     public void cleanup(Player player) {
         PuzzleInfo info = activePuzzles.remove(player.getUniqueId());
@@ -150,9 +137,9 @@ public class TypeE_Puzzle extends CaptchaTask {
                     loc.getBlock().setType(Material.AIR);
                 }
             }
-            if (info.itemFrames != null) {
-                for (ItemFrame frame : info.itemFrames) {
-                    frame.remove();
+            if (info.signs != null) {
+                for (Location loc : info.signs) {
+                    loc.getBlock().setType(Material.AIR);
                 }
             }
         }
@@ -188,8 +175,8 @@ public class TypeE_Puzzle extends CaptchaTask {
 
     private enum PuzzleType {
         PATTERN_MATCH,
-        ARROW_DIRECTION,
-        COLOR_SELECT
+        COLOR_SELECT,
+        NUMBER_GUESS
     }
 
     private static class PuzzleInfo {
@@ -197,7 +184,7 @@ public class TypeE_Puzzle extends CaptchaTask {
         int targetAnswer;
         boolean completed;
         List<Location> blocks;
-        List<ItemFrame> itemFrames;
+        List<Location> signs;
 
         PuzzleInfo(PuzzleType type, int targetAnswer, boolean completed) {
             this.type = type;

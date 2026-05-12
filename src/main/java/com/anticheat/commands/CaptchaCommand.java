@@ -72,7 +72,7 @@ public class CaptchaCommand implements CommandExecutor {
             return true;
         }
 
-        plugin.getCaptchaManager().startCaptcha(target, CaptchaManager.CaptchaSession.Initiator.ADMIN);
+        plugin.getCaptchaManager().startCaptcha(target, CaptchaManager.Initiator.ADMIN);
         sender.sendMessage("§a已对玩家 " + target.getName() + " 发起验证码测试");
 
         return true;
