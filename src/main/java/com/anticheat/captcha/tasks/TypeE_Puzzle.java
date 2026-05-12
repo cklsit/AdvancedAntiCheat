@@ -113,7 +113,6 @@ public class TypeE_Puzzle extends CaptchaTask {
             Location frameLoc = buttonLoc.clone().add(0, 1, 0);
             org.bukkit.entity.ItemFrame frame = player.getWorld().spawn(frameLoc, org.bukkit.entity.ItemFrame.class);
             frame.setItem(new ItemStack(Material.getMaterial((i + 1) + "_STAINED_GLASS_PANE")));
-            frame.setRotation(org.bukkit.entity.ItemFrame.Rotation.NONE);
 
             if (info.blocks == null) {
                 info.blocks = new ArrayList<>();
