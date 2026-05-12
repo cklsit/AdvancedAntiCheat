@@ -4,6 +4,7 @@ import com.anticheat.AdvancedAntiCheat;
 import org.bukkit.Location;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
+import org.bukkit.util.EulerAngle;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

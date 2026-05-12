@@ -1,6 +1,7 @@
 package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.captcha.tasks.TypeA_DirectInteraction;
 import com.anticheat.captcha.tasks.TypeB_PrecisionHit;
 import com.anticheat.captcha.tasks.TypeC_SequenceReplay;
@@ -38,7 +39,7 @@ public class CaptchaListener implements Listener {
         Player player = event.getPlayer();
 
         if (plugin.getCaptchaManager().isNewPlayerCaptchaEnabled()) {
-            plugin.getCaptchaManager().startCaptcha(player, CaptchaManager.CaptchaSession.Initiator.NEW_PLAYER);
+            plugin.getCaptchaManager().startCaptcha(player, CaptchaManager.Initiator.NEW_PLAYER);
         }
     }
 

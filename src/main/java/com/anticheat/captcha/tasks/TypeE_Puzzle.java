@@ -3,9 +3,9 @@ package com.anticheat.captcha.tasks;
 import com.anticheat.AdvancedAntiCheat;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -84,7 +84,12 @@ public class TypeE_Puzzle extends CaptchaTask {
 
         player.sendMessage("§7目标方向: §e" + targetDirection);
 
-        float[] rotations = {0f, 90f, 180f, 270f};
+        ItemFrame.Rotation[] rotations = {
+                ItemFrame.Rotation.NONE,
+                ItemFrame.Rotation.CLOCKWISE_90,
+                ItemFrame.Rotation.CLOCKWISE_180,
+                ItemFrame.Rotation.CLOCKWISE_135
+        };
 
         for (int i = 0; i < 4; i++) {
             Location buttonLoc = location.clone().add(-3 + i, 0, 2);
@@ -92,7 +97,7 @@ public class TypeE_Puzzle extends CaptchaTask {
             button.setType(Material.STONE_BUTTON);
 
             Location itemFrameLoc = buttonLoc.clone().add(0, 1, 0);
-            org.bukkit.entity.ItemFrame itemFrame = player.getWorld().spawn(itemFrameLoc, org.bukkit.entity.ItemFrame.class);
+            ItemFrame itemFrame = player.getWorld().spawn(itemFrameLoc, ItemFrame.class);
 
             ItemStack arrow = new ItemStack(Material.ARROW);
             itemFrame.setItem(arrow);
@@ -146,7 +151,7 @@ public class TypeE_Puzzle extends CaptchaTask {
                 }
             }
             if (info.itemFrames != null) {
-                for (org.bukkit.entity.ItemFrame frame : info.itemFrames) {
+                for (ItemFrame frame : info.itemFrames) {
                     frame.remove();
                 }
             }
@@ -192,7 +197,7 @@ public class TypeE_Puzzle extends CaptchaTask {
         int targetAnswer;
         boolean completed;
         List<Location> blocks;
-        List<org.bukkit.entity.ItemFrame> itemFrames;
+        List<ItemFrame> itemFrames;
 
         PuzzleInfo(PuzzleType type, int targetAnswer, boolean completed) {
             this.type = type;

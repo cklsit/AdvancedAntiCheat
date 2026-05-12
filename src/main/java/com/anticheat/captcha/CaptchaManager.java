@@ -17,6 +17,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class CaptchaManager {
 
+    public enum Initiator {
+        ADMIN,
+        NEW_PLAYER,
+        AUTO_DETECTION
+    }
+
     private final AdvancedAntiCheat plugin;
     private final Map<UUID, CaptchaSession> activeSessions;
     private final CaptchaWorld captchaWorld;
@@ -39,10 +45,10 @@ public class CaptchaManager {
     }
 
     public void startCaptcha(Player player) {
-        startCaptcha(player, CaptchaSession.Initiator.AUTO_DETECTION);
+        startCaptcha(player, Initiator.AUTO_DETECTION);
     }
 
-    public void startCaptcha(Player player, CaptchaSession.Initiator initiator) {
+    public void startCaptcha(Player player, Initiator initiator) {
         UUID uuid = player.getUniqueId();
 
         if (activeSessions.containsKey(uuid)) {
@@ -148,13 +154,7 @@ public class CaptchaManager {
         return captchaWorld;
     }
 
-    public static class CaptchaSession {
-
-        public enum Initiator {
-            ADMIN,
-            NEW_PLAYER,
-            AUTO_DETECTION
-        }
+    public class CaptchaSession {
 
         private final Player player;
         private final Location originalLocation;
