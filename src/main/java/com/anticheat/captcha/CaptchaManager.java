@@ -62,12 +62,14 @@ public class CaptchaManager {
         List<CaptchaTask> tasks = generateTasks();
 
         CaptchaSession session = new CaptchaSession(
+                plugin,
                 player,
                 originalLocation,
                 captchaLocation,
                 tasks,
                 timeLimit,
-                initiator
+                initiator,
+                activeSessions
         );
 
         activeSessions.put(uuid, session);
@@ -77,7 +79,7 @@ public class CaptchaManager {
 
     private List<CaptchaTask> generateTasks() {
         List<CaptchaTask> tasks = new ArrayList<>();
-        int taskCount = random.nextInt(3) + 1;
+        int taskCount = random.nextInt(2) + 1;
 
         List<Class<? extends CaptchaTask>> taskTypes = new ArrayList<>(Arrays.asList(
                 TypeA_DirectInteraction.class,
@@ -154,14 +156,20 @@ public class CaptchaManager {
         return captchaWorld;
     }
 
-    public class CaptchaSession {
+    public CaptchaSession getSession(Player player) {
+        return activeSessions.get(player.getUniqueId());
+    }
 
+    public static class CaptchaSession {
+
+        private final AdvancedAntiCheat plugin;
         private final Player player;
         private final Location originalLocation;
         private final Location captchaLocation;
         private final List<CaptchaTask> tasks;
         private final int timeLimit;
         private final Initiator initiator;
+        private final Map<UUID, CaptchaSession> activeSessions;
 
         private int currentTaskIndex;
         private long startTime;
@@ -169,18 +177,23 @@ public class CaptchaManager {
         private boolean failed;
         private BukkitRunnable timerTask;
         private BukkitRunnable warningTask;
+        private CaptchaTask currentTask;
 
-        public CaptchaSession(Player player, Location originalLocation, Location captchaLocation,
-                             List<CaptchaTask> tasks, int timeLimit, Initiator initiator) {
+        public CaptchaSession(AdvancedAntiCheat plugin, Player player, Location originalLocation,
+                             Location captchaLocation, List<CaptchaTask> tasks, int timeLimit,
+                             Initiator initiator, Map<UUID, CaptchaSession> activeSessions) {
+            this.plugin = plugin;
             this.player = player;
             this.originalLocation = originalLocation;
             this.captchaLocation = captchaLocation;
             this.tasks = tasks;
             this.timeLimit = timeLimit;
             this.initiator = initiator;
+            this.activeSessions = activeSessions;
             this.currentTaskIndex = 0;
             this.completed = false;
             this.failed = false;
+            this.currentTask = null;
         }
 
         public void start() {
@@ -248,15 +261,17 @@ public class CaptchaManager {
                 return;
             }
 
-            CaptchaTask task = tasks.get(currentTaskIndex);
-            task.start(player, captchaLocation);
+            currentTask = tasks.get(currentTaskIndex);
+            currentTask.start(player, captchaLocation);
+            player.sendMessage("§e[任务 " + (currentTaskIndex + 1) + "/" + tasks.size() + "] " + currentTask.getTaskDescription());
         }
 
         public void completeCurrentTask() {
             if (completed || failed) return;
 
-            CaptchaTask task = tasks.get(currentTaskIndex);
-            task.cleanup(player);
+            if (currentTask != null) {
+                currentTask.cleanup(player);
+            }
 
             currentTaskIndex++;
 
@@ -318,6 +333,10 @@ public class CaptchaManager {
             }
         }
 
+        public CaptchaTask getCurrentTask() {
+            return currentTask;
+        }
+
         public int getCurrentTaskIndex() {
             return currentTaskIndex;
         }
@@ -334,6 +353,10 @@ public class CaptchaManager {
 
         public Initiator getInitiator() {
             return initiator;
+        }
+
+        public Player getPlayer() {
+            return player;
         }
     }
 }

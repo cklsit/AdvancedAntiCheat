@@ -61,9 +61,12 @@ public class CaptchaListener implements Listener {
         player.setAllowFlight(false);
         player.setFlying(false);
 
-        TypeD_BlockMaze mazeTask = (TypeD_BlockMaze) getCurrentTask(player, TypeD_BlockMaze.class);
-        if (mazeTask != null) {
-            mazeTask.onPlayerMove(player, event.getTo());
+        CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
+        if (session != null) {
+            Object currentTask = session.getCurrentTask();
+            if (currentTask instanceof TypeD_BlockMaze) {
+                ((TypeD_BlockMaze) currentTask).onPlayerMove(player, event.getTo());
+            }
         }
     }
 
@@ -75,14 +78,15 @@ public class CaptchaListener implements Listener {
             return;
         }
 
-        TypeA_DirectInteraction typeA = (TypeA_DirectInteraction) getCurrentTask(player, TypeA_DirectInteraction.class);
-        if (typeA != null) {
-            typeA.onPlayerSneak(event);
-        }
-
-        TypeC_SequenceReplay typeC = (TypeC_SequenceReplay) getCurrentTask(player, TypeC_SequenceReplay.class);
-        if (typeC != null) {
-            typeC.onPlayerAction(player, TypeC_SequenceReplay.Action.SNEAK);
+        CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
+        if (session != null) {
+            Object currentTask = session.getCurrentTask();
+            if (currentTask instanceof TypeA_DirectInteraction) {
+                ((TypeA_DirectInteraction) currentTask).onPlayerSneak(event);
+            }
+            if (currentTask instanceof TypeC_SequenceReplay && event.isSneaking()) {
+                ((TypeC_SequenceReplay) currentTask).onPlayerAction(player, TypeC_SequenceReplay.Action.SNEAK);
+            }
         }
     }
 
@@ -94,9 +98,12 @@ public class CaptchaListener implements Listener {
             return;
         }
 
-        TypeC_SequenceReplay typeC = (TypeC_SequenceReplay) getCurrentTask(player, TypeC_SequenceReplay.class);
-        if (typeC != null && event.isSprinting()) {
-            typeC.onPlayerAction(player, TypeC_SequenceReplay.Action.SPRINT);
+        CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
+        if (session != null) {
+            Object currentTask = session.getCurrentTask();
+            if (currentTask instanceof TypeC_SequenceReplay && event.isSprinting()) {
+                ((TypeC_SequenceReplay) currentTask).onPlayerAction(player, TypeC_SequenceReplay.Action.SPRINT);
+            }
         }
     }
 
@@ -108,10 +115,11 @@ public class CaptchaListener implements Listener {
             return;
         }
 
-        if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            TypeE_Puzzle puzzle = (TypeE_Puzzle) getCurrentTask(player, TypeE_Puzzle.class);
-            if (puzzle != null) {
-                puzzle.onButtonPress(player, event.getClickedBlock().getLocation());
+        CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
+        if (session != null) {
+            Object currentTask = session.getCurrentTask();
+            if (event.getAction() == Action.RIGHT_CLICK_BLOCK && currentTask instanceof TypeE_Puzzle) {
+                ((TypeE_Puzzle) currentTask).onButtonPress(player, event.getClickedBlock().getLocation());
             }
         }
 
@@ -133,9 +141,12 @@ public class CaptchaListener implements Listener {
         }
 
         if (event.getHitEntity() != null && projectile instanceof Snowball) {
-            TypeB_PrecisionHit typeB = (TypeB_PrecisionHit) getCurrentTask(player, TypeB_PrecisionHit.class);
-            if (typeB != null) {
-                typeB.onSnowballHit((Snowball) projectile, event.getHitEntity());
+            CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
+            if (session != null) {
+                Object currentTask = session.getCurrentTask();
+                if (currentTask instanceof TypeB_PrecisionHit) {
+                    ((TypeB_PrecisionHit) currentTask).onSnowballHit((Snowball) projectile, event.getHitEntity());
+                }
             }
         }
     }
@@ -179,9 +190,5 @@ public class CaptchaListener implements Listener {
                 event.setCancelled(true);
             }
         }
-    }
-
-    private Object getCurrentTask(Player player, Class<?> taskClass) {
-        return null;
     }
 }
