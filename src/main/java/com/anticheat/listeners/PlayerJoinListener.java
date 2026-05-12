@@ -6,7 +6,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
 public class PlayerJoinListener implements Listener {
@@ -41,9 +40,35 @@ public class PlayerJoinListener implements Listener {
 
     private void clearCheckClientEffects(Player player) {
         player.removePotionEffect(PotionEffectType.BLINDNESS);
-        player.removePotionEffect(PotionEffectType.SLOW);
-        player.removePotionEffect(PotionEffectType.JUMP);
         
+        try {
+            PotionEffectType slow = PotionEffectType.getByName("SLOW");
+            if (slow != null) {
+                player.removePotionEffect(slow);
+            }
+        } catch (Exception ignored) {}
+        
+        try {
+            PotionEffectType slowness = PotionEffectType.getByName("SLOWNESS");
+            if (slowness != null) {
+                player.removePotionEffect(slowness);
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            PotionEffectType jump = PotionEffectType.getByName("JUMP");
+            if (jump != null) {
+                player.removePotionEffect(jump);
+            }
+        } catch (Exception ignored) {}
+        
+        try {
+            PotionEffectType jumpBoost = PotionEffectType.getByName("JUMP_BOOST");
+            if (jumpBoost != null) {
+                player.removePotionEffect(jumpBoost);
+            }
+        } catch (Exception ignored) {}
+
         player.setWalkSpeed(0.2f);
         player.setFlySpeed(0.2f);
         player.setAllowFlight(false);
