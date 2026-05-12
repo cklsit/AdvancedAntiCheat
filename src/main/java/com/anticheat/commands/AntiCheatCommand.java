@@ -62,6 +62,9 @@ public class AntiCheatCommand implements CommandExecutor {
         sender.sendMessage("   §a/goto <玩家> §7- 传送至指定玩家");
         sender.sendMessage("   §a/ban <玩家> [时间] [原因] §7- 封禁玩家");
         sender.sendMessage("   §a/unban <玩家> §7- 解封玩家");
+        sender.sendMessage("   §a/checkclient <玩家> <QQ号> §7- 对玩家发起客户端检查");
+        sender.sendMessage("   §a/checkdone <玩家> §7- 完成玩家的客户端检查");
+        sender.sendMessage("   §a/captcha <玩家|toggle|timelimit> §7- 验证码测试命令");
         sender.sendMessage("");
         sender.sendMessage("§c§l═══════════════════════════════════");
         sender.sendMessage("");
