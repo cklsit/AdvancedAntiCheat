@@ -3,11 +3,15 @@ package com.anticheat.captcha;
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.utils.VersionUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Player;
+import org.bukkit.potion.PotionEffect;
 
+import java.io.File;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CaptchaWorld {
@@ -19,6 +23,7 @@ public class CaptchaWorld {
     private static final int PLATFORM_SIZE = 10;
     private static final int PLATFORM_HEIGHT = 100;
     private static final int DISTANCE_BETWEEN_PLATFORMS = 50;
+    private static final String WORLD_NAME = "captcha_world";
 
     public CaptchaWorld(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
@@ -27,31 +32,32 @@ public class CaptchaWorld {
     }
 
     private void setupWorld() {
-        String worldName = "captcha_world";
-        captchaWorld = Bukkit.getWorld(worldName);
+        captchaWorld = Bukkit.getWorld(WORLD_NAME);
 
-        if (captchaWorld == null) {
-            org.bukkit.WorldCreator creator = new org.bukkit.WorldCreator(worldName);
-            
-            if (VersionUtil.isHighVersion()) {
-                creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":1}],\"biome\":\"plains\"}");
-            } else {
-                creator.generatorSettings("2;0;1;");
-            }
-            creator.generateStructures(false);
-            
-            captchaWorld = Bukkit.createWorld(creator);
-            
-            if (captchaWorld != null) {
-                captchaWorld.setGameRuleValue("doMobSpawning", "false");
-                captchaWorld.setGameRuleValue("doDaylightCycle", "false");
-                captchaWorld.setGameRuleValue("doWeatherCycle", "false");
-                captchaWorld.setGameRuleValue("doNaturalRegeneration", "false");
-                captchaWorld.setGameRuleValue("keepInventory", "true");
-                captchaWorld.setTime(1000);
-                captchaWorld.setWeatherDuration(0);
-                captchaWorld.setStorm(false);
-            }
+        if (captchaWorld != null) {
+            deleteWorld();
+        }
+
+        org.bukkit.WorldCreator creator = new org.bukkit.WorldCreator(WORLD_NAME);
+
+        if (VersionUtil.isHighVersion()) {
+            creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":1}],\"biome\":\"plains\"}");
+        } else {
+            creator.generatorSettings("2;0;1;");
+        }
+        creator.generateStructures(false);
+
+        captchaWorld = Bukkit.createWorld(creator);
+
+        if (captchaWorld != null) {
+            captchaWorld.setGameRuleValue("doMobSpawning", "false");
+            captchaWorld.setGameRuleValue("doDaylightCycle", "false");
+            captchaWorld.setGameRuleValue("doWeatherCycle", "false");
+            captchaWorld.setGameRuleValue("doNaturalRegeneration", "false");
+            captchaWorld.setGameRuleValue("keepInventory", "false");
+            captchaWorld.setTime(1000);
+            captchaWorld.setWeatherDuration(0);
+            captchaWorld.setStorm(false);
         }
 
         if (captchaWorld == null) {
@@ -119,6 +125,65 @@ public class CaptchaWorld {
                 }
             }
         }
+    }
+
+    public void preparePlayer(Player player) {
+        player.getInventory().clear();
+        player.getEnderChest().clear();
+        player.setHealth(20);
+        player.setFoodLevel(20);
+        player.setSaturation(5);
+        player.setExhaustion(0);
+        player.setFallDistance(0);
+        player.setFireTicks(0);
+        player.setGameMode(GameMode.SURVIVAL);
+        player.setAllowFlight(false);
+        player.setFlying(false);
+        player.setWalkSpeed(0.2f);
+        player.setFlySpeed(0.2f);
+
+        for (PotionEffect effect : player.getActivePotionEffects()) {
+            player.removePotionEffect(effect.getType());
+        }
+    }
+
+    public void deleteWorld() {
+        if (captchaWorld != null) {
+            for (Player player : captchaWorld.getPlayers()) {
+                player.teleport(Bukkit.getWorlds().get(0).getSpawnLocation());
+            }
+
+            Bukkit.unloadWorld(captchaWorld, false);
+
+            File worldFolder = captchaWorld.getWorldFolder();
+            deleteFolder(worldFolder);
+
+            captchaWorld = null;
+        }
+    }
+
+    private void deleteFolder(File folder) {
+        if (folder == null || !folder.exists()) {
+            return;
+        }
+
+        File[] files = folder.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.isDirectory()) {
+                    deleteFolder(file);
+                } else {
+                    file.delete();
+                }
+            }
+        }
+
+        folder.delete();
+    }
+
+    public void resetWorld() {
+        deleteWorld();
+        setupWorld();
     }
 
     public World getWorld() {

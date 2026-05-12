@@ -123,6 +123,10 @@ public class CaptchaManager {
 
     public void removeSession(UUID uuid) {
         activeSessions.remove(uuid);
+        
+        if (activeSessions.isEmpty()) {
+            captchaWorld.resetWorld();
+        }
     }
 
     public void onPlayerQuit(Player player) {
@@ -197,6 +201,8 @@ public class CaptchaManager {
         }
 
         public void start() {
+            plugin.getCaptchaManager().getCaptchaWorld().preparePlayer(player);
+
             player.teleport(captchaLocation);
 
             player.sendMessage("§c§l[!] §f由于你的行为触犯了反作弊系统，正在进行验证");
