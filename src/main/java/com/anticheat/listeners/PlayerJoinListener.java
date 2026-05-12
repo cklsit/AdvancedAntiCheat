@@ -6,6 +6,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 
 public class PlayerJoinListener implements Listener {
 
@@ -18,6 +20,8 @@ public class PlayerJoinListener implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+
+        clearCheckClientEffects(player);
 
         if (plugin.getBanManager().isBanned(player.getUniqueId())) {
             BanInfo banInfo = plugin.getBanManager().getBanInfo(player.getUniqueId());
@@ -33,6 +37,17 @@ public class PlayerJoinListener implements Listener {
                 player.kickPlayer(kickMessage.toString());
             }
         }
+    }
+
+    private void clearCheckClientEffects(Player player) {
+        player.removePotionEffect(PotionEffectType.BLINDNESS);
+        player.removePotionEffect(PotionEffectType.SLOW);
+        player.removePotionEffect(PotionEffectType.JUMP);
+        
+        player.setWalkSpeed(0.2f);
+        player.setFlySpeed(0.2f);
+        player.setAllowFlight(false);
+        player.setFlying(false);
     }
 
     private String formatEndTime(long endTime) {
