@@ -1,6 +1,7 @@
 package com.anticheat.captcha;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -32,7 +33,11 @@ public class CaptchaWorld {
         if (captchaWorld == null) {
             org.bukkit.WorldCreator creator = new org.bukkit.WorldCreator(worldName);
             
-            creator.generatorSettings("2;0;1;");
+            if (VersionUtil.isHighVersion()) {
+                creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":1}],\"biome\":\"plains\"}");
+            } else {
+                creator.generatorSettings("2;0;1;");
+            }
             creator.generateStructures(false);
             
             captchaWorld = Bukkit.createWorld(creator);
