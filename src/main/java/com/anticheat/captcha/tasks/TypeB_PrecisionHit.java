@@ -26,7 +26,7 @@ public class TypeB_PrecisionHit extends CaptchaTask {
 
     @Override
     public void start(Player player, Location location) {
-        Location chickenLoc = location.clone().add(0, 3, 0);
+        Location chickenLoc = location.clone().add(0, 1.5, 0);
         Chicken chicken = player.getWorld().spawn(chickenLoc, Chicken.class);
         chicken.setInvulnerable(true);
         chicken.setSilent(true);
@@ -56,17 +56,23 @@ public class TypeB_PrecisionHit extends CaptchaTask {
                     return;
                 }
 
+                Location loc = info.chicken.getLocation();
+                double y = loc.getY();
+                if (y > location.getY() + 4) {
+                    info.chicken.teleport(new Location(loc.getWorld(), loc.getX(), location.getY() + 3, loc.getZ(), loc.getYaw(), loc.getPitch()));
+                }
+
                 Vector velocity = new Vector(
-                        (random.nextDouble() - 0.5) * 2,
-                        random.nextDouble() * 1 - 0.3,
-                        (random.nextDouble() - 0.5) * 2
+                        (random.nextDouble() - 0.5) * 1.5,
+                        (random.nextDouble() - 0.5) * 0.5,
+                        (random.nextDouble() - 0.5) * 1.5
                 );
 
                 info.chicken.setVelocity(velocity);
             }
         };
 
-        movementTask.runTaskTimer(plugin, 0, 5);
+        movementTask.runTaskTimer(plugin, 0, 8);
     }
 
     @Override
