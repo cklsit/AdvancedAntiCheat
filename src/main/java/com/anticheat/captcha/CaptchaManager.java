@@ -39,29 +39,7 @@ public class CaptchaManager {
     }
 
     public void startCaptcha(Player player) {
-        UUID uuid = player.getUniqueId();
-
-        if (activeSessions.containsKey(uuid)) {
-            return;
-        }
-
-        Location originalLocation = player.getLocation().clone();
-
-        Location captchaLocation = captchaWorld.getNextLocation();
-
-        List<CaptchaTask> tasks = generateTasks();
-
-        CaptchaSession session = new CaptchaSession(
-                player,
-                originalLocation,
-                captchaLocation,
-                tasks,
-                timeLimit
-        );
-
-        activeSessions.put(uuid, session);
-
-        session.start();
+        startCaptcha(player, CaptchaSession.Initiator.AUTO_DETECTION);
     }
 
     public void startCaptcha(Player player, CaptchaSession.Initiator initiator) {
@@ -170,7 +148,7 @@ public class CaptchaManager {
         return captchaWorld;
     }
 
-    public class CaptchaSession {
+    public static class CaptchaSession {
 
         public enum Initiator {
             ADMIN,
@@ -191,11 +169,6 @@ public class CaptchaManager {
         private boolean failed;
         private BukkitRunnable timerTask;
         private BukkitRunnable warningTask;
-
-        public CaptchaSession(Player player, Location originalLocation, Location captchaLocation,
-                             List<CaptchaTask> tasks, int timeLimit) {
-            this(player, originalLocation, captchaLocation, tasks, timeLimit, Initiator.AUTO_DETECTION);
-        }
 
         public CaptchaSession(Player player, Location originalLocation, Location captchaLocation,
                              List<CaptchaTask> tasks, int timeLimit, Initiator initiator) {
@@ -222,6 +195,9 @@ public class CaptchaManager {
         private void startTimer() {
             startTime = System.currentTimeMillis();
 
+            final long startTimeFinal = startTime;
+            final int timeLimitFinal = timeLimit;
+
             timerTask = new BukkitRunnable() {
                 @Override
                 public void run() {
@@ -230,15 +206,15 @@ public class CaptchaManager {
                         return;
                     }
 
-                    long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                    long remaining = timeLimit - elapsed;
+                    long elapsed = (System.currentTimeMillis() - startTimeFinal) / 1000;
+                    long remaining = timeLimitFinal - elapsed;
 
                     if (remaining <= 0) {
                         fail();
                         return;
                     }
 
-                    float progress = (float) remaining / timeLimit;
+                    float progress = (float) remaining / timeLimitFinal;
                     player.setExp(progress);
                     player.setLevel((int) remaining);
 

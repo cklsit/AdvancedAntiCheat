@@ -1,7 +1,6 @@
 package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
-import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.captcha.tasks.TypeA_DirectInteraction;
 import com.anticheat.captcha.tasks.TypeB_PrecisionHit;
 import com.anticheat.captcha.tasks.TypeC_SequenceReplay;
@@ -9,6 +8,7 @@ import com.anticheat.captcha.tasks.TypeD_BlockMaze;
 import com.anticheat.captcha.tasks.TypeE_Puzzle;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.Snowball;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -131,10 +131,10 @@ public class CaptchaListener implements Listener {
             return;
         }
 
-        if (event.getHitEntity() != null) {
+        if (event.getHitEntity() != null && projectile instanceof Snowball) {
             TypeB_PrecisionHit typeB = (TypeB_PrecisionHit) getCurrentTask(player, TypeB_PrecisionHit.class);
             if (typeB != null) {
-                typeB.onSnowballHit(projectile, event.getHitEntity());
+                typeB.onSnowballHit((Snowball) projectile, event.getHitEntity());
             }
         }
     }

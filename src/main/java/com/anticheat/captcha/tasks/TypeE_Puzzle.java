@@ -84,6 +84,8 @@ public class TypeE_Puzzle extends CaptchaTask {
 
         player.sendMessage("§7目标方向: §e" + targetDirection);
 
+        float[] rotations = {0f, 90f, 180f, 270f};
+
         for (int i = 0; i < 4; i++) {
             Location buttonLoc = location.clone().add(-3 + i, 0, 2);
             org.bukkit.block.Block button = buttonLoc.getBlock();
@@ -93,12 +95,8 @@ public class TypeE_Puzzle extends CaptchaTask {
             org.bukkit.entity.ItemFrame itemFrame = player.getWorld().spawn(itemFrameLoc, org.bukkit.entity.ItemFrame.class);
 
             ItemStack arrow = new ItemStack(Material.ARROW);
-            ItemMeta meta = arrow.getItemMeta();
-            meta.setCustomModelData(i * 10);
-            arrow.setItemMeta(meta);
-
             itemFrame.setItem(arrow);
-            itemFrame.setRotation(org.bukkit.entity.ItemFrame.Rotation.values()[i * 2]);
+            itemFrame.setRotation(rotations[i]);
 
             if (info.itemFrames == null) {
                 info.itemFrames = new ArrayList<>();

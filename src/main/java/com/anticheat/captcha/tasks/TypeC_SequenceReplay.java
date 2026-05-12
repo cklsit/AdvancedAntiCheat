@@ -4,7 +4,6 @@ import com.anticheat.AdvancedAntiCheat;
 import org.bukkit.Location;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
-import org.bukkit.util.EulerAngle;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -98,7 +97,7 @@ public class TypeC_SequenceReplay extends CaptchaTask {
         new org.bukkit.scheduler.BukkitRunnable() {
             @Override
             public void run() {
-                armorStand.setPose(new EulerAngle(0, 0, 0));
+                animateNextPose(armorStand, sequence.get(index));
                 playSequence(player, armorStand, sequence, index + 1);
             }
         }.runTaskLater(plugin, 20);
@@ -107,7 +106,7 @@ public class TypeC_SequenceReplay extends CaptchaTask {
     private void animateArmorStand(ArmorStand armorStand, Action action) {
         switch (action) {
             case JUMP:
-                armorStand.setBodyPose(new EulerAngle(Math.toRadians(-30), 0, 0));
+                armorStand.setHeadPose(new EulerAngle(Math.toRadians(-30), 0, 0));
                 break;
             case TURN_LEFT:
                 armorStand.setHeadPose(new EulerAngle(0, Math.toRadians(-45), 0));
@@ -117,6 +116,23 @@ public class TypeC_SequenceReplay extends CaptchaTask {
                 break;
             case SNEAK:
                 armorStand.setBodyPose(new EulerAngle(Math.toRadians(45), 0, 0));
+                break;
+        }
+    }
+
+    private void animateNextPose(ArmorStand armorStand, Action action) {
+        switch (action) {
+            case JUMP:
+                armorStand.setHeadPose(new EulerAngle(0, 0, 0));
+                break;
+            case TURN_LEFT:
+                armorStand.setHeadPose(new EulerAngle(0, 0, 0));
+                break;
+            case SPRINT:
+                armorStand.setBodyPose(new EulerAngle(0, 0, 0));
+                break;
+            case SNEAK:
+                armorStand.setBodyPose(new EulerAngle(0, 0, 0));
                 break;
         }
     }
