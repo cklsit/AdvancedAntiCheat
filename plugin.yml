@@ -43,6 +43,10 @@ commands:
     description: 解除玩家的检查状态（通过检查）
     usage: /checkdone <玩家>
     permission: anticheat.checkclient
+  captcha:
+    description: 对玩家发起验证码测试
+    usage: /captcha <玩家|toggle|timelimit>
+    permission: anticheat.captcha
 
 permissions:
   anticheat.report:
@@ -65,4 +69,7 @@ permissions:
     default: op
   anticheat.checkclient:
     description: 允许进行客户端检查
+    default: op
+  anticheat.captcha:
+    description: 允许使用验证码功能
     default: op

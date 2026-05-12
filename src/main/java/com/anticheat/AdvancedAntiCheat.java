@@ -2,6 +2,7 @@ package com.anticheat;
 
 import com.anticheat.commands.*;
 import com.anticheat.compat.CompatManager;
+import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.listeners.*;
 import com.anticheat.managers.*;
 import com.anticheat.profiles.BehaviorTracker;
@@ -19,6 +20,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private CheckClientManager checkClientManager;
     private CheckClientConfigManager checkClientConfigManager;
     private BehaviorTracker behaviorTracker;
+    private CaptchaManager captchaManager;
 
     @Override
     public void onEnable() {
@@ -62,6 +64,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         detectionManager = new DetectionManager(this);
         checkClientManager = new CheckClientManager(this);
         behaviorTracker = new BehaviorTracker(this);
+        captchaManager = new CaptchaManager(this);
     }
 
     private void registerListeners() {
@@ -71,6 +74,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerLoginListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerCheckListener(this), this);
         getServer().getPluginManager().registerEvents(new BehaviorListener(this), this);
+        getServer().getPluginManager().registerEvents(new CaptchaListener(this), this);
 
         if (VersionUtil.isHighVersion()) {
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
@@ -87,6 +91,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getCommand("ac").setExecutor(new AntiCheatCommand(this));
         getCommand("checkclient").setExecutor(new CheckClientCommand(this));
         getCommand("checkdone").setExecutor(new CheckDoneCommand(this));
+        getCommand("captcha").setExecutor(new CaptchaCommand(this));
     }
 
     public BanManager getBanManager() {
@@ -119,5 +124,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public BehaviorTracker getBehaviorTracker() {
         return behaviorTracker;
+    }
+
+    public CaptchaManager getCaptchaManager() {
+        return captchaManager;
     }
 }
