@@ -13,9 +13,11 @@ public class DetectionManager {
     private final AdvancedAntiCheat plugin;
     private final Map<String, Detection> detections = new HashMap<>();
     private final Map<UUID, Map<String, Integer>> violations = new HashMap<>();
+    private ViolationManager violationManager;
 
     public DetectionManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
+        this.violationManager = new ViolationManager(plugin);
         initializeDetections();
     }
 
@@ -25,10 +27,17 @@ public class DetectionManager {
         detections.put("esp", new EspDetection(this));
         detections.put("killaura", new KillAuraDetection(this));
         detections.put("reach", new ReachDetection(this));
+        detections.put("scaffold", new ScaffoldDetection(this));
+        detections.put("fastbreak", new FastBreakDetection(this));
+        detections.put("noslow", new NoSlowDetection(this));
     }
 
     public Detection getDetection(String type) {
         return detections.get(type.toLowerCase());
+    }
+
+    public ViolationManager getViolationManager() {
+        return violationManager;
     }
 
     public void addViolation(Player player, String type) {
@@ -57,20 +66,47 @@ public class DetectionManager {
         violations.remove(uuid);
     }
 
+    public KillAuraDetection getKillAuraDetection() {
+        return (KillAuraDetection) detections.get("killaura");
+    }
+
+    public ReachDetection getReachDetection() {
+        return (ReachDetection) detections.get("reach");
+    }
+
+    public ScaffoldDetection getScaffoldDetection() {
+        return (ScaffoldDetection) detections.get("scaffold");
+    }
+
+    public FastBreakDetection getFastBreakDetection() {
+        return (FastBreakDetection) detections.get("fastbreak");
+    }
+
+    public NoSlowDetection getNoSlowDetection() {
+        return (NoSlowDetection) detections.get("noslow");
+    }
+
     private String getDetectionName(String type) {
         String lowerType = type.toLowerCase();
-        if (lowerType.equals("fly")) {
-            return "飞行作弊";
-        } else if (lowerType.equals("speed")) {
-            return "速度作弊";
-        } else if (lowerType.equals("esp")) {
-            return "透视作弊";
-        } else if (lowerType.equals("killaura")) {
-            return "杀戮光环";
-        } else if (lowerType.equals("reach")) {
-            return "攻击距离作弊";
-        } else {
-            return type;
+        switch (lowerType) {
+            case "fly":
+                return "飞行作弊";
+            case "speed":
+                return "速度作弊";
+            case "esp":
+                return "透视作弊";
+            case "killaura":
+                return "杀戮光环";
+            case "reach":
+                return "攻击距离作弊";
+            case "scaffold":
+                return "脚手架作弊";
+            case "fastbreak":
+                return "快速破坏";
+            case "noslow":
+                return "无减速挖掘";
+            default:
+                return type;
         }
     }
 
