@@ -110,10 +110,10 @@ public class TypeE_Puzzle extends CaptchaTask {
             org.bukkit.block.Block button = buttonLoc.getBlock();
             button.setType(Material.STONE_BUTTON);
 
-            Location signLoc = buttonLoc.clone().add(0, 1, 0);
-            org.bukkit.block.Sign sign = (org.bukkit.block.Sign) signLoc.getBlock().getState();
-            sign.setLine(0, String.valueOf(i + 1));
-            sign.update();
+            Location frameLoc = buttonLoc.clone().add(0, 1, 0);
+            org.bukkit.entity.ItemFrame frame = player.getWorld().spawn(frameLoc, org.bukkit.entity.ItemFrame.class);
+            frame.setItem(new ItemStack(Material.getMaterial((i + 1) + "_STAINED_GLASS_PANE")));
+            frame.setRotation(org.bukkit.entity.ItemFrame.Rotation.NONE);
 
             if (info.blocks == null) {
                 info.blocks = new ArrayList<>();
@@ -122,7 +122,7 @@ public class TypeE_Puzzle extends CaptchaTask {
             if (info.signs == null) {
                 info.signs = new ArrayList<>();
             }
-            info.signs.add(signLoc);
+            info.signs.add(frameLoc);
         }
 
         sendInstruction(player, "点击显示数字 " + targetNumber + " 的按钮");
@@ -139,7 +139,11 @@ public class TypeE_Puzzle extends CaptchaTask {
             }
             if (info.signs != null) {
                 for (Location loc : info.signs) {
-                    loc.getBlock().setType(Material.AIR);
+                    for (org.bukkit.entity.Entity entity : loc.getWorld().getNearbyEntities(loc, 1, 1, 1)) {
+                        if (entity instanceof org.bukkit.entity.ItemFrame) {
+                            entity.remove();
+                        }
+                    }
                 }
             }
         }
