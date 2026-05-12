@@ -30,10 +30,21 @@ public class CaptchaWorld {
         captchaWorld = Bukkit.getWorld(worldName);
 
         if (captchaWorld == null) {
-            captchaWorld = Bukkit.createWorld(new org.bukkit.WorldCreator(worldName));
+            org.bukkit.WorldCreator creator = new org.bukkit.WorldCreator(worldName);
+            
+            creator.type(World.Type.FLAT);
+            creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":1}],\"biome\":\"plains\"}");
+            creator.generateStructures(false);
+            creator.generator("VoidGenerator");
+            
+            captchaWorld = Bukkit.createWorld(creator);
+            
             if (captchaWorld != null) {
                 captchaWorld.setGameRuleValue("doMobSpawning", "false");
                 captchaWorld.setGameRuleValue("doDaylightCycle", "false");
+                captchaWorld.setGameRuleValue("doWeatherCycle", "false");
+                captchaWorld.setGameRuleValue("doNaturalRegeneration", "false");
+                captchaWorld.setGameRuleValue("keepInventory", "true");
                 captchaWorld.setTime(1000);
                 captchaWorld.setWeatherDuration(0);
                 captchaWorld.setStorm(false);
