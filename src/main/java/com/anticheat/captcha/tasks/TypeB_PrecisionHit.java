@@ -31,7 +31,7 @@ public class TypeB_PrecisionHit extends CaptchaTask {
         chicken.setInvulnerable(true);
         chicken.setSilent(true);
 
-        TargetChicken info = new TargetChicken(chicken, 0);
+        TargetChicken info = new TargetChicken(chicken, 0, location);
         activeTargets.put(player.getUniqueId(), info);
 
         player.getInventory().addItem(new ItemStack(org.bukkit.Material.SNOWBALL, 10));
@@ -58,8 +58,8 @@ public class TypeB_PrecisionHit extends CaptchaTask {
 
                 Location loc = info.chicken.getLocation();
                 double y = loc.getY();
-                if (y > location.getY() + 4) {
-                    info.chicken.teleport(new Location(loc.getWorld(), loc.getX(), location.getY() + 3, loc.getZ(), loc.getYaw(), loc.getPitch()));
+                if (y > info.platformLocation.getY() + 4) {
+                    info.chicken.teleport(new Location(loc.getWorld(), loc.getX(), info.platformLocation.getY() + 3, loc.getZ(), loc.getYaw(), loc.getPitch()));
                 }
 
                 Vector velocity = new Vector(
@@ -121,10 +121,12 @@ public class TypeB_PrecisionHit extends CaptchaTask {
     private static class TargetChicken {
         final Chicken chicken;
         int hitCount;
+        final Location platformLocation;
 
-        TargetChicken(Chicken chicken, int hitCount) {
+        TargetChicken(Chicken chicken, int hitCount, Location platformLocation) {
             this.chicken = chicken;
             this.hitCount = hitCount;
+            this.platformLocation = platformLocation;
         }
     }
 }
