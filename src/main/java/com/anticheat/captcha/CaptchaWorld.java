@@ -113,12 +113,23 @@ public class CaptchaWorld {
         int y = PLATFORM_HEIGHT - 1;
         int z = location.getBlockZ() - PLATFORM_SIZE / 2;
 
+        for (int dx = 0; dx < PLATFORM_SIZE; dx++) {
+            for (int dz = 0; dz < PLATFORM_SIZE; dz++) {
+                Block block = captchaWorld.getBlockAt(x + dx, y, z + dz);
+                if (block.getType() == Material.BEDROCK) {
+                    block.setType(Material.AIR);
+                }
+            }
+        }
+
         for (int dx = 0; dx <= PLATFORM_SIZE + 1; dx++) {
             for (int dz = 0; dz <= PLATFORM_SIZE + 1; dz++) {
-                for (int dy = 0; dy <= 10; dy++) {
-                    Block block = captchaWorld.getBlockAt(x + dx - 1, y + dy, z + dz - 1);
-                    if (block.getType() == Material.BARRIER) {
-                        block.setType(Material.AIR);
+                if (dx == 0 || dx == PLATFORM_SIZE + 1 || dz == 0 || dz == PLATFORM_SIZE + 1) {
+                    for (int dy = 1; dy <= 5; dy++) {
+                        Block block = captchaWorld.getBlockAt(x + dx - 1, y + dy, z + dz - 1);
+                        if (block.getType() == Material.BARRIER) {
+                            block.setType(Material.AIR);
+                        }
                     }
                 }
             }

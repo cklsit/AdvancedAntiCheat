@@ -285,6 +285,7 @@ public class CaptchaManager {
             if (warningTask != null) warningTask.cancel();
 
             cleanupTasks();
+            plugin.getCaptchaManager().getCaptchaWorld().cleanup(captchaLocation);
 
             player.teleport(originalLocation);
             player.sendMessage("§a§l[!] §f验证完毕");
@@ -301,6 +302,7 @@ public class CaptchaManager {
             if (warningTask != null) warningTask.cancel();
 
             cleanupTasks();
+            plugin.getCaptchaManager().getCaptchaWorld().cleanup(captchaLocation);
 
             player.setExp(0);
             player.setLevel(0);
