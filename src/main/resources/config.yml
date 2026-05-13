@@ -48,3 +48,7 @@ database:
 
 check-client:
   timeout-minutes: 60
+
+bounty:
+  enabled: true
+  default-time-limit-minutes: 30

@@ -3,6 +3,7 @@ package com.anticheat;
 import com.anticheat.commands.*;
 import com.anticheat.compat.CompatManager;
 import com.anticheat.captcha.CaptchaManager;
+import com.anticheat.bounty.BountyManager;
 import com.anticheat.listeners.*;
 import com.anticheat.managers.*;
 import com.anticheat.profiles.BehaviorTracker;
@@ -21,6 +22,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private CheckClientConfigManager checkClientConfigManager;
     private BehaviorTracker behaviorTracker;
     private CaptchaManager captchaManager;
+    private BountyManager bountyManager;
 
     @Override
     public void onEnable() {
@@ -48,6 +50,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         if (behaviorTracker != null) {
             behaviorTracker.saveAllProfiles();
         }
+        if (bountyManager != null) {
+            bountyManager.onDisable();
+        }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
 
@@ -65,6 +70,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         checkClientManager = new CheckClientManager(this);
         behaviorTracker = new BehaviorTracker(this);
         captchaManager = new CaptchaManager(this);
+        bountyManager = new BountyManager(this);
     }
 
     private void registerListeners() {
@@ -75,6 +81,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerCheckListener(this), this);
         getServer().getPluginManager().registerEvents(new BehaviorListener(this), this);
         getServer().getPluginManager().registerEvents(new CaptchaListener(this), this);
+        getServer().getPluginManager().registerEvents(new BountyListener(this), this);
 
         if (VersionUtil.isHighVersion()) {
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
@@ -92,6 +99,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getCommand("checkclient").setExecutor(new CheckClientCommand(this));
         getCommand("checkdone").setExecutor(new CheckDoneCommand(this));
         getCommand("captcha").setExecutor(new CaptchaCommand(this));
+        getCommand("bounty").setExecutor(new BountyCommand(this));
     }
 
     public BanManager getBanManager() {
@@ -128,5 +136,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public CaptchaManager getCaptchaManager() {
         return captchaManager;
+    }
+
+    public BountyManager getBountyManager() {
+        return bountyManager;
     }
 }

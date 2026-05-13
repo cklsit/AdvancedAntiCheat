@@ -47,6 +47,10 @@ commands:
     description: 对玩家发起验证码测试
     usage: /captcha <玩家|toggle|timelimit>
     permission: anticheat.captcha
+  bounty:
+    description: 漏洞赏金计划命令
+    usage: /bounty <enter|leave|invite|report|lb|start|complete>
+    permission: anticheat.bounty
 
 permissions:
   anticheat.report:
@@ -72,4 +76,13 @@ permissions:
     default: op
   anticheat.captcha:
     description: 允许使用验证码功能
+    default: op
+  anticheat.bounty:
+    description: 允许使用漏洞赏金计划功能
+    default: true
+  anticheat.bounty.admin:
+    description: 漏洞赏金计划管理员权限
+    default: op
+  anticheat.bounty.unlimited:
+    description: 无限制沙箱时间
     default: op
