@@ -41,7 +41,6 @@ public class CaptchaWorld {
         }
 
         org.bukkit.WorldCreator creator = new org.bukkit.WorldCreator(WORLD_NAME);
-        creator.type(org.bukkit.World.Type.FLAT);
         creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":256}],\"biome\":\"plains\",\"structures\":{\"structures\":{}}}");
         creator.generateStructures(false);
 
