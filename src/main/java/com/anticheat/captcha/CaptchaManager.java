@@ -3,10 +3,6 @@ package com.anticheat.captcha;
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.captcha.tasks.CaptchaTask;
 import com.anticheat.captcha.tasks.TypeA_DirectInteraction;
-import com.anticheat.captcha.tasks.TypeB_PrecisionHit;
-import com.anticheat.captcha.tasks.TypeC_SequenceReplay;
-import com.anticheat.captcha.tasks.TypeD_BlockMaze;
-import com.anticheat.captcha.tasks.TypeE_Puzzle;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -82,14 +78,8 @@ public class CaptchaManager {
         int taskCount = random.nextInt(2) + 1;
 
         List<Class<? extends CaptchaTask>> taskTypes = new ArrayList<>(Arrays.asList(
-                TypeA_DirectInteraction.class,
-                TypeB_PrecisionHit.class,
-                TypeC_SequenceReplay.class,
-                TypeD_BlockMaze.class,
-                TypeE_Puzzle.class
+                TypeA_DirectInteraction.class
         ));
-
-        Collections.shuffle(taskTypes);
 
         for (int i = 0; i < taskCount && i < taskTypes.size(); i++) {
             try {
