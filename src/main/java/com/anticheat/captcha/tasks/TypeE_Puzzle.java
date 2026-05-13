@@ -105,14 +105,19 @@ public class TypeE_Puzzle extends CaptchaTask {
 
         player.sendMessage("§7目标数字: §e" + targetNumber);
 
+        Material[] numberBlocks = {
+                Material.WHITE_WOOL, Material.ORANGE_WOOL, Material.MAGENTA_WOOL,
+                Material.LIGHT_BLUE_WOOL, Material.YELLOW_WOOL, Material.LIME_WOOL,
+                Material.PINK_WOOL, Material.GRAY_WOOL, Material.LIGHT_GRAY_WOOL
+        };
+
         for (int i = 0; i < 9; i++) {
             Location buttonLoc = location.clone().add(-4 + i, 0, 0);
             org.bukkit.block.Block button = buttonLoc.getBlock();
             button.setType(Material.STONE_BUTTON);
 
-            Location frameLoc = buttonLoc.clone().add(0, 1, 0);
-            org.bukkit.entity.ItemFrame frame = player.getWorld().spawn(frameLoc, org.bukkit.entity.ItemFrame.class);
-            frame.setItem(new ItemStack(Material.getMaterial((i + 1) + "_STAINED_GLASS_PANE")));
+            Location woolLoc = buttonLoc.clone().add(0, 1, 0);
+            woolLoc.getBlock().setType(numberBlocks[i]);
 
             if (info.blocks == null) {
                 info.blocks = new ArrayList<>();
@@ -121,10 +126,11 @@ public class TypeE_Puzzle extends CaptchaTask {
             if (info.signs == null) {
                 info.signs = new ArrayList<>();
             }
-            info.signs.add(frameLoc);
+            info.signs.add(woolLoc);
         }
 
-        sendInstruction(player, "点击显示数字 " + targetNumber + " 的按钮");
+        player.sendMessage("§e颜色对应: 1-白 2-橙 3-品红 4-浅蓝 5-黄 6-浅绿 7-粉 8-灰 9-浅灰");
+        sendInstruction(player, "点击数字 " + targetNumber + " 对应的颜色方块下方的按钮");
     }
 
     @Override
@@ -138,11 +144,7 @@ public class TypeE_Puzzle extends CaptchaTask {
             }
             if (info.signs != null) {
                 for (Location loc : info.signs) {
-                    for (org.bukkit.entity.Entity entity : loc.getWorld().getNearbyEntities(loc, 1, 1, 1)) {
-                        if (entity instanceof org.bukkit.entity.ItemFrame) {
-                            entity.remove();
-                        }
-                    }
+                    loc.getBlock().setType(Material.AIR);
                 }
             }
         }
