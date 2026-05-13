@@ -1,7 +1,6 @@
 package com.anticheat.captcha;
 
 import com.anticheat.AdvancedAntiCheat;
-import com.anticheat.utils.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -9,9 +8,12 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.potion.PotionEffect;
 
 import java.io.File;
+import java.util.List;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class CaptchaWorld {
@@ -23,7 +25,7 @@ public class CaptchaWorld {
     private static final int PLATFORM_SIZE = 10;
     private static final int PLATFORM_HEIGHT = 100;
     private static final int DISTANCE_BETWEEN_PLATFORMS = 50;
-    private static final String WORLD_NAME = "captcha_world";
+    private static final String WORLD_NAME = "captcha_void_world";
 
     public CaptchaWorld(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
@@ -39,12 +41,8 @@ public class CaptchaWorld {
         }
 
         org.bukkit.WorldCreator creator = new org.bukkit.WorldCreator(WORLD_NAME);
-
-        if (VersionUtil.isHighVersion()) {
-            creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":1}],\"biome\":\"plains\"}");
-        } else {
-            creator.generatorSettings("2;0;1;");
-        }
+        creator.type(org.bukkit.World.Type.FLAT);
+        creator.generatorSettings("{\"layers\":[{\"block\":\"air\",\"height\":256}],\"biome\":\"plains\",\"structures\":{\"structures\":{}}}");
         creator.generateStructures(false);
 
         captchaWorld = Bukkit.createWorld(creator);
