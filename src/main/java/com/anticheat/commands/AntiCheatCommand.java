@@ -48,46 +48,71 @@ public class AntiCheatCommand implements CommandExecutor {
 
     private void showHelp(CommandSender sender) {
         sender.sendMessage("");
-        sender.sendMessage("§c§l═══════════ §6AdvancedAntiCheat §c§l═══════════");
+        sender.sendMessage("§c┌─────────────────────────────────────┐");
+        sender.sendMessage("§c│          §6AdvancedAntiCheat          §c│");
+        sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
-        sender.sendMessage(" §a/ac reload §7- 重新加载配置文件");
-        sender.sendMessage(" §a/ac stats §7- 查看检测统计信息");
-        sender.sendMessage(" §a/ac reports §7- 查看待处理举报列表");
-        sender.sendMessage(" §a/ac help §7- 显示此帮助信息");
+        sender.sendMessage(" §a/ac reload          §7- 重新加载配置文件");
+        sender.sendMessage(" §a/ac stats           §7- 查看检测统计信息");
+        sender.sendMessage(" §a/ac reports         §7- 查看待处理举报列表");
+        sender.sendMessage(" §a/ac help            §7- 显示此帮助信息");
         sender.sendMessage("");
         sender.sendMessage(" §6玩家命令:");
-        sender.sendMessage("   §a/report <玩家> <原因> §7- 举报作弊玩家");
+        sender.sendMessage("   §a/report <玩家> <原因>");
+        sender.sendMessage("   §7   举报作弊玩家");
         sender.sendMessage("");
         sender.sendMessage(" §6管理员命令:");
-        sender.sendMessage("   §a/goto <玩家> §7- 传送至指定玩家");
-        sender.sendMessage("   §a/ban <玩家> [时间] [原因] §7- 封禁玩家");
-        sender.sendMessage("   §a/unban <玩家> §7- 解封玩家");
-        sender.sendMessage("   §a/checkclient <玩家> <QQ号> §7- 对玩家发起客户端检查");
-        sender.sendMessage("   §a/checkdone <玩家> §7- 完成玩家的客户端检查");
-        sender.sendMessage("   §a/captcha <玩家|toggle|timelimit> §7- 验证码测试命令");
+        sender.sendMessage("   §a/goto <玩家>");
+        sender.sendMessage("   §7   传送至指定玩家");
+        sender.sendMessage("   §a/ban <玩家> [时间] [原因]");
+        sender.sendMessage("   §7   封禁玩家");
+        sender.sendMessage("   §a/unban <玩家>");
+        sender.sendMessage("   §7   解封玩家");
+        sender.sendMessage("   §a/checkclient <玩家> <QQ号>");
+        sender.sendMessage("   §7   对玩家发起客户端检查");
+        sender.sendMessage("   §a/checkdone <玩家>");
+        sender.sendMessage("   §7   完成玩家的客户端检查");
+        sender.sendMessage("   §a/captcha <玩家|toggle|timelimit>");
+        sender.sendMessage("   §7   验证码测试命令");
         sender.sendMessage("");
-        sender.sendMessage("§c§l═══════════════════════════════════");
+        sender.sendMessage(" §6漏洞赏金命令:");
+        sender.sendMessage("   §a/bounty enter");
+        sender.sendMessage("   §7   进入漏洞赏金沙箱");
+        sender.sendMessage("   §a/bounty leave");
+        sender.sendMessage("   §7   离开漏洞赏金沙箱");
+        sender.sendMessage("   §a/bounty start <任务>");
+        sender.sendMessage("   §7   开始赏金任务");
+        sender.sendMessage("   §a/bounty report <描述>");
+        sender.sendMessage("   §7   报告发现的漏洞");
+        sender.sendMessage("   §a/bounty lb");
+        sender.sendMessage("   §7   查看赏金排行榜");
+        sender.sendMessage("");
+        sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
     }
 
     private void showStats(CommandSender sender) {
         sender.sendMessage("");
-        sender.sendMessage("§c§l═══════════ §6检测统计 §c§l═══════════");
+        sender.sendMessage("§c┌─────────────────────────────────────┐");
+        sender.sendMessage("§c│            §6检测统计               §c│");
+        sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
         sender.sendMessage(" §7飞行检测: " + (plugin.getConfigManager().isDetectionEnabled("fly") ? "§a启用" : "§c禁用"));
         sender.sendMessage(" §7速度检测: " + (plugin.getConfigManager().isDetectionEnabled("speed") ? "§a启用" : "§c禁用"));
         sender.sendMessage(" §7透视检测: " + (plugin.getConfigManager().isDetectionEnabled("esp") ? "§a启用" : "§c禁用"));
-        sender.sendMessage(" §7杀戮光环检测: " + (plugin.getConfigManager().isDetectionEnabled("killaura") ? "§a启用" : "§c禁用"));
-        sender.sendMessage(" §7攻击距离检测: " + (plugin.getConfigManager().isDetectionEnabled("reach") ? "§a启用" : "§c禁用"));
+        sender.sendMessage(" §7杀戮光环: " + (plugin.getConfigManager().isDetectionEnabled("killaura") ? "§a启用" : "§c禁用"));
+        sender.sendMessage(" §7攻击距离: " + (plugin.getConfigManager().isDetectionEnabled("reach") ? "§a启用" : "§c禁用"));
         sender.sendMessage("");
-        sender.sendMessage("§c§l═══════════════════════════════════");
+        sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
     }
 
     private void showReports(CommandSender sender) {
         List<ReportManager.Report> reports = plugin.getReportManager().getReports();
         sender.sendMessage("");
-        sender.sendMessage("§c§l═══════════ §6待处理举报 §c§l═══════════");
+        sender.sendMessage("§c┌─────────────────────────────────────┐");
+        sender.sendMessage("§c│          §6待处理举报               §c│");
+        sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
 
         if (reports.isEmpty()) {
@@ -102,7 +127,7 @@ public class AntiCheatCommand implements CommandExecutor {
         }
 
         sender.sendMessage("");
-        sender.sendMessage("§c§l═══════════════════════════════════");
+        sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
     }
 }
