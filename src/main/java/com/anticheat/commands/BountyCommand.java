@@ -81,23 +81,7 @@ public class BountyCommand implements CommandExecutor {
                     player.sendMessage(ChatColor.RED + "无效的任务类型");
                 }
                 break;
-            case "complete":
-                if (args.length < 2) {
-                    player.sendMessage(ChatColor.RED + "用法: /bounty complete <结果>");
-                    player.sendMessage(ChatColor.YELLOW + "结果: DETECTED, BYPASSED, ZERO_DAY");
-                    return true;
-                }
-                try {
-                    com.anticheat.bounty.BountyResult result = com.anticheat.bounty.BountyResult.valueOf(args[1].toUpperCase());
-                    if (plugin.getBountyManager().isInBounty(player)) {
-                        plugin.getBountyManager().getSession(player).completeTask(result);
-                    } else {
-                        player.sendMessage(ChatColor.RED + "你不在漏洞赏金沙箱中");
-                    }
-                } catch (IllegalArgumentException e) {
-                    player.sendMessage(ChatColor.RED + "无效的结果");
-                }
-                break;
+            
             default:
                 sendHelp(player);
         }
@@ -113,7 +97,6 @@ public class BountyCommand implements CommandExecutor {
         player.sendMessage(ChatColor.GREEN + "/bounty report <描述>" + ChatColor.WHITE + " - 报告发现的问题");
         player.sendMessage(ChatColor.GREEN + "/bounty lb" + ChatColor.WHITE + " - 查看排行榜");
         player.sendMessage(ChatColor.GREEN + "/bounty start <任务>" + ChatColor.WHITE + " - 开始任务");
-        player.sendMessage(ChatColor.GREEN + "/bounty complete <结果>" + ChatColor.WHITE + " - 完成任务");
         player.sendMessage(ChatColor.GOLD + "=================================");
     }
 }

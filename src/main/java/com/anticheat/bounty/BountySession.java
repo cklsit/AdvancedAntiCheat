@@ -24,6 +24,9 @@ public class BountySession {
     private long taskStartTime;
     private List<String> logs;
     private BukkitRunnable timerTask;
+    private BukkitRunnable taskTimerTask;
+    private int detectionCount;
+    private int suspiciousCount;
 
     public BountySession(AdvancedAntiCheat plugin, Player player, long timeLimitMinutes) {
         this.plugin = plugin;
@@ -37,6 +40,8 @@ public class BountySession {
         this.currentTask = null;
         this.taskStartTime = 0;
         this.logs = new ArrayList<>();
+        this.detectionCount = 0;
+        this.suspiciousCount = 0;
     }
 
     public void start() {
@@ -78,11 +83,58 @@ public class BountySession {
         this.currentTask = taskType;
         this.taskStartTime = Instant.now().getEpochSecond();
         this.inTask = true;
+        this.detectionCount = 0;
+        this.suspiciousCount = 0;
 
         player.sendMessage("§a开始任务：" + taskType.getDisplayName());
         player.sendMessage("§e" + taskType.getDescription());
+        player.sendMessage("§6任务时间限制：" + taskType.getDurationMinutes() + " 分钟");
+        player.sendMessage("§6系统将自动检测并评估你的表现");
 
         log("[TASK] Started task: " + taskType.name());
+        
+        startTaskTimer(taskType.getDurationMinutes());
+    }
+    
+    private void startTaskTimer(long durationMinutes) {
+        if (taskTimerTask != null) {
+            taskTimerTask.cancel();
+        }
+        
+        taskTimerTask = new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!inTask || currentTask == null) {
+                    cancel();
+                    return;
+                }
+                
+                BountyResult result = evaluateResult();
+                completeTask(result);
+            }
+        };
+        
+        taskTimerTask.runTaskLater(plugin, durationMinutes * 60 * 20);
+    }
+    
+    private BountyResult evaluateResult() {
+        if (detectionCount == 0 && suspiciousCount == 0) {
+            return BountyResult.BYPASSED;
+        } else if (detectionCount == 0 && suspiciousCount > 0) {
+            return BountyResult.ZERO_DAY;
+        } else {
+            return BountyResult.DETECTED;
+        }
+    }
+    
+    public void recordDetection(String detectionType) {
+        detectionCount++;
+        log("[DETECTION] " + detectionType);
+    }
+    
+    public void recordSuspicious(String suspiciousType) {
+        suspiciousCount++;
+        log("[SUSPICIOUS] " + suspiciousType);
     }
 
     public void completeTask(BountyResult result) {
@@ -122,9 +174,15 @@ public class BountySession {
     }
 
     public void endTask() {
+        if (taskTimerTask != null) {
+            taskTimerTask.cancel();
+            taskTimerTask = null;
+        }
         this.inTask = false;
         this.currentTask = null;
         this.taskStartTime = 0;
+        this.detectionCount = 0;
+        this.suspiciousCount = 0;
     }
 
     public void end() {
