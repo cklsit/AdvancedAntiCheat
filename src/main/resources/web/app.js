@@ -630,4 +630,82 @@ function setupNotifications() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+function setupLogs() {
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    const exportJsonBtn = document.getElementById('exportJsonBtn');
+    
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', exportLogsAsCsv);
+    }
+    if (exportJsonBtn) {
+        exportJsonBtn.addEventListener('click', exportLogsAsJson);
+    }
+    
+    loadLogs();
+}
+
+function loadLogs() {
+    const container = document.getElementById('logsContainer');
+    if (!container) return;
+    
+    container.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无日志记录</div>';
+}
+
+function exportLogsAsCsv() {
+    const logs = getCurrentLogs();
+    let csv = '时间,级别,消息\n';
+    
+    logs.forEach(log => {
+        csv += `"${log.time}","${log.level}","${log.message}"\n`;
+    });
+    
+    downloadFile(csv, 'audit_logs.csv', 'text/csv');
+}
+
+function exportLogsAsJson() {
+    const logs = getCurrentLogs();
+    const json = JSON.stringify(logs, null, 2);
+    downloadFile(json, 'audit_logs.json', 'application/json');
+}
+
+function getCurrentLogs() {
+    const logs = [];
+    const logItems = document.querySelectorAll('.log-item');
+    
+    logItems.forEach(item => {
+        const time = item.querySelector('.log-time')?.textContent || '';
+        const level = item.querySelector('.log-level')?.textContent || '';
+        const message = item.querySelector('.log-message')?.textContent || '';
+        
+        logs.push({
+            time: time.replace(/\[|\]/g, ''),
+            level: level.replace(/\[|\]/g, ''),
+            message: message
+        });
+    });
+    
+    return logs.length > 0 ? logs : [
+        { time: new Date().toLocaleString(), level: 'INFO', message: '系统启动' },
+        { time: new Date().toLocaleString(), level: 'INFO', message: 'Web面板已就绪' }
+    ];
+}
+
+function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    alert(`${filename} 已导出成功！`);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+    setupLogs();
+});

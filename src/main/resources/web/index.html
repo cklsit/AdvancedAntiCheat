@@ -294,27 +294,12 @@
                     <div class="page-header">
                         <h2>审计日志</h2>
                         <div class="page-actions">
-                            <button class="btn-primary">导出 CSV</button>
-                            <button class="btn-secondary">导出 JSON</button>
+                            <button class="btn-primary" id="exportCsvBtn">导出 CSV</button>
+                            <button class="btn-secondary" id="exportJsonBtn">导出 JSON</button>
                         </div>
                     </div>
                     
-                    <div class="logs-container">
-                        <div class="log-item">
-                            <span class="log-time">[14:35:22]</span>
-                            <span class="log-level warning">[WARN]</span>
-                            <span class="log-message">玩家 Steve 触发 Speed 检测，评分 45</span>
-                        </div>
-                        <div class="log-item">
-                            <span class="log-time">[14:34:18]</span>
-                            <span class="log-level danger">[DANGER]</span>
-                            <span class="log-message">玩家 Alex 触发 KillAura 检测，评分 89</span>
-                        </div>
-                        <div class="log-item">
-                            <span class="log-time">[14:33:55]</span>
-                            <span class="log-level success">[SUCCESS]</span>
-                            <span class="log-message">玩家 Notch 成功通过验证码</span>
-                        </div>
+                    <div class="logs-container" id="logsContainer">
                     </div>
                 </div>
             </main>
