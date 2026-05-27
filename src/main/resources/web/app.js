@@ -158,7 +158,9 @@ function setupRiskChart(data) {
         riskChart.destroy();
     }
     
-    const labels = data && data.length > 0 ? generateTimeLabels(data.length) : ['暂无数据'];
+    const MAX_DATA_POINTS = 8;
+    const limitedData = data && data.length > 0 ? data.slice(-MAX_DATA_POINTS) : [];
+    const labels = limitedData.length > 0 ? generateTimeLabels(limitedData.length) : ['暂无数据'];
     
     riskChart = new Chart(chartCtx, {
         type: 'line',
@@ -166,12 +168,12 @@ function setupRiskChart(data) {
             labels: labels,
             datasets: [{
                 label: '风险评分',
-                data: data || [],
+                data: limitedData.length > 0 ? limitedData : [null],
                 borderColor: '#00e5ff',
                 backgroundColor: 'rgba(0, 229, 255, 0.1)',
                 tension: 0.4,
                 fill: true,
-                pointRadius: 3,
+                pointRadius: limitedData.length > 0 ? 3 : 0,
                 pointHoverRadius: 6
             }]
         },
@@ -204,7 +206,8 @@ function setupRiskChart(data) {
                     },
                     ticks: {
                         color: '#a0aec0',
-                        maxRotation: 0
+                        maxRotation: 0,
+                        maxTicksLimit: 8
                     }
                 }
             }
