@@ -39,6 +39,8 @@ function switchPage(page) {
             loadPlayers();
         } else if (page === 'config') {
             loadConfig();
+        } else if (page === 'map') {
+            drawMap();
         }
     }
 }
@@ -91,6 +93,11 @@ function handleWebSocketMessage(data) {
             addEventToStream(message.data);
         } else if (message.type === 'update') {
             updateDashboard(message.data);
+        } else if (message.type === 'playerUpdate') {
+            if (riskChart) {
+                riskChart.data.datasets[0].data = message.data.riskTrend || [];
+                riskChart.update();
+            }
         }
     } catch (e) {
         console.error('Failed to parse WebSocket message:', e);
@@ -113,10 +120,10 @@ function updateDashboard(data) {
     document.getElementById('onlinePlayers').textContent = data.onlinePlayers || 0;
     document.getElementById('suspectPlayers').textContent = data.suspectPlayers || 0;
     document.getElementById('todayIntercepts').textContent = data.todayIntercepts || 0;
-    document.getElementById('captchaRate').textContent = Math.round((data.captchaSuccessRate || 0.85) * 100) + '%';
-    document.getElementById('activeCases').textContent = data.activeCases || 3;
+    document.getElementById('captchaRate').textContent = Math.round((data.captchaSuccessRate || 0) * 100) + '%';
+    document.getElementById('activeCases').textContent = data.activeCases || 0;
     
-    updateRiskIndicator(data.riskLevel || 65);
+    updateRiskIndicator(data.riskLevel || 0);
 }
 
 function updateRiskIndicator(level) {
@@ -127,38 +134,45 @@ function updateRiskIndicator(level) {
     riskValue.textContent = level + '%';
     
     if (level < 30) {
-        dot.style.background = 'var(--success-color)';
+        dot.style.background = '#22c55e';
         levelName.textContent = '低风险';
     } else if (level < 60) {
-        dot.style.background = 'var(--accent-yellow)';
+        dot.style.background = '#eab308';
         levelName.textContent = '中风险';
     } else if (level < 80) {
-        dot.style.background = 'var(--accent-orange)';
+        dot.style.background = '#ff6d00';
         levelName.textContent = '高风险';
     } else {
-        dot.style.background = 'var(--accent-red)';
+        dot.style.background = '#ef4444';
         levelName.textContent = '严重风险';
     }
 }
 
 function setupRiskChart(data) {
-    const ctx = document.getElementById('riskChart').getContext('2d');
+    const ctx = document.getElementById('riskChart');
+    if (!ctx) return;
+    
+    const chartCtx = ctx.getContext('2d');
     
     if (riskChart) {
         riskChart.destroy();
     }
     
-    riskChart = new Chart(ctx, {
+    const labels = data && data.length > 0 ? generateTimeLabels(data.length) : ['暂无数据'];
+    
+    riskChart = new Chart(chartCtx, {
         type: 'line',
         data: {
-            labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '现在'],
+            labels: labels,
             datasets: [{
                 label: '风险评分',
-                data: data || [65, 58, 72, 81, 69, 75, 70],
+                data: data || [],
                 borderColor: '#00e5ff',
                 backgroundColor: 'rgba(0, 229, 255, 0.1)',
                 tension: 0.4,
-                fill: true
+                fill: true,
+                pointRadius: 3,
+                pointHoverRadius: 6
             }]
         },
         options: {
@@ -167,6 +181,10 @@ function setupRiskChart(data) {
             plugins: {
                 legend: {
                     display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
                 }
             },
             scales: {
@@ -185,12 +203,23 @@ function setupRiskChart(data) {
                         color: 'rgba(58, 68, 88, 0.5)'
                     },
                     ticks: {
-                        color: '#a0aec0'
+                        color: '#a0aec0',
+                        maxRotation: 0
                     }
                 }
             }
         }
     });
+}
+
+function generateTimeLabels(count) {
+    const labels = [];
+    const now = new Date();
+    for (let i = Math.max(0, count - 1); i >= 0; i--) {
+        const time = new Date(now - i * 3600000);
+        labels.push(time.getHours().toString().padStart(2, '0') + ':00');
+    }
+    return labels;
 }
 
 async function loadEvents() {
@@ -199,11 +228,16 @@ async function loadEvents() {
         const events = await response.json();
         
         const stream = document.getElementById('eventStream');
-        stream.innerHTML = '';
+        if (!stream) return;
         
-        events.forEach(event => {
-            addEventToStream(event);
-        });
+        stream.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无事件记录</div>';
+        
+        if (events && events.length > 0) {
+            stream.innerHTML = '';
+            events.forEach(event => {
+                addEventToStream(event);
+            });
+        }
     } catch (e) {
         console.error('Failed to load events:', e);
     }
@@ -211,6 +245,8 @@ async function loadEvents() {
 
 function addEventToStream(event) {
     const stream = document.getElementById('eventStream');
+    if (!stream) return;
+    
     const eventEl = document.createElement('div');
     eventEl.className = 'event-item';
     
@@ -249,7 +285,14 @@ async function loadPlayers() {
         const players = await response.json();
         
         const tbody = document.getElementById('playersTableBody');
+        if (!tbody) return;
+        
         tbody.innerHTML = '';
+        
+        if (!players || players.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #666;">暂无在线玩家</td></tr>';
+            return;
+        }
         
         players.forEach(player => {
             const tr = document.createElement('tr');
@@ -258,21 +301,21 @@ async function loadPlayers() {
             tr.innerHTML = `
                 <td><span class="status-dot-player ${riskLevel}"></span></td>
                 <td><strong>${player.name}</strong></td>
-                <td>${player.ping}ms</td>
-                <td>${player.client}</td>
+                <td>${player.ping || 0}ms</td>
+                <td>${player.client || 'Unknown'}</td>
                 <td>
                     <div class="risk-bar">
-                        <div class="risk-bar-fill ${riskLevel}" style="width: ${player.riskScore}%"></div>
+                        <div class="risk-bar-fill ${riskLevel}" style="width: ${player.riskScore || 0}%"></div>
                     </div>
-                    <span>${player.riskScore}%</span>
+                    <span>${player.riskScore || 0}%</span>
                 </td>
                 <td>${player.suspectedReason || '-'}</td>
-                <td>${player.onlineTime}</td>
+                <td>${player.onlineTime || '0h 0m'}</td>
                 <td>
                     <div class="action-buttons">
-                        <button class="action-btn view">查看</button>
-                        <button class="action-btn warn">警告</button>
-                        <button class="action-btn ban">封禁</button>
+                        <button class="action-btn view" onclick="viewPlayer('${player.name}')">查看</button>
+                        <button class="action-btn warn" onclick="warnPlayer('${player.name}')">警告</button>
+                        <button class="action-btn ban" onclick="banPlayer('${player.name}')">封禁</button>
                     </div>
                 </td>
             `;
@@ -281,6 +324,31 @@ async function loadPlayers() {
         });
     } catch (e) {
         console.error('Failed to load players:', e);
+    }
+}
+
+function viewPlayer(name) {
+    alert('查看玩家: ' + name);
+}
+
+function warnPlayer(name) {
+    if (confirm('确定要警告玩家 ' + name + ' 吗？')) {
+        fetch('/api/broadcast', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({message: '管理员已向玩家 ' + name + ' 发出警告'})
+        }).then(() => alert('警告已发送'));
+    }
+}
+
+function banPlayer(name) {
+    const duration = prompt('请输入封禁时长（如 1h, 1d, 7d, permanent）：', '1d');
+    if (duration) {
+        fetch('/api/ban', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({player: name, duration: duration, reason: 'Web面板封禁'})
+        }).then(() => alert('封禁请求已发送'));
     }
 }
 
@@ -296,6 +364,8 @@ async function loadConfig() {
         const config = await response.json();
         
         const grid = document.getElementById('configGrid');
+        if (!grid) return;
+        
         grid.innerHTML = '';
         
         const modules = {
@@ -309,7 +379,12 @@ async function loadConfig() {
             'noSlow': '无减速检测'
         };
         
-        Object.entries(config.modules || {}).forEach(([key, module]) => {
+        if (!config.modules) {
+            grid.innerHTML = '<div style="color: #666;">暂无配置数据</div>';
+            return;
+        }
+        
+        Object.entries(config.modules).forEach(([key, module]) => {
             const card = document.createElement('div');
             card.className = 'config-card';
             
@@ -317,27 +392,29 @@ async function loadConfig() {
                 <div class="config-header">
                     <span class="config-name">${modules[key] || key}</span>
                     <label class="config-toggle">
-                        <input type="checkbox" ${module.enabled ? 'checked' : ''}>
+                        <input type="checkbox" ${module.enabled ? 'checked' : ''} onchange="updateModule('${key}', this.checked)">
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="config-slider">
-                    <input type="range" min="1" max="10" value="${module.sensitivity || 5}">
+                    <input type="range" min="1" max="10" value="${module.sensitivity || 5}" oninput="updateSensitivity('${key}', this.value)">
                     <div class="slider-value">灵敏度: ${module.sensitivity || 5}</div>
                 </div>
             `;
             
             grid.appendChild(card);
         });
-        
-        document.querySelectorAll('.config-slider input[type="range"]').forEach(input => {
-            input.addEventListener('input', (e) => {
-                e.target.parentElement.querySelector('.slider-value').textContent = `灵敏度: ${e.target.value}`;
-            });
-        });
     } catch (e) {
         console.error('Failed to load config:', e);
     }
+}
+
+function updateModule(module, enabled) {
+    console.log(`Module ${module} enabled: ${enabled}`);
+}
+
+function updateSensitivity(module, value) {
+    console.log(`Module ${module} sensitivity: ${value}`);
 }
 
 function setupMap() {
@@ -349,12 +426,16 @@ function setupMap() {
     
     window.addEventListener('resize', resizeMap);
     drawMap();
+    
+    setInterval(drawMap, 5000);
 }
 
 function resizeMap() {
     if (!mapCanvas) return;
     
     const container = mapCanvas.parentElement;
+    if (!container) return;
+    
     mapCanvas.width = container.clientWidth - 40;
     mapCanvas.height = container.clientHeight - 40;
     
@@ -387,40 +468,72 @@ function drawMap() {
         mapCtx.stroke();
     }
     
-    const players = [
-        { x: 0.3, y: 0.4, risk: 15 },
-        { x: 0.5, y: 0.6, risk: 45 },
-        { x: 0.7, y: 0.3, risk: 85 },
-        { x: 0.2, y: 0.7, risk: 25 }
-    ];
-    
-    players.forEach(player => {
-        const px = player.x * width;
-        const py = player.y * height;
-        
-        let color;
-        if (player.risk < 30) color = '#22c55e';
-        else if (player.risk < 60) color = '#eab308';
-        else color = '#ef4444';
-        
-        mapCtx.beginPath();
-        mapCtx.arc(px, py, 8, 0, Math.PI * 2);
-        mapCtx.fillStyle = color;
-        mapCtx.fill();
-        
-        mapCtx.beginPath();
-        mapCtx.arc(px, py, 12, 0, Math.PI * 2);
-        mapCtx.strokeStyle = color;
-        mapCtx.globalAlpha = 0.3;
-        mapCtx.lineWidth = 2;
-        mapCtx.stroke();
-        mapCtx.globalAlpha = 1;
-    });
+    fetch('/api/players')
+        .then(res => res.json())
+        .then(players => {
+            if (!players || players.length === 0) {
+                mapCtx.fillStyle = '#666';
+                mapCtx.font = '16px Arial';
+                mapCtx.textAlign = 'center';
+                mapCtx.fillText('暂无在线玩家', width / 2, height / 2);
+                return;
+            }
+            
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const radius = Math.min(width, height) * 0.3;
+            
+            players.forEach((player, index) => {
+                const angle = (index / players.length) * Math.PI * 2 - Math.PI / 2;
+                const px = centerX + Math.cos(angle) * radius;
+                const py = centerY + Math.sin(angle) * radius;
+                
+                let color;
+                if ((player.riskScore || 0) < 30) color = '#22c55e';
+                else if ((player.riskScore || 0) < 60) color = '#eab308';
+                else color = '#ef4444';
+                
+                mapCtx.beginPath();
+                mapCtx.arc(px, py, 16, 0, Math.PI * 2);
+                mapCtx.fillStyle = 'rgba(0, 229, 255, 0.2)';
+                mapCtx.fill();
+                
+                mapCtx.beginPath();
+                mapCtx.arc(px, py, 10, 0, Math.PI * 2);
+                mapCtx.fillStyle = color;
+                mapCtx.fill();
+                
+                mapCtx.beginPath();
+                mapCtx.arc(px, py, 10, 0, Math.PI * 2);
+                mapCtx.strokeStyle = '#ffffff';
+                mapCtx.lineWidth = 2;
+                mapCtx.stroke();
+                
+                mapCtx.fillStyle = '#ffffff';
+                mapCtx.font = 'bold 12px Arial';
+                mapCtx.textAlign = 'center';
+                mapCtx.fillText(player.name || 'Unknown', px, py + 28);
+            });
+            
+            mapCtx.fillStyle = '#888';
+            mapCtx.font = '14px Arial';
+            mapCtx.textAlign = 'center';
+            mapCtx.fillText(`在线玩家: ${players.length}`, width / 2, height - 20);
+        })
+        .catch(() => {
+            mapCtx.fillStyle = '#666';
+            mapCtx.font = '16px Arial';
+            mapCtx.textAlign = 'center';
+            mapCtx.fillText('无法加载玩家数据', width / 2, height / 2);
+        });
 }
 
 function setupCommandPalette() {
     const palette = document.getElementById('commandPalette');
+    if (!palette) return;
+    
     const input = palette.querySelector('.command-input');
+    if (!input) return;
     
     document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -437,32 +550,75 @@ function setupCommandPalette() {
             closeCommandPalette();
         }
     });
+    
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            executeCommand(input.value);
+            closeCommandPalette();
+        }
+    });
 }
 
 function openCommandPalette() {
     const palette = document.getElementById('commandPalette');
+    if (!palette) return;
     palette.classList.add('show');
-    palette.querySelector('.command-input').focus();
+    const input = palette.querySelector('.command-input');
+    if (input) input.focus();
 }
 
 function closeCommandPalette() {
     const palette = document.getElementById('commandPalette');
+    if (!palette) return;
     palette.classList.remove('show');
+    const input = palette.querySelector('.command-input');
+    if (input) input.value = '';
+}
+
+function executeCommand(cmd) {
+    console.log('执行命令:', cmd);
+    alert('命令已发送: ' + cmd);
 }
 
 function setupQuickActions() {
     const toggle = document.getElementById('quickActionsToggle');
     const menu = document.getElementById('quickActionsMenu');
     
+    if (!toggle || !menu) return;
+    
     toggle.addEventListener('click', () => {
         toggle.classList.toggle('open');
         menu.classList.toggle('show');
+    });
+    
+    const actionButtons = menu.querySelectorAll('.quick-action-btn');
+    actionButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const action = btn.textContent.trim();
+            if (action.includes('快速封禁')) {
+                const player = prompt('请输入要封禁的玩家名：');
+                if (player) banPlayer(player);
+            } else if (action.includes('全服扫描')) {
+                alert('全服扫描已启动...');
+            } else if (action.includes('发送广播')) {
+                const msg = prompt('请输入广播内容：');
+                if (msg) {
+                    fetch('/api/broadcast', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({message: msg})
+                    }).then(() => alert('广播已发送'));
+                }
+            }
+        });
     });
 }
 
 function setupNotifications() {
     const btn = document.getElementById('notificationBtn');
     const dropdown = document.getElementById('notificationDropdown');
+    
+    if (!btn || !dropdown) return;
     
     btn.addEventListener('click', (e) => {
         e.stopPropagation();

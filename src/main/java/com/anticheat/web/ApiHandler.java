@@ -68,8 +68,8 @@ public class ApiHandler implements HttpHandler {
         int onlinePlayers = Bukkit.getOnlinePlayers().size();
         int suspectPlayers = 0;
         int todayIntercepts = 0;
-        double captchaSuccessRate = 0.85;
-        int activeCases = 3;
+        double captchaSuccessRate = 0.0;
+        int activeCases = 0;
         
         return String.format("{" +
             "\"onlinePlayers\": %d," +
@@ -78,7 +78,7 @@ public class ApiHandler implements HttpHandler {
             "\"captchaSuccessRate\": %.2f," +
             "\"activeCases\": %d," +
             "\"riskLevel\": %d," +
-            "\"riskTrend\": [65, 58, 72, 81, 69, 75, 70]," +
+            "\"riskTrend\": []," +
             "\"serverName\": \"%s\"" +
             "}", onlinePlayers, suspectPlayers, todayIntercepts, 
                 captchaSuccessRate, activeCases, calculateRiskLevel(),
@@ -114,32 +114,7 @@ public class ApiHandler implements HttpHandler {
     }
     
     private String getRecentEvents() {
-        return "[" +
-            "{" +
-                "\"time\": \"14:35:22\"," +
-                "\"type\": \"warning\"," +
-                "\"player\": \"Steve\"," +
-                "\"module\": \"Speed\"," +
-                "\"score\": 45," +
-                "\"location\": \"123, 64, 456\"" +
-            "}," +
-            "{" +
-                "\"time\": \"14:34:18\"," +
-                "\"type\": \"high\"," +
-                "\"player\": \"Alex\"," +
-                "\"module\": \"KillAura\"," +
-                "\"score\": 89," +
-                "\"location\": \"789, 64, 123\"" +
-            "}," +
-            "{" +
-                "\"time\": \"14:33:55\"," +
-                "\"type\": \"success\"," +
-                "\"player\": \"Notch\"," +
-                "\"module\": \"Captcha\"," +
-                "\"score\": 100," +
-                "\"location\": \"456, 64, 789\"" +
-            "}" +
-        "]";
+        return "[]";
     }
     
     private String getConfigData() {
