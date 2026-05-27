@@ -93,6 +93,7 @@
 | `/ac stats` | 查看检测统计 | `anticheat.admin` |
 | `/ac reports` | 查看待处理举报 | `anticheat.admin` |
 | `/ac help` | 显示帮助信息 | `anticheat.admin` |
+| `/ac` / `/anticheat` | 查看插件信息 | 无 |
 
 ## 🔐 权限节点
 
