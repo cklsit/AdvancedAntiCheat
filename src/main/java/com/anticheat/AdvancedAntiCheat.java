@@ -8,6 +8,7 @@ import com.anticheat.listeners.*;
 import com.anticheat.managers.*;
 import com.anticheat.profiles.BehaviorTracker;
 import com.anticheat.utils.VersionUtil;
+import com.anticheat.web.WebServer;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -23,6 +24,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private BehaviorTracker behaviorTracker;
     private CaptchaManager captchaManager;
     private BountyManager bountyManager;
+    private WebServer webServer;
 
     @Override
     public void onEnable() {
@@ -38,6 +40,12 @@ public class AdvancedAntiCheat extends JavaPlugin {
         registerListeners();
         registerCommands();
         
+        int webPort = getConfig().getInt("web-panel.port", 35677);
+        if (getConfig().getBoolean("web-panel.enabled", true)) {
+            webServer = new WebServer(this, webPort);
+            webServer.start();
+        }
+        
         getLogger().info("§2[AdvancedAntiCheat] 插件已成功启用！");
         getLogger().info("§6[AdvancedAntiCheat] 保护您的服务器免受作弊侵害！");
     }
@@ -52,6 +60,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         }
         if (bountyManager != null) {
             bountyManager.onDisable();
+        }
+        if (webServer != null) {
+            webServer.stop();
         }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
@@ -140,5 +151,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public BountyManager getBountyManager() {
         return bountyManager;
+    }
+
+    public WebServer getWebServer() {
+        return webServer;
     }
 }

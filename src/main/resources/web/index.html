@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdvancedAntiCheat - 反作弊指挥中心</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app">
+        <header class="top-bar">
+            <div class="logo">
+                <span class="logo-icon">🛡️</span>
+                <span class="logo-text">AntiCheat Center</span>
+            </div>
+            
+            <div class="server-selector">
+                <select id="serverSelect">
+                    <option value="main">主服务器</option>
+                </select>
+            </div>
+            
+            <div class="risk-indicator" id="riskIndicator">
+                <div class="risk-dot" id="riskDot"></div>
+                <div class="risk-text">
+                    <span id="riskLevelName">中风险</span>
+                    <span id="riskValue">65%</span>
+                </div>
+            </div>
+            
+            <div class="notification-center">
+                <button class="notification-btn" id="notificationBtn">
+                    🔔
+                    <span class="notification-badge" id="notificationBadge">3</span>
+                </button>
+                <div class="notification-dropdown" id="notificationDropdown">
+                    <div class="notification-item">
+                        <div class="notification-icon danger">⚠️</div>
+                        <div class="notification-content">
+                            <div class="notification-title">高危警报</div>
+                            <div class="notification-desc">玩家 Steve 可能使用 KillAura</div>
+                            <div class="notification-time">2分钟前</div>
+                        </div>
+                    </div>
+                    <div class="notification-item">
+                        <div class="notification-icon warning">⚡</div>
+                        <div class="notification-content">
+                            <div class="notification-title">警告</div>
+                            <div class="notification-desc">玩家 Alex 速度异常</div>
+                            <div class="notification-time">5分钟前</div>
+                        </div>
+                    </div>
+                    <div class="notification-item">
+                        <div class="notification-icon info">ℹ️</div>
+                        <div class="notification-content">
+                            <div class="notification-title">信息</div>
+                            <div class="notification-desc">验证码通过：Notch</div>
+                            <div class="notification-time">10分钟前</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="admin-profile">
+                <div class="admin-avatar">👤</div>
+            </div>
+        </header>
+        
+        <div class="main-content">
+            <aside class="sidebar">
+                <nav class="nav-menu">
+                    <a href="#" class="nav-item active" data-page="dashboard">
+                        <span class="nav-icon">🖥️</span>
+                        <span class="nav-text">总览仪表盘</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="players">
+                        <span class="nav-icon">👥</span>
+                        <span class="nav-text">玩家管理</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="cases">
+                        <span class="nav-icon">⚖️</span>
+                        <span class="nav-text">案件审判</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="map">
+                        <span class="nav-icon">🗺️</span>
+                        <span class="nav-text">实时地图</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="config">
+                        <span class="nav-icon">⚙️</span>
+                        <span class="nav-text">配置中心</span>
+                    </a>
+                    <a href="#" class="nav-item" data-page="logs">
+                        <span class="nav-icon">📋</span>
+                        <span class="nav-text">审计日志</span>
+                    </a>
+                </nav>
+                
+                <div class="sidebar-footer">
+                    <div class="version-info">
+                        <span class="version-text">v1.0.0</span>
+                    </div>
+                    <div class="connection-status">
+                        <span class="status-dot connected"></span>
+                        <span class="status-text">WebSocket 已连接</span>
+                    </div>
+                </div>
+            </aside>
+            
+            <main class="content-area">
+                <div id="page-dashboard" class="page active">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span class="metric-icon">👥</span>
+                            </div>
+                            <div class="metric-value" id="onlinePlayers">0</div>
+                            <div class="metric-label">在线玩家</div>
+                            <div class="metric-change positive">+2 <span class="arrow">↑</span></div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span class="metric-icon warning">⚠️</span>
+                            </div>
+                            <div class="metric-value" id="suspectPlayers">0</div>
+                            <div class="metric-label">嫌疑玩家</div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span class="metric-icon danger">🚫</span>
+                            </div>
+                            <div class="metric-value" id="todayIntercepts">0</div>
+                            <div class="metric-label">今日拦截</div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span class="metric-icon success">✅</span>
+                            </div>
+                            <div class="metric-value" id="captchaRate">0%</div>
+                            <div class="metric-label">验证通过率</div>
+                        </div>
+                        
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span class="metric-icon danger">🔴</span>
+                                <span class="metric-badge">3</span>
+                            </div>
+                            <div class="metric-value" id="activeCases">0</div>
+                            <div class="metric-label">活跃案件</div>
+                        </div>
+                    </div>
+                    
+                    <div class="charts-container">
+                        <div class="chart-card">
+                            <div class="chart-title">风险趋势</div>
+                            <canvas id="riskChart"></canvas>
+                        </div>
+                        
+                        <div class="event-stream-card">
+                            <div class="chart-title">实时事件流</div>
+                            <div class="event-stream" id="eventStream">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="page-players" class="page">
+                    <div class="page-header">
+                        <h2>玩家管理</h2>
+                        <div class="page-actions">
+                            <input type="text" class="search-input" placeholder="搜索玩家...">
+                            <select class="filter-select">
+                                <option>全部风险等级</option>
+                                <option>高风险</option>
+                                <option>中风险</option>
+                                <option>低风险</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>状态</th>
+                                    <th>玩家名</th>
+                                    <th>延迟</th>
+                                    <th>客户端</th>
+                                    <th>风险评分</th>
+                                    <th>标记原因</th>
+                                    <th>在线时长</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="playersTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div id="page-cases" class="page">
+                    <div class="page-header">
+                        <h2>案件审判</h2>
+                    </div>
+                    
+                    <div class="kanban-board">
+                        <div class="kanban-column">
+                            <div class="column-header">
+                                <span class="column-title">待审核</span>
+                                <span class="column-count">2</span>
+                            </div>
+                            <div class="column-cards">
+                                <div class="case-card">
+                                    <div class="case-header">
+                                        <span class="case-player">Steve</span>
+                                        <span class="case-risk high">高</span>
+                                    </div>
+                                    <div class="case-rule">KillAura 检测</div>
+                                    <div class="case-time">14:35</div>
+                                    <div class="case-evidence">证据摘要：高频攻击模式</div>
+                                </div>
+                                <div class="case-card">
+                                    <div class="case-header">
+                                        <span class="case-player">Alex</span>
+                                        <span class="case-risk medium">中</span>
+                                    </div>
+                                    <div class="case-rule">Speed 检测</div>
+                                    <div class="case-time">14:20</div>
+                                    <div class="case-evidence">证据摘要：异常移动速度</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="kanban-column">
+                            <div class="column-header">
+                                <span class="column-title">审理中</span>
+                                <span class="column-count">1</span>
+                            </div>
+                            <div class="column-cards">
+                                <div class="case-card">
+                                    <div class="case-header">
+                                        <span class="case-player">Notch</span>
+                                        <span class="case-risk low">低</span>
+                                    </div>
+                                    <div class="case-rule">Fly 检测</div>
+                                    <div class="case-time">14:10</div>
+                                    <div class="case-evidence">证据摘要：可疑飞行行为</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="kanban-column">
+                            <div class="column-header">
+                                <span class="column-title">已结案</span>
+                                <span class="column-count">5</span>
+                            </div>
+                            <div class="column-cards">
+                                <div class="case-card closed">
+                                    <div class="case-header">
+                                        <span class="case-player">Herobrine</span>
+                                        <span class="case-result banned">封禁</span>
+                                    </div>
+                                    <div class="case-rule">X-Ray 检测</div>
+                                    <div class="case-time">13:45</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="page-map" class="page">
+                    <div class="page-header">
+                        <h2>实时地图</h2>
+                    </div>
+                    
+                    <div class="map-container">
+                        <canvas id="mapCanvas"></canvas>
+                    </div>
+                </div>
+                
+                <div id="page-config" class="page">
+                    <div class="page-header">
+                        <h2>配置中心</h2>
+                    </div>
+                    
+                    <div class="config-grid" id="configGrid">
+                    </div>
+                </div>
+                
+                <div id="page-logs" class="page">
+                    <div class="page-header">
+                        <h2>审计日志</h2>
+                        <div class="page-actions">
+                            <button class="btn-primary">导出 CSV</button>
+                            <button class="btn-secondary">导出 JSON</button>
+                        </div>
+                    </div>
+                    
+                    <div class="logs-container">
+                        <div class="log-item">
+                            <span class="log-time">[14:35:22]</span>
+                            <span class="log-level warning">[WARN]</span>
+                            <span class="log-message">玩家 Steve 触发 Speed 检测，评分 45</span>
+                        </div>
+                        <div class="log-item">
+                            <span class="log-time">[14:34:18]</span>
+                            <span class="log-level danger">[DANGER]</span>
+                            <span class="log-message">玩家 Alex 触发 KillAura 检测，评分 89</span>
+                        </div>
+                        <div class="log-item">
+                            <span class="log-time">[14:33:55]</span>
+                            <span class="log-level success">[SUCCESS]</span>
+                            <span class="log-message">玩家 Notch 成功通过验证码</span>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+        
+        <div class="quick-actions">
+            <button class="quick-actions-toggle" id="quickActionsToggle">
+                <span class="toggle-icon">+</span>
+            </button>
+            <div class="quick-actions-menu" id="quickActionsMenu">
+                <button class="quick-action-btn danger">
+                    <span class="btn-icon">🚫</span>
+                    快速封禁
+                </button>
+                <button class="quick-action-btn warning">
+                    <span class="btn-icon">🔍</span>
+                    全服扫描
+                </button>
+                <button class="quick-action-btn">
+                    <span class="btn-icon">📢</span>
+                    发送广播
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="command-palette" id="commandPalette">
+        <input type="text" class="command-input" placeholder="输入命令或搜索... (ESC 关闭)">
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

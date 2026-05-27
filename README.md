@@ -65,6 +65,28 @@
 - **可自定义查端信息**（标题、聊天消息）
 - 精美的举报通知（带点击按钮）
 
+### 💰 漏洞赏金系统
+- `/bounty enter` - 进入漏洞赏金沙箱
+- `/bounty leave` - 离开漏洞赏金沙箱
+- `/bounty start <任务>` - 开始赏金任务
+- `/bounty report <描述>` - 报告发现的漏洞
+- `/bounty lb` - 查看赏金排行榜
+
+**支持的任务类型**:
+| 任务类型 | 描述 | 时间限制 |
+|----------|------|----------|
+| `MOVE_BASIC` | 基础移动测试（从A点到B点） | 3分钟 |
+| `MOVE_ADVANCED` | 高级移动测试（空中直角变向） | 5分钟 |
+| `COMBAT_BASIC` | 基础战斗测试（击杀僵尸） | 5分钟 |
+| `COMBAT_ADVANCED` | 高级战斗测试（杀戮光环检测） | 5分钟 |
+| `INVENTORY_CHALLENGE` | 物品栏挑战（快速切换物品） | 3分钟 |
+| `FREE_TEST` | 自由测试（给予所有道具和怪物） | 10分钟 |
+
+**任务自动评估**:
+- **DETECTED** - 检测到作弊行为
+- **BYPASSED** - 无检测且无可疑行为（绕过成功）
+- **ZERO_DAY** - 无检测但有可疑行为（高危发现）
+
 ## 🚀 安装方法
 
 1. 下载最新版本的插件 JAR 文件（[Release v1.0.0](https://github.com/cklsit/AntiCheat/releases/tag/v1.0.0)）
