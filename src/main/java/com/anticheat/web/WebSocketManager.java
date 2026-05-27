@@ -84,11 +84,15 @@ public class WebSocketManager implements HttpHandler {
     }
     
     public void broadcast(String message) {
-        for (WebSocketConnection connection : connections) {
-            connection.send(message);
-        }
+        connections.removeIf(conn -> {
+            if (conn.isClosed()) {
+                return true;
+            }
+            conn.send(message);
+            return false;
+        });
     }
-    
+
     public void stop() {
         for (WebSocketConnection connection : connections) {
             connection.close();

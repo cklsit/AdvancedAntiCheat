@@ -30,17 +30,21 @@ function setupNavigation() {
 function switchPage(page) {
     const pages = document.querySelectorAll('.page');
     pages.forEach(p => p.classList.remove('active'));
-    
+
     const targetPage = document.getElementById(`page-${page}`);
     if (targetPage) {
         targetPage.classList.add('active');
-        
+
         if (page === 'players') {
             loadPlayers();
         } else if (page === 'config') {
             loadConfig();
         } else if (page === 'map') {
             drawMap();
+        } else if (page === 'cases') {
+            loadCases();
+        } else if (page === 'logs') {
+            loadLogs();
         }
     }
 }
@@ -88,15 +92,26 @@ function updateConnectionStatus(connected) {
 function handleWebSocketMessage(data) {
     try {
         const message = JSON.parse(data);
-        
+
         if (message.type === 'event') {
             addEventToStream(message.data);
         } else if (message.type === 'update') {
             updateDashboard(message.data);
         } else if (message.type === 'playerUpdate') {
-            if (riskChart) {
-                riskChart.data.datasets[0].data = message.data.riskTrend || [];
+            if (message.data.riskTrend && riskChart) {
+                const MAX_DATA_POINTS = 8;
+                const limitedData = message.data.riskTrend.slice(-MAX_DATA_POINTS);
+                riskChart.data.datasets[0].data = limitedData;
                 riskChart.update();
+            }
+            if (message.data.players) {
+                refreshPlayersList(message.data.players);
+            }
+        } else if (message.type === 'caseUpdate') {
+            loadCases();
+        } else if (message.type === 'logUpdate') {
+            if (document.getElementById('page-logs').classList.contains('active')) {
+                loadLogs();
             }
         }
     } catch (e) {
@@ -117,12 +132,31 @@ async function loadDashboard() {
 }
 
 function updateDashboard(data) {
-    document.getElementById('onlinePlayers').textContent = data.onlinePlayers || 0;
+    const onlinePlayersEl = document.getElementById('onlinePlayers');
+    const oldOnlineCount = parseInt(onlinePlayersEl?.textContent || '0');
+    const newOnlineCount = data.onlinePlayers || 0;
+
+    if (onlinePlayersEl) onlinePlayersEl.textContent = newOnlineCount;
     document.getElementById('suspectPlayers').textContent = data.suspectPlayers || 0;
     document.getElementById('todayIntercepts').textContent = data.todayIntercepts || 0;
     document.getElementById('captchaRate').textContent = Math.round((data.captchaSuccessRate || 0) * 100) + '%';
     document.getElementById('activeCases').textContent = data.activeCases || 0;
-    
+
+    const playerChangeEl = document.getElementById('playerChange');
+    if (playerChangeEl) {
+        const change = newOnlineCount - oldOnlineCount;
+        if (change > 0) {
+            playerChangeEl.className = 'metric-change positive';
+            playerChangeEl.innerHTML = `+${change} <span class="arrow">↑</span>`;
+        } else if (change < 0) {
+            playerChangeEl.className = 'metric-change negative';
+            playerChangeEl.innerHTML = `${change} <span class="arrow">↓</span>`;
+        } else {
+            playerChangeEl.className = 'metric-change';
+            playerChangeEl.innerHTML = '';
+        }
+    }
+
     updateRiskIndicator(data.riskLevel || 0);
 }
 
@@ -228,21 +262,27 @@ function generateTimeLabels(count) {
 async function loadEvents() {
     try {
         const response = await fetch('/api/events');
+        if (!response.ok) throw new Error('Failed to load events');
         const events = await response.json();
-        
+
         const stream = document.getElementById('eventStream');
         if (!stream) return;
-        
-        stream.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无事件记录</div>';
-        
-        if (events && events.length > 0) {
-            stream.innerHTML = '';
-            events.forEach(event => {
-                addEventToStream(event);
-            });
+
+        if (!events || events.length === 0) {
+            stream.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无事件记录</div>';
+            return;
         }
+
+        stream.innerHTML = '';
+        events.forEach(event => {
+            addEventToStream(event);
+        });
     } catch (e) {
         console.error('Failed to load events:', e);
+        const stream = document.getElementById('eventStream');
+        if (stream) {
+            stream.innerHTML = '<div style="color: #ef4444; text-align: center; padding: 20px;">加载事件失败</div>';
+        }
     }
 }
 
@@ -359,6 +399,172 @@ function getRiskLevel(score) {
     if (score < 30) return 'low';
     if (score < 60) return 'medium';
     return 'high';
+}
+
+async function loadCases() {
+    try {
+        const response = await fetch('/api/cases');
+        if (!response.ok) throw new Error('Failed to load cases');
+        const cases = await response.json();
+
+        const pendingContainer = document.getElementById('pending-cards');
+        const reviewingContainer = document.getElementById('reviewing-cards');
+        const closedContainer = document.getElementById('closed-cards');
+        const pendingCount = document.getElementById('pending-count');
+        const reviewingCount = document.getElementById('reviewing-count');
+        const closedCount = document.getElementById('closed-count');
+
+        if (pendingContainer) pendingContainer.innerHTML = '';
+        if (reviewingContainer) reviewingContainer.innerHTML = '';
+        if (closedContainer) closedContainer.innerHTML = '';
+
+        let pending = 0, reviewing = 0, closed = 0;
+
+        if (!cases || cases.length === 0) {
+            if (pendingContainer) pendingContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无待审核案件</div>';
+            if (reviewingContainer) reviewingContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无审理中案件</div>';
+            if (closedContainer) closedContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无已结案案件</div>';
+        } else {
+            cases.forEach(caseItem => {
+                const card = createCaseCard(caseItem);
+                if (caseItem.status === 'pending') {
+                    if (pendingContainer) pendingContainer.appendChild(card);
+                    pending++;
+                } else if (caseItem.status === 'reviewing') {
+                    if (reviewingContainer) reviewingContainer.appendChild(card);
+                    reviewing++;
+                } else if (caseItem.status === 'closed') {
+                    if (closedContainer) closedContainer.appendChild(card);
+                    closed++;
+                }
+            });
+
+            if (pending === 0 && pendingContainer) pendingContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无待审核案件</div>';
+            if (reviewing === 0 && reviewingContainer) reviewingContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无审理中案件</div>';
+            if (closed === 0 && closedContainer) closedContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无已结案案件</div>';
+        }
+
+        if (pendingCount) pendingCount.textContent = pending;
+        if (reviewingCount) reviewingCount.textContent = reviewing;
+        if (closedCount) closedCount.textContent = closed;
+    } catch (e) {
+        console.error('Failed to load cases:', e);
+    }
+}
+
+function createCaseCard(caseItem) {
+    const card = document.createElement('div');
+    card.className = 'case-card' + (caseItem.status === 'closed' ? ' closed' : '');
+
+    const riskClass = caseItem.riskLevel === 'high' ? 'high' : (caseItem.riskLevel === 'medium' ? 'medium' : 'low');
+    const riskLabel = caseItem.riskLevel === 'high' ? '高' : (caseItem.riskLevel === 'medium' ? '中' : '低');
+
+    let statusLabel = '';
+    if (caseItem.status === 'closed') {
+        statusLabel = caseItem.result === 'banned' ? '封禁' : '清除';
+    }
+
+    card.innerHTML = `
+        <div class="case-header">
+            <span class="case-player">${caseItem.player || 'Unknown'}</span>
+            ${caseItem.status === 'closed'
+                ? `<span class="case-result ${caseItem.result === 'banned' ? 'banned' : 'cleared'}">${statusLabel}</span>`
+                : `<span class="case-risk ${riskClass}">${riskLabel}</span>`
+            }
+        </div>
+        <div class="case-rule">${caseItem.module || 'Unknown'} 检测</div>
+        <div class="case-time">${caseItem.time || ''}</div>
+        ${caseItem.evidence ? `<div class="case-evidence">证据摘要：${caseItem.evidence}</div>` : ''}
+    `;
+
+    card.addEventListener('click', () => {
+        if (caseItem.status !== 'closed') {
+            const action = prompt('选择操作 (1: 开始审理, 2: 封禁玩家, 3: 清除嫌疑):', '1');
+            handleCaseAction(caseItem, action);
+        }
+    });
+
+    return card;
+}
+
+function handleCaseAction(caseItem, action) {
+    if (action === '1') {
+        fetch('/api/case/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({caseId: caseItem.id, status: 'reviewing'})
+        }).then(() => {
+            alert('案件已标记为审理中');
+            loadCases();
+        });
+    } else if (action === '2') {
+        if (confirm(`确定要封禁玩家 ${caseItem.player} 吗？`)) {
+            fetch('/api/ban', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({player: caseItem.player, duration: 'permanent', reason: caseItem.module + ' 检测'})
+            }).then(() => {
+                fetch('/api/case/update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({caseId: caseItem.id, status: 'closed', result: 'banned'})
+                }).then(() => {
+                    alert('玩家已封禁');
+                    loadCases();
+                });
+            });
+        }
+    } else if (action === '3') {
+        fetch('/api/case/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({caseId: caseItem.id, status: 'closed', result: 'cleared'})
+        }).then(() => {
+            alert('嫌疑已清除');
+            loadCases();
+        });
+    }
+}
+
+function refreshPlayersList(players) {
+    const tbody = document.getElementById('playersTableBody');
+    if (!tbody || !document.getElementById('page-players').classList.contains('active')) return;
+
+    tbody.innerHTML = '';
+
+    if (!players || players.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: #666;">暂无在线玩家</td></tr>';
+        return;
+    }
+
+    players.forEach(player => {
+        const tr = document.createElement('tr');
+        const riskLevel = getRiskLevel(player.riskScore);
+
+        tr.innerHTML = `
+            <td><span class="status-dot-player ${riskLevel}"></span></td>
+            <td><strong>${player.name}</strong></td>
+            <td>${player.ping || 0}ms</td>
+            <td>${player.client || 'Unknown'}</td>
+            <td>
+                <div class="risk-bar">
+                    <div class="risk-bar-fill ${riskLevel}" style="width: ${player.riskScore || 0}%"></div>
+                </div>
+                <span>${player.riskScore || 0}%</span>
+            </td>
+            <td>${player.suspectedReason || '-'}</td>
+            <td>${player.onlineTime || '0h 0m'}</td>
+            <td>
+                <div class="action-buttons">
+                    <button class="action-btn view" onclick="viewPlayer('${player.name}')">查看</button>
+                    <button class="action-btn warn" onclick="warnPlayer('${player.name}')">警告</button>
+                    <button class="action-btn ban" onclick="banPlayer('${player.name}')">封禁</button>
+                </div>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+    });
 }
 
 async function loadConfig() {
@@ -650,8 +856,43 @@ function setupLogs() {
 function loadLogs() {
     const container = document.getElementById('logsContainer');
     if (!container) return;
-    
-    container.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无日志记录</div>';
+
+    container.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">正在加载日志...</div>';
+
+    fetch('/api/logs')
+        .then(res => {
+            if (!res.ok) throw new Error('Failed to load logs');
+            return res.json();
+        })
+        .then(logs => {
+            if (!logs || logs.length === 0) {
+                container.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">暂无日志记录</div>';
+                return;
+            }
+
+            container.innerHTML = '';
+            logs.forEach(log => {
+                const logEl = document.createElement('div');
+                logEl.className = 'log-item';
+
+                const levelClass = log.level?.toLowerCase() || 'info';
+                const levelColor = levelClass === 'danger' || levelClass === 'error' ? 'danger'
+                    : levelClass === 'warning' ? 'warning'
+                    : levelClass === 'success' ? 'success' : 'info';
+
+                logEl.innerHTML = `
+                    <span class="log-time">[${log.time || new Date().toLocaleString()}]</span>
+                    <span class="log-level ${levelColor}">[${log.level || 'INFO'}]</span>
+                    <span class="log-message">${log.message || ''}</span>
+                `;
+
+                container.appendChild(logEl);
+            });
+        })
+        .catch(err => {
+            console.error('Failed to load logs:', err);
+            container.innerHTML = '<div style="color: #ef4444; text-align: center; padding: 20px;">加载日志失败</div>';
+        });
 }
 
 function exportLogsAsCsv() {
@@ -674,23 +915,26 @@ function exportLogsAsJson() {
 function getCurrentLogs() {
     const logs = [];
     const logItems = document.querySelectorAll('.log-item');
-    
+
     logItems.forEach(item => {
-        const time = item.querySelector('.log-time')?.textContent || '';
-        const level = item.querySelector('.log-level')?.textContent || '';
-        const message = item.querySelector('.log-message')?.textContent || '';
-        
-        logs.push({
-            time: time.replace(/\[|\]/g, ''),
-            level: level.replace(/\[|\]/g, ''),
-            message: message
-        });
+        const timeEl = item.querySelector('.log-time');
+        const levelEl = item.querySelector('.log-level');
+        const messageEl = item.querySelector('.log-message');
+
+        const time = timeEl?.textContent || '';
+        const level = levelEl?.textContent || '';
+        const message = messageEl?.textContent || '';
+
+        if (time || level || message) {
+            logs.push({
+                time: time.replace(/\[|\]/g, '').trim(),
+                level: level.replace(/\[|\]/g, '').trim(),
+                message: message.trim()
+            });
+        }
     });
-    
-    return logs.length > 0 ? logs : [
-        { time: new Date().toLocaleString(), level: 'INFO', message: '系统启动' },
-        { time: new Date().toLocaleString(), level: 'INFO', message: 'Web面板已就绪' }
-    ];
+
+    return logs;
 }
 
 function downloadFile(content, filename, mimeType) {

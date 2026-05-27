@@ -14,6 +14,7 @@ public class WebSocketConnection extends Thread {
     private final InputStream in;
     private final OutputStream out;
     private final AtomicBoolean running = new AtomicBoolean(true);
+    private final AtomicBoolean closed = new AtomicBoolean(false);
     
     public WebSocketConnection(AdvancedAntiCheat plugin, InputStream in, OutputStream out) {
         this.plugin = plugin;
@@ -87,15 +88,21 @@ public class WebSocketConnection extends Thread {
     }
     
     public void send(String message) {
+        if (closed.get() || !running.get()) {
+            return;
+        }
+
         try {
             byte[] data = message.getBytes(StandardCharsets.UTF_8);
             byte[] frame = createFrame(data);
             synchronized (out) {
+                if (closed.get()) return;
                 out.write(frame);
                 out.flush();
             }
         } catch (IOException e) {
             plugin.getLogger().warning("发送 WebSocket 消息失败: " + e.getMessage());
+            close();
         }
     }
     
@@ -129,13 +136,22 @@ public class WebSocketConnection extends Thread {
     }
     
     public void close() {
-        if (running.compareAndSet(true, false)) {
+        if (closed.compareAndSet(false, true)) {
+            running.set(false);
             try {
                 out.close();
+            } catch (IOException e) {
+                // Ignore
+            }
+            try {
                 in.close();
             } catch (IOException e) {
                 // Ignore
             }
         }
+    }
+
+    public boolean isClosed() {
+        return closed.get();
     }
 }

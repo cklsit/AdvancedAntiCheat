@@ -93,7 +93,7 @@
                             </div>
                             <div class="metric-value" id="onlinePlayers">0</div>
                             <div class="metric-label">在线玩家</div>
-                            <div class="metric-change positive">+2 <span class="arrow">↑</span></div>
+                            <div class="metric-change" id="playerChange"></div>
                         </div>
                         
                         <div class="metric-card">
@@ -182,67 +182,32 @@
                     <div class="page-header">
                         <h2>案件审判</h2>
                     </div>
-                    
+
                     <div class="kanban-board">
-                        <div class="kanban-column">
+                        <div class="kanban-column" id="cases-pending">
                             <div class="column-header">
                                 <span class="column-title">待审核</span>
-                                <span class="column-count">2</span>
+                                <span class="column-count" id="pending-count">0</span>
                             </div>
-                            <div class="column-cards">
-                                <div class="case-card">
-                                    <div class="case-header">
-                                        <span class="case-player">Steve</span>
-                                        <span class="case-risk high">高</span>
-                                    </div>
-                                    <div class="case-rule">KillAura 检测</div>
-                                    <div class="case-time">14:35</div>
-                                    <div class="case-evidence">证据摘要：高频攻击模式</div>
-                                </div>
-                                <div class="case-card">
-                                    <div class="case-header">
-                                        <span class="case-player">Alex</span>
-                                        <span class="case-risk medium">中</span>
-                                    </div>
-                                    <div class="case-rule">Speed 检测</div>
-                                    <div class="case-time">14:20</div>
-                                    <div class="case-evidence">证据摘要：异常移动速度</div>
-                                </div>
+                            <div class="column-cards" id="pending-cards">
                             </div>
                         </div>
-                        
-                        <div class="kanban-column">
+
+                        <div class="kanban-column" id="cases-reviewing">
                             <div class="column-header">
                                 <span class="column-title">审理中</span>
-                                <span class="column-count">1</span>
+                                <span class="column-count" id="reviewing-count">0</span>
                             </div>
-                            <div class="column-cards">
-                                <div class="case-card">
-                                    <div class="case-header">
-                                        <span class="case-player">Notch</span>
-                                        <span class="case-risk low">低</span>
-                                    </div>
-                                    <div class="case-rule">Fly 检测</div>
-                                    <div class="case-time">14:10</div>
-                                    <div class="case-evidence">证据摘要：可疑飞行行为</div>
-                                </div>
+                            <div class="column-cards" id="reviewing-cards">
                             </div>
                         </div>
-                        
-                        <div class="kanban-column">
+
+                        <div class="kanban-column" id="cases-closed">
                             <div class="column-header">
                                 <span class="column-title">已结案</span>
-                                <span class="column-count">5</span>
+                                <span class="column-count" id="closed-count">0</span>
                             </div>
-                            <div class="column-cards">
-                                <div class="case-card closed">
-                                    <div class="case-header">
-                                        <span class="case-player">Herobrine</span>
-                                        <span class="case-result banned">封禁</span>
-                                    </div>
-                                    <div class="case-rule">X-Ray 检测</div>
-                                    <div class="case-time">13:45</div>
-                                </div>
+                            <div class="column-cards" id="closed-cards">
                             </div>
                         </div>
                     </div>

@@ -348,6 +348,10 @@ body {
     color: var(--success-color);
 }
 
+.metric-change.negative {
+    color: var(--accent-red);
+}
+
 .charts-container {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -796,7 +800,40 @@ body {
 }
 
 .config-slider input[type="range"] {
-    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    height: 8px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-cyan);
+    cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-cyan);
+    cursor: pointer;
+    border: none;
+}
+
+.log-message {
+    color: var(--text-primary);
+}
+
+.search-input:focus,
+.filter-select:focus {
+    border-color: var(--accent-cyan);
+    outline: none;
 }
 
 .slider-value {
