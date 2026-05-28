@@ -7,6 +7,7 @@ import com.anticheat.bounty.BountyManager;
 import com.anticheat.listeners.*;
 import com.anticheat.managers.*;
 import com.anticheat.profiles.BehaviorTracker;
+import com.anticheat.profiles.PlayerProfile;
 import com.anticheat.utils.VersionUtil;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -23,6 +24,8 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private BehaviorTracker behaviorTracker;
     private CaptchaManager captchaManager;
     private BountyManager bountyManager;
+    private ProfileManager profileManager;
+    private com.anticheat.listeners.ProfileGUIListener profileGUIListener;
 
     @Override
     public void onEnable() {
@@ -38,6 +41,8 @@ public class AdvancedAntiCheat extends JavaPlugin {
         registerListeners();
         registerCommands();
         
+        startRiskDecayTask();
+        
         getLogger().info("§2[AdvancedAntiCheat] 插件已成功启用！");
         getLogger().info("§6[AdvancedAntiCheat] 保护您的服务器免受作弊侵害！");
     }
@@ -52,6 +57,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         }
         if (bountyManager != null) {
             bountyManager.onDisable();
+        }
+        if (profileManager != null) {
+            profileManager.saveAllProfiles();
         }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
@@ -71,6 +79,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         behaviorTracker = new BehaviorTracker(this);
         captchaManager = new CaptchaManager(this);
         bountyManager = new BountyManager(this);
+        profileManager = new ProfileManager(this);
     }
 
     private void registerListeners() {
@@ -82,6 +91,8 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new BehaviorListener(this), this);
         getServer().getPluginManager().registerEvents(new CaptchaListener(this), this);
         getServer().getPluginManager().registerEvents(new BountyListener(this), this);
+        profileGUIListener = new com.anticheat.listeners.ProfileGUIListener(this);
+        getServer().getPluginManager().registerEvents(profileGUIListener, this);
 
         if (VersionUtil.isHighVersion()) {
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
@@ -140,5 +151,21 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public BountyManager getBountyManager() {
         return bountyManager;
+    }
+
+    public ProfileManager getProfileManager() {
+        return profileManager;
+    }
+
+    public com.anticheat.listeners.ProfileGUIListener getProfileGUIListener() {
+        return profileGUIListener;
+    }
+
+    private void startRiskDecayTask() {
+        getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
+            for (PlayerProfile profile : profileManager.getCachedProfiles().values()) {
+                profile.decayRiskScore();
+            }
+        }, 20L * 60 * 60, 20L * 60 * 60);
     }
 }

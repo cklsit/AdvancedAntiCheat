@@ -1,10 +1,13 @@
 package com.anticheat.commands;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.gui.ProfileGUI;
 import com.anticheat.managers.ReportManager;
+import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 import java.util.List;
 
@@ -39,6 +42,8 @@ public class AntiCheatCommand implements CommandExecutor {
             showReports(sender);
         } else if (subCommand.equals("help")) {
             showHelp(sender);
+        } else if (subCommand.equals("profile")) {
+            handleProfile(sender, args);
         } else {
             sender.sendMessage("§c未知子命令！使用 /ac help 查看帮助");
         }
@@ -55,6 +60,7 @@ public class AntiCheatCommand implements CommandExecutor {
         sender.sendMessage(" §a/ac reload          §7- 重新加载配置文件");
         sender.sendMessage(" §a/ac stats           §7- 查看检测统计信息");
         sender.sendMessage(" §a/ac reports         §7- 查看待处理举报列表");
+        sender.sendMessage(" §a/ac profile <玩家>  §7- 查看玩家档案");
         sender.sendMessage(" §a/ac help            §7- 显示此帮助信息");
         sender.sendMessage("");
         sender.sendMessage(" §6玩家命令:");
@@ -129,5 +135,28 @@ public class AntiCheatCommand implements CommandExecutor {
         sender.sendMessage("");
         sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
+    }
+
+    private void handleProfile(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("§c只有玩家可以使用此命令！");
+            return;
+        }
+
+        Player viewer = (Player) sender;
+        if (args.length < 2) {
+            viewer.sendMessage("§c用法: /ac profile <玩家>");
+            return;
+        }
+
+        String targetName = args[1];
+        Player target = Bukkit.getPlayer(targetName);
+        if (target == null) {
+            viewer.sendMessage("§c玩家 " + targetName + " 不在线！");
+            return;
+        }
+
+        ProfileGUI gui = new ProfileGUI(plugin, plugin.getProfileGUIListener());
+        gui.openProfileGUI(viewer, target);
     }
 }

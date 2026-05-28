@@ -4,13 +4,12 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerProfile implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private final UUID playerUUID;
-    private final String playerName;
+    private String playerName;
 
     private long firstSeen;
     private long lastSeen;
@@ -46,6 +45,13 @@ public class PlayerProfile implements Serializable {
     private static final int MAX_HISTORY_SIZE = 1000;
     private static final int MIN_SAMPLES_FOR_COMPARISON = 30;
 
+    private IdentityFingerprint identity;
+    private BehaviorFeatures behavior;
+    private RiskHistory riskHistory;
+    private AssociationGraph associations;
+    private List<HourlySnapshot> hourlySnapshots;
+    private List<KeyEvent> keyEvents;
+
     public PlayerProfile(UUID playerUUID, String playerName) {
         this.playerUUID = playerUUID;
         this.playerName = playerName;
@@ -60,6 +66,45 @@ public class PlayerProfile implements Serializable {
         this.walkStayRatioHistory = new ArrayList<>();
 
         this.sampleCount = 0;
+
+        this.identity = new IdentityFingerprint();
+        this.behavior = new BehaviorFeatures();
+        this.riskHistory = new RiskHistory();
+        this.associations = new AssociationGraph();
+        this.hourlySnapshots = new ArrayList<>();
+        this.keyEvents = new ArrayList<>();
+        
+        this.identity.setCurrentName(playerName);
+        this.identity.setFirstJoinTime(this.firstSeen);
+    }
+
+    public void updateName(String newName) {
+        if (!this.playerName.equals(newName)) {
+            this.identity.addHistoricalName(this.playerName);
+            this.playerName = newName;
+            this.identity.setCurrentName(newName);
+        }
+    }
+
+    public void addPlayTime(int seconds) {
+        this.totalPlayTime += seconds;
+        this.identity.setTotalPlayTime(this.totalPlayTime);
+    }
+
+    public void addViolation(String rule, int severity, String penalty, boolean falsePositive, String executor) {
+        this.riskHistory.addViolation(rule, severity, penalty, falsePositive, executor);
+    }
+
+    public void addCaptchaTrial(String reason, boolean passed) {
+        this.riskHistory.addCaptchaTrial(reason, passed);
+    }
+
+    public void decayRiskScore() {
+        this.riskHistory.decayRiskScore();
+    }
+
+    public double getRiskScore() {
+        return this.riskHistory.getRiskScore();
     }
 
     public void updateCPS(double cps) {
@@ -205,10 +250,6 @@ public class PlayerProfile implements Serializable {
         this.lastSeen = System.currentTimeMillis();
     }
 
-    public void addPlayTime(int seconds) {
-        this.totalPlayTime += seconds;
-    }
-
     public String getAnomalyReport(double currentCPS, double currentTurnSpeed, 
                                     double currentJumpInterval, double currentInterfaceActions,
                                     double currentWalkStayRatio) {
@@ -319,7 +360,43 @@ public class PlayerProfile implements Serializable {
         return cpsHistory.size() >= MIN_SAMPLES_FOR_COMPARISON;
     }
 
+    public IdentityFingerprint getIdentity() { return identity; }
+    public BehaviorFeatures getBehavior() { return behavior; }
+    public RiskHistory getRiskHistory() { return riskHistory; }
+    public AssociationGraph getAssociations() { return associations; }
+    public List<HourlySnapshot> getHourlySnapshots() { return hourlySnapshots; }
+    public List<KeyEvent> getKeyEvents() { return keyEvents; }
+
+    public static class HourlySnapshot implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public long timestamp;
+        public double riskPeak;
+        public int violationCount;
+        public String ruleStats;
+
+        public HourlySnapshot(long timestamp, double riskPeak, int violationCount, String ruleStats) {
+            this.timestamp = timestamp;
+            this.riskPeak = riskPeak;
+            this.violationCount = violationCount;
+            this.ruleStats = ruleStats;
+        }
+    }
+
+    public static class KeyEvent implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public long timestamp;
+        public String eventType;
+        public String data;
+
+        public KeyEvent(long timestamp, String eventType, String data) {
+            this.timestamp = timestamp;
+            this.eventType = eventType;
+            this.data = data;
+        }
+    }
+
     private interface StatisticsUpdater {
         void update(double[] values);
     }
 }
+
