@@ -1,16 +1,13 @@
 package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
-import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.inventory.Inventory;
 
-import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -90,11 +87,8 @@ public class ProfileGUIListener implements Listener {
 
     private void handleBan(Player viewer, Player target, int days) {
         String reason = "AntiCheat System Auto-Ban";
-        long expireTime = System.currentTimeMillis() + (days * 24L * 60L * 60L * 1000L);
         
-        Bukkit.getBanList(BanList.Type.NAME).addBan(target.getName(), reason, new Date(expireTime), viewer.getName());
-        target.kickPlayer(ChatColor.RED + "You have been banned: " + reason);
-        
+        plugin.getBanManager().banPlayer(target.getUniqueId(), target.getName(), days + "d", reason);
         plugin.getProfileManager().recordViolation(target, "Admin Ban", 100, days + " Day Ban", viewer.getName());
         viewer.sendMessage(ChatColor.GREEN + "Banned " + target.getName() + " for " + days + " days");
     }
@@ -102,9 +96,7 @@ public class ProfileGUIListener implements Listener {
     private void handlePermBan(Player viewer, Player target) {
         String reason = "AntiCheat System Permanent Ban";
         
-        Bukkit.getBanList(BanList.Type.NAME).addBan(target.getName(), reason, null, viewer.getName());
-        target.kickPlayer(ChatColor.RED + "You have been permanently banned: " + reason);
-        
+        plugin.getBanManager().banPlayer(target.getUniqueId(), target.getName(), "permanent", reason);
         plugin.getProfileManager().recordViolation(target, "Admin Permanent Ban", 100, "Permanent Ban", viewer.getName());
         viewer.sendMessage(ChatColor.GREEN + "Permanently banned " + target.getName());
     }
