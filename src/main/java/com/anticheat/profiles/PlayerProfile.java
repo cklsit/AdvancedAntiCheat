@@ -79,6 +79,10 @@ public class PlayerProfile implements Serializable {
     }
 
     public void updateName(String newName) {
+        if (this.identity == null) {
+            this.identity = new IdentityFingerprint();
+            this.identity.setCurrentName(this.playerName);
+        }
         if (!this.playerName.equals(newName)) {
             this.identity.addHistoricalName(this.playerName);
             this.playerName = newName;
@@ -88,23 +92,57 @@ public class PlayerProfile implements Serializable {
 
     public void addPlayTime(int seconds) {
         this.totalPlayTime += seconds;
+        if (this.identity == null) {
+            this.identity = new IdentityFingerprint();
+        }
         this.identity.setTotalPlayTime(this.totalPlayTime);
     }
 
     public void addViolation(String rule, int severity, String penalty, boolean falsePositive, String executor) {
+        ensureRiskHistoryInitialized();
         this.riskHistory.addViolation(rule, severity, penalty, falsePositive, executor);
     }
 
     public void addCaptchaTrial(String reason, boolean passed) {
+        ensureRiskHistoryInitialized();
         this.riskHistory.addCaptchaTrial(reason, passed);
     }
 
     public void decayRiskScore() {
+        ensureRiskHistoryInitialized();
         this.riskHistory.decayRiskScore();
     }
 
     public double getRiskScore() {
+        ensureRiskHistoryInitialized();
         return this.riskHistory.getRiskScore();
+    }
+
+    private void ensureRiskHistoryInitialized() {
+        if (this.riskHistory == null) {
+            this.riskHistory = new RiskHistory();
+        }
+    }
+
+    private void ensureAllInitialized() {
+        if (this.identity == null) {
+            this.identity = new IdentityFingerprint();
+        }
+        if (this.behavior == null) {
+            this.behavior = new BehaviorFeatures();
+        }
+        if (this.riskHistory == null) {
+            this.riskHistory = new RiskHistory();
+        }
+        if (this.associations == null) {
+            this.associations = new AssociationGraph();
+        }
+        if (this.hourlySnapshots == null) {
+            this.hourlySnapshots = new ArrayList<>();
+        }
+        if (this.keyEvents == null) {
+            this.keyEvents = new ArrayList<>();
+        }
     }
 
     public void updateCPS(double cps) {
@@ -360,12 +398,40 @@ public class PlayerProfile implements Serializable {
         return cpsHistory.size() >= MIN_SAMPLES_FOR_COMPARISON;
     }
 
-    public IdentityFingerprint getIdentity() { return identity; }
-    public BehaviorFeatures getBehavior() { return behavior; }
-    public RiskHistory getRiskHistory() { return riskHistory; }
-    public AssociationGraph getAssociations() { return associations; }
-    public List<HourlySnapshot> getHourlySnapshots() { return hourlySnapshots; }
-    public List<KeyEvent> getKeyEvents() { return keyEvents; }
+    public IdentityFingerprint getIdentity() { 
+        if (this.identity == null) {
+            this.identity = new IdentityFingerprint();
+        }
+        return identity; 
+    }
+    public BehaviorFeatures getBehavior() { 
+        if (this.behavior == null) {
+            this.behavior = new BehaviorFeatures();
+        }
+        return behavior; 
+    }
+    public RiskHistory getRiskHistory() { 
+        ensureRiskHistoryInitialized();
+        return riskHistory; 
+    }
+    public AssociationGraph getAssociations() { 
+        if (this.associations == null) {
+            this.associations = new AssociationGraph();
+        }
+        return associations; 
+    }
+    public List<HourlySnapshot> getHourlySnapshots() { 
+        if (this.hourlySnapshots == null) {
+            this.hourlySnapshots = new ArrayList<>();
+        }
+        return hourlySnapshots; 
+    }
+    public List<KeyEvent> getKeyEvents() { 
+        if (this.keyEvents == null) {
+            this.keyEvents = new ArrayList<>();
+        }
+        return keyEvents; 
+    }
 
     public static class HourlySnapshot implements Serializable {
         private static final long serialVersionUID = 1L;
