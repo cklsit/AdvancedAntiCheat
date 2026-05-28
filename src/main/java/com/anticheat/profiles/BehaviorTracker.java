@@ -7,10 +7,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -23,6 +20,8 @@ public class BehaviorTracker {
 
     private static final long CPS_WINDOW_MS = 1000;
     private static final long WALK_STAY_CHECK_INTERVAL = 60000;
+    private static final long MOVE_CHECK_INTERVAL = 100;
+    private static final int MAX_CLICK_BUFFER = 50;
 
     public BehaviorTracker(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
@@ -44,6 +43,7 @@ public class BehaviorTracker {
         UUID uuid = event.getPlayer().getUniqueId();
         saveProfile(uuid);
         playerData.remove(uuid);
+        profiles.remove(uuid);
     }
 
     public void onPlayerInteract(PlayerInteractEvent event) {
@@ -56,14 +56,20 @@ public class BehaviorTracker {
 
         long now = System.currentTimeMillis();
         data.clickTimestamps.add(now);
-        data.clickTimestamps.removeIf(ts -> now - ts > CPS_WINDOW_MS * 10);
+        
+        while (data.clickTimestamps.size() > MAX_CLICK_BUFFER) {
+            data.clickTimestamps.poll();
+        }
 
-        double cps = calculateCPS(data);
-        if (cps > 0) {
-            PlayerProfile profile = profiles.get(uuid);
-            if (profile != null) {
-                profile.updateCPS(cps);
+        if (now - data.lastCPSUpdate > 500) {
+            double cps = calculateCPS(data);
+            if (cps > 0) {
+                PlayerProfile profile = profiles.get(uuid);
+                if (profile != null) {
+                    profile.updateCPS(cps);
+                }
             }
+            data.lastCPSUpdate = now;
         }
 
         data.interfaceActionsThisMinute.incrementAndGet();
@@ -81,9 +87,14 @@ public class BehaviorTracker {
         if (lastSwing > 0) {
             double interval = (now - lastSwing) / 1000.0;
             if (interval > 0.1 && interval < 10) {
-                PlayerProfile profile = profiles.get(uuid);
-                if (profile != null) {
-                    profile.updateJumpInterval(interval);
+                data.recentJumpInterval = (data.recentJumpInterval * 0.7 + interval * 0.3);
+                
+                if (now - data.lastJumpUpdate > 1000) {
+                    PlayerProfile profile = profiles.get(uuid);
+                    if (profile != null) {
+                        profile.updateJumpInterval(data.recentJumpInterval);
+                    }
+                    data.lastJumpUpdate = now;
                 }
             }
         }
@@ -104,6 +115,12 @@ public class BehaviorTracker {
         PlayerBehaviorData data = playerData.get(uuid);
         if (data == null) return;
 
+        long now = System.currentTimeMillis();
+        if (now - data.lastMoveCheck.get() < MOVE_CHECK_INTERVAL) {
+            return;
+        }
+        data.lastMoveCheck.set(now);
+
         data.walkTimeThisPeriod.incrementAndGet();
 
         float yawDiff = Math.abs(event.getFrom().getYaw() - event.getTo().getYaw());
@@ -113,9 +130,14 @@ public class BehaviorTracker {
 
         if (yawDiff > 0.5 || pitchDiff > 0.5) {
             double turnSpeed = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
-            PlayerProfile profile = profiles.get(uuid);
-            if (profile != null) {
-                profile.updateTurnSpeed(turnSpeed);
+            data.recentTurnSpeed = (data.recentTurnSpeed * 0.8 + turnSpeed * 0.2);
+            
+            if (now - data.lastTurnUpdate > 500) {
+                PlayerProfile profile = profiles.get(uuid);
+                if (profile != null) {
+                    profile.updateTurnSpeed(data.recentTurnSpeed);
+                }
+                data.lastTurnUpdate = now;
             }
         }
     }
@@ -170,7 +192,11 @@ public class BehaviorTracker {
 
     private double calculateCPS(PlayerBehaviorData data) {
         long now = System.currentTimeMillis();
-        data.clickTimestamps.removeIf(ts -> now - ts > CPS_WINDOW_MS);
+        long cutoff = now - CPS_WINDOW_MS;
+        
+        while (!data.clickTimestamps.isEmpty() && data.clickTimestamps.peek() < cutoff) {
+            data.clickTimestamps.poll();
+        }
 
         int clicks = data.clickTimestamps.size();
         if (clicks == 0) return 0;
@@ -242,14 +268,18 @@ public class BehaviorTracker {
     }
 
     private static class PlayerBehaviorData {
-        final List<Long> clickTimestamps = new ArrayList<>();
+        final ArrayDeque<Long> clickTimestamps = new ArrayDeque<>();
         final AtomicInteger interfaceActionsThisMinute = new AtomicInteger(0);
         final AtomicInteger walkTimeThisPeriod = new AtomicInteger(0);
         final AtomicLong lastArmSwing = new AtomicLong(0);
         final AtomicLong lastWalkStayCheck = new AtomicLong(0);
         final AtomicLong lastInterfaceCheck = new AtomicLong(0);
-
+        final AtomicLong lastMoveCheck = new AtomicLong(0);
+        
         volatile double recentTurnSpeed = 0;
         volatile double recentJumpInterval = 1.0;
+        volatile long lastCPSUpdate = 0;
+        volatile long lastTurnUpdate = 0;
+        volatile long lastJumpUpdate = 0;
     }
 }

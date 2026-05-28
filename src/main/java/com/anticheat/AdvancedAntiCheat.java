@@ -59,7 +59,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
             bountyManager.onDisable();
         }
         if (profileManager != null) {
-            profileManager.saveAllProfiles();
+            profileManager.shutdown();
         }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
