@@ -26,6 +26,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private BountyManager bountyManager;
     private ProfileManager profileManager;
     private com.anticheat.listeners.ProfileGUIListener profileGUIListener;
+    private AdvancedDetectionManager advancedDetectionManager;
 
     @Override
     public void onEnable() {
@@ -61,6 +62,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         if (profileManager != null) {
             profileManager.shutdown();
         }
+        if (advancedDetectionManager != null) {
+            advancedDetectionManager.shutdown();
+        }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
 
@@ -80,6 +84,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         captchaManager = new CaptchaManager(this);
         bountyManager = new BountyManager(this);
         profileManager = new ProfileManager(this);
+        
+        advancedDetectionManager = new AdvancedDetectionManager(this);
+        advancedDetectionManager.initialize(this);
     }
 
     private void registerListeners() {
@@ -159,6 +166,10 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public com.anticheat.listeners.ProfileGUIListener getProfileGUIListener() {
         return profileGUIListener;
+    }
+
+    public AdvancedDetectionManager getAdvancedDetectionManager() {
+        return advancedDetectionManager;
     }
 
     private void startRiskDecayTask() {

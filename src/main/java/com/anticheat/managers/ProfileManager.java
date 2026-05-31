@@ -66,6 +66,10 @@ public class ProfileManager {
     public Map<UUID, PlayerProfile> getCachedProfiles() {
         return cachedProfiles;
     }
+    
+    public AdvancedAntiCheat getPlugin() {
+        return plugin;
+    }
 
     public PlayerProfile getProfile(UUID uuid) {
         PlayerProfile profile = cachedProfiles.get(uuid);

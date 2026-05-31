@@ -2,8 +2,11 @@ package com.anticheat.profiles;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class PlayerProfile implements Serializable {
     private static final long serialVersionUID = 1L;
@@ -51,6 +54,10 @@ public class PlayerProfile implements Serializable {
     private AssociationGraph associations;
     private List<HourlySnapshot> hourlySnapshots;
     private List<KeyEvent> keyEvents;
+    
+    private final Map<String, NormalDistribution> baselines;
+    private final Map<String, List<Double>> featureHistory;
+    private static final double DEFAULT_Z_THRESHOLD = 3.0;
 
     public PlayerProfile(UUID playerUUID, String playerName) {
         this.playerUUID = playerUUID;
@@ -73,6 +80,8 @@ public class PlayerProfile implements Serializable {
         this.associations = new AssociationGraph();
         this.hourlySnapshots = new ArrayList<>();
         this.keyEvents = new ArrayList<>();
+        this.baselines = new ConcurrentHashMap<>();
+        this.featureHistory = new ConcurrentHashMap<>();
         
         this.identity.setCurrentName(playerName);
         this.identity.setFirstJoinTime(this.firstSeen);
@@ -392,6 +401,157 @@ public class PlayerProfile implements Serializable {
 
     public int getSampleCount() {
         return sampleCount;
+    }
+    
+    public void updateBaseline(String feature, double value) {
+        NormalDistribution dist = baselines.computeIfAbsent(feature, k -> new NormalDistribution());
+        dist.addSample(value);
+        
+        List<Double> history = featureHistory.computeIfAbsent(feature, k -> new ArrayList<>());
+        synchronized (history) {
+            if (history.size() >= MAX_HISTORY_SIZE) {
+                history.remove(0);
+            }
+            history.add(value);
+        }
+    }
+    
+    public double calculateZScore(String feature, double currentValue) {
+        NormalDistribution dist = baselines.get(feature);
+        if (dist == null || !dist.hasEnoughSamples()) {
+            return 0.0;
+        }
+        return dist.calculateZScore(currentValue);
+    }
+    
+    public boolean isAnomaly(String feature, double value, double threshold) {
+        NormalDistribution dist = baselines.get(feature);
+        if (dist == null) {
+            return false;
+        }
+        return dist.isOutlier(value, threshold);
+    }
+    
+    public boolean isAnomaly(String feature, double value) {
+        return isAnomaly(feature, value, DEFAULT_Z_THRESHOLD);
+    }
+    
+    public NormalDistribution getBaseline(String feature) {
+        return baselines.get(feature);
+    }
+    
+    public void updateHorizontalSpeed(double speed) {
+        updateBaseline("horizontalSpeed", speed);
+    }
+    
+    public void updateVerticalSpeed(double speed) {
+        updateBaseline("verticalSpeed", speed);
+    }
+    
+    public void updateCPSBaseline(double cps) {
+        updateBaseline("cps", cps);
+    }
+    
+    public void updateJumpIntervalBaseline(double interval) {
+        updateBaseline("jumpInterval", interval);
+    }
+    
+    public void updateYawRate(double yawRate) {
+        updateBaseline("yawRate", yawRate);
+    }
+    
+    public void updatePitchRate(double pitchRate) {
+        updateBaseline("pitchRate", pitchRate);
+    }
+    
+    public void updateBlockBreakTime(long time) {
+        updateBaseline("blockBreakTime", (double) time);
+    }
+    
+    public void updateBlockPlaceTime(long time) {
+        updateBaseline("blockPlaceTime", (double) time);
+    }
+    
+    public void updateSwimFrequency(double frequency) {
+        updateBaseline("swimFrequency", frequency);
+    }
+    
+    public void updateFlyFrequency(double frequency) {
+        updateBaseline("flyFrequency", frequency);
+    }
+    
+    public void updateAttackDistance(double distance) {
+        updateBaseline("attackDistance", distance);
+    }
+    
+    public boolean isHorizontalSpeedAnomaly(double speed) {
+        return isAnomaly("horizontalSpeed", speed);
+    }
+    
+    public boolean isVerticalSpeedAnomaly(double speed) {
+        return isAnomaly("verticalSpeed", speed);
+    }
+    
+    public boolean isCPSBaselineAnomaly(double cps) {
+        return isAnomaly("cps", cps);
+    }
+    
+    public boolean isJumpIntervalBaselineAnomaly(double interval) {
+        return isAnomaly("jumpInterval", interval);
+    }
+    
+    public boolean isYawRateAnomaly(double yawRate) {
+        return isAnomaly("yawRate", yawRate);
+    }
+    
+    public boolean isPitchRateAnomaly(double pitchRate) {
+        return isAnomaly("pitchRate", pitchRate);
+    }
+    
+    public boolean isBlockBreakTimeAnomaly(long time) {
+        return isAnomaly("blockBreakTime", (double) time);
+    }
+    
+    public boolean isAttackDistanceAnomaly(double distance) {
+        return isAnomaly("attackDistance", distance);
+    }
+    
+    public Map<String, Double> getAllZScores(Map<String, Double> currentValues) {
+        Map<String, Double> zScores = new HashMap<>();
+        for (Map.Entry<String, Double> entry : currentValues.entrySet()) {
+            double zScore = calculateZScore(entry.getKey(), entry.getValue());
+            zScores.put(entry.getKey(), zScore);
+        }
+        return zScores;
+    }
+    
+    public List<String> getAnomalousFeatures(Map<String, Double> currentValues, double threshold) {
+        List<String> anomalies = new ArrayList<>();
+        for (Map.Entry<String, Double> entry : currentValues.entrySet()) {
+            if (isAnomaly(entry.getKey(), entry.getValue(), threshold)) {
+                anomalies.add(entry.getKey());
+            }
+        }
+        return anomalies;
+    }
+    
+    public boolean hasBaseline(String feature) {
+        NormalDistribution dist = baselines.get(feature);
+        return dist != null && dist.hasEnoughSamples();
+    }
+    
+    public int getBaselineSampleCount(String feature) {
+        NormalDistribution dist = baselines.get(feature);
+        return dist != null ? dist.getSampleCount() : 0;
+    }
+    
+    public void clearBaselines() {
+        baselines.clear();
+        featureHistory.clear();
+    }
+    
+    public Map<String, NormalDistribution> getBaselines() {
+        return new HashMap<>(baselines);
     }
 
     public boolean hasEnoughData() {
