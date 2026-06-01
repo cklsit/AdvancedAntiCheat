@@ -9,6 +9,10 @@ import com.anticheat.managers.*;
 import com.anticheat.profiles.BehaviorTracker;
 import com.anticheat.profiles.PlayerProfile;
 import com.anticheat.utils.VersionUtil;
+import com.anticheat.web.PluginWebSocketServer;
+import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -27,6 +31,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private ProfileManager profileManager;
     private com.anticheat.listeners.ProfileGUIListener profileGUIListener;
     private AdvancedDetectionManager advancedDetectionManager;
+    private PluginWebSocketServer webSocketServer;
 
     @Override
     public void onEnable() {
@@ -41,6 +46,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         initializeManagers();
         registerListeners();
         registerCommands();
+        startWebSocketServer();
         
         startRiskDecayTask();
         
@@ -65,6 +71,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         if (advancedDetectionManager != null) {
             advancedDetectionManager.shutdown();
         }
+        stopWebSocketServer();
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
 
@@ -170,6 +177,54 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public AdvancedDetectionManager getAdvancedDetectionManager() {
         return advancedDetectionManager;
+    }
+
+    public PluginWebSocketServer getWebSocketServer() {
+        return webSocketServer;
+    }
+
+    private void startWebSocketServer() {
+        if (!configManager.getConfig().getBoolean("web-panel.enabled", true)) {
+            getLogger().info("§6[AdvancedAntiCheat] Web面板集成已禁用");
+            return;
+        }
+
+        int port = configManager.getConfig().getInt("web-panel.port", 35677);
+        webSocketServer = new PluginWebSocketServer(this, port);
+        webSocketServer.start();
+    }
+
+    private void stopWebSocketServer() {
+        if (webSocketServer != null) {
+            webSocketServer.stop();
+        }
+    }
+
+    public void onPlayerJoin(Player player) {
+        if (webSocketServer != null && webSocketServer.isRunning()) {
+            webSocketServer.sendPlayerJoin(player);
+        }
+    }
+
+    public void onPlayerQuit(Player player) {
+        if (webSocketServer != null && webSocketServer.isRunning()) {
+            webSocketServer.sendPlayerQuit(player);
+        }
+    }
+
+    public void sendViolationAlert(Player player, String violationType, String details) {
+        if (webSocketServer != null && webSocketServer.isRunning()) {
+            webSocketServer.sendViolation(player, violationType, details);
+        }
+    }
+
+    public void broadcastAlert(String id, String type, String title, String message, String playerId, String playerName) {
+        if (webSocketServer != null && webSocketServer.isRunning()) {
+            PluginWebSocketServer.AlertData alert = new PluginWebSocketServer.AlertData(
+                id, type, title, message, playerId, playerName, System.currentTimeMillis()
+            );
+            webSocketServer.broadcastAlert(alert);
+        }
     }
 
     private void startRiskDecayTask() {

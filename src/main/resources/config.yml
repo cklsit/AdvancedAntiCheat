@@ -56,3 +56,6 @@ bounty:
 web-panel:
   enabled: true
   port: 35677
+  heartbeat-interval: 30
+  reconnect-attempts: 10
+  reconnect-delay: 3000

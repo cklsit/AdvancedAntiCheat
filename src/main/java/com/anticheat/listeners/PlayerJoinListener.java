@@ -21,6 +21,8 @@ public class PlayerJoinListener implements Listener {
         Player player = event.getPlayer();
 
         clearCheckClientEffects(player);
+        
+        plugin.onPlayerJoin(player);
 
         if (plugin.getBanManager().isBanned(player.getUniqueId())) {
             BanInfo banInfo = plugin.getBanManager().getBanInfo(player.getUniqueId());
