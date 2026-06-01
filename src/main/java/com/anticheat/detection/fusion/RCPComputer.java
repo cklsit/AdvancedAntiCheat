@@ -33,7 +33,7 @@ public class RCPComputer {
     }
     
     private void initializeDefaultPriors() {
-        playerPriorProbabilities.put(null, 0.05);
+        // ConcurrentHashMap不允许null key，使用getOrDefault处理默认值
     }
     
     public double computeRCP(UUID playerUUID) {
