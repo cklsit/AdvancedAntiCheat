@@ -2,11 +2,10 @@ package com.anticheat.detection;
 
 import com.anticheat.managers.DetectionManager;
 import com.anticheat.utils.VersionUtil;
+import org.bukkit.Location;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.block.Block;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -122,40 +121,10 @@ public class FlyDetection extends Detection {
     }
 
     private boolean isInWater(Player player) {
-        if (VersionUtil.isHighVersion()) {
-            return player.isInWater();
-        } else {
-            Location loc = player.getLocation();
-            Material material = loc.getBlock().getType();
-            return material == Material.WATER || isStationaryWater(material);
-        }
-    }
-
-    private boolean isStationaryWater(Material material) {
-        try {
-            Material stationaryWater = (Material) Material.class.getDeclaredField("STATIONARY_WATER").get(null);
-            return material == stationaryWater;
-        } catch (Exception e) {
-            return false;
-        }
+        return VersionUtil.isInWater(player);
     }
 
     private boolean isInLava(Player player) {
-        if (VersionUtil.isHighVersion()) {
-            return player.isInLava();
-        } else {
-            Location loc = player.getLocation();
-            Material material = loc.getBlock().getType();
-            return material == Material.LAVA || isStationaryLava(material);
-        }
-    }
-
-    private boolean isStationaryLava(Material material) {
-        try {
-            Material stationaryLava = (Material) Material.class.getDeclaredField("STATIONARY_LAVA").get(null);
-            return material == stationaryLava;
-        } catch (Exception e) {
-            return false;
-        }
+        return VersionUtil.isInLava(player);
     }
 }

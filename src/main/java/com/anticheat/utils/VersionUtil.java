@@ -1,6 +1,9 @@
 package com.anticheat.utils;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
 
 public class VersionUtil {
 
@@ -70,5 +73,67 @@ public class VersionUtil {
         if (version.startsWith("v1_20")) return 20;
         if (version.startsWith("v1_21")) return 21;
         return 21;
+    }
+
+    /**
+     * 判断玩家是否在水中
+     *
+     * @param player 玩家
+     * @return 是否在水中
+     */
+    public static boolean isInWater(Player player) {
+        if (isHighVersion()) {
+            return player.isInWater();
+        } else {
+            Location loc = player.getLocation();
+            Material material = loc.getBlock().getType();
+            return material == Material.WATER || isStationaryWater(material);
+        }
+    }
+
+    /**
+     * 判断材质是否为静止水（兼容低版本）
+     *
+     * @param material 材质
+     * @return 是否为静止水
+     */
+    private static boolean isStationaryWater(Material material) {
+        try {
+            Material stationaryWater = (Material) Material.class.getDeclaredField("STATIONARY_WATER").get(null);
+            return material == stationaryWater;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 判断玩家是否在岩浆中
+     *
+     * @param player 玩家
+     * @return 是否在岩浆中
+     */
+    public static boolean isInLava(Player player) {
+        if (isHighVersion()) {
+            return player.isInLava();
+        } else {
+            Location loc = player.getLocation();
+            Material material = loc.getBlock().getType();
+            return material == Material.LAVA || isStationaryLava(material);
+        }
+    }
+
+    /**
+     * 判断材质是否为静止岩浆（兼容低版本）
+     *
+     * @param material 材质
+     * @return 是否为静止岩浆
+     */
+    private static boolean isStationaryLava(Material material) {
+        try {
+            Material stationaryLava = (Material) Material.class.getDeclaredField("STATIONARY_LAVA").get(null);
+            return material == stationaryLava;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
