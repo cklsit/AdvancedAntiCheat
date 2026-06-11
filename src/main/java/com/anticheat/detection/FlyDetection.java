@@ -28,13 +28,7 @@ public class FlyDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("fly")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE || 
-            player.getGameMode() == org.bukkit.GameMode.SPECTATOR ||
-            player.hasPermission("anticheat.bypass.fly")) {
+        if (shouldSkipDetection(player)) {
             return;
         }
 
@@ -43,7 +37,7 @@ public class FlyDetection extends Detection {
             return;
         }
 
-        if (getManager().getPlugin().getCheckClientManager().isBeingChecked(player.getUniqueId())) {
+        if (isBeingChecked(player)) {
             return;
         }
 

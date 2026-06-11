@@ -23,16 +23,7 @@ public class NoSlowDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("noslow")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.noslow")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE ||
-            player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
+        if (shouldSkipDetection(player)) {
             return;
         }
 
@@ -96,7 +87,7 @@ public class NoSlowDetection extends Detection {
     }
 
     public void onGroundCheck(Player player, double moveSpeed) {
-        if (player.hasPermission("anticheat.bypass.noslow")) {
+        if (hasBypassPermission(player)) {
             return;
         }
 

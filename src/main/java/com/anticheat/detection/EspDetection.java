@@ -19,22 +19,14 @@ public class EspDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("esp")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.esp")) {
+        if (shouldSkipDetection(player)) {
             return;
         }
     }
 
     public void onInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("esp")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.esp")) {
+        if (shouldSkipDetection(player)) {
             return;
         }
 

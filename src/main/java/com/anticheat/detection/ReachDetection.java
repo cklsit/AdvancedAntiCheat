@@ -26,25 +26,13 @@ public class ReachDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("reach")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.reach")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE) {
+        if (shouldSkipDetection(player)) {
             return;
         }
     }
 
     public void onAttack(Player attacker, LivingEntity victim) {
-        if (attacker.hasPermission("anticheat.bypass.reach")) {
-            return;
-        }
-
-        if (attacker.getGameMode() == org.bukkit.GameMode.CREATIVE) {
+        if (hasBypassPermission(attacker) || attacker.getGameMode() == org.bukkit.GameMode.CREATIVE) {
             return;
         }
 

@@ -26,32 +26,11 @@ public class SpeedDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("speed")) {
+        if (shouldSkipDetection(player)) {
             return;
         }
 
-        if (player.hasPermission("anticheat.bypass.speed")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE || 
-            player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
-            return;
-        }
-
-        if (player.isDead()) {
-            return;
-        }
-
-        if (player.isSleeping()) {
-            return;
-        }
-
-        if (getManager().getPlugin().getCheckClientManager().isBeingChecked(player.getUniqueId())) {
-            return;
-        }
-
-        if (player.isInsideVehicle()) {
+        if (isDead(player) || player.isSleeping() || isBeingChecked(player) || player.isInsideVehicle()) {
             return;
         }
 

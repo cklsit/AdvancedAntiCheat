@@ -27,15 +27,7 @@ public class ScaffoldDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("scaffold")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.scaffold")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE) {
+        if (shouldSkipDetection(player)) {
             return;
         }
 
@@ -99,7 +91,7 @@ public class ScaffoldDetection extends Detection {
     }
 
     public void onBlockPlace(Player player) {
-        if (player.hasPermission("anticheat.bypass.scaffold")) {
+        if (hasBypassPermission(player)) {
             return;
         }
 

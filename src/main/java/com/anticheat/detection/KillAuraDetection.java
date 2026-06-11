@@ -1,6 +1,5 @@
 package com.anticheat.detection;
 
-import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.detection.ViolationRecord.ViolationType;
 import com.anticheat.managers.DetectionManager;
 import org.bukkit.Location;
@@ -15,13 +14,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public class KillAuraDetection extends Detection {
 
     private final Map<UUID, List<Double>> hitAngles;
-    private final Map<UUID, List<Long>> hitTimes;
     private final Map<UUID, List<Double>> cpsHistory;
     private final Map<UUID, Integer> targetSwitches;
     private final Map<UUID, Long> lastHitTime;
     private final Map<UUID, UUID> currentTarget;
 
-    private static final double MAX_HUMAN_ANGLE_PER_SECOND = 180.0;
     private static final double MAX_CPS = 20.0;
     private static final double MIN_CPS_VARIANCE = 0.1;
     private static final int SAMPLE_SIZE = 20;
@@ -30,7 +27,6 @@ public class KillAuraDetection extends Detection {
     public KillAuraDetection(DetectionManager manager) {
         super(manager);
         this.hitAngles = new ConcurrentHashMap<>();
-        this.hitTimes = new ConcurrentHashMap<>();
         this.cpsHistory = new ConcurrentHashMap<>();
         this.targetSwitches = new ConcurrentHashMap<>();
         this.lastHitTime = new ConcurrentHashMap<>();
@@ -39,22 +35,13 @@ public class KillAuraDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("killaura")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.killaura")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE ||
-            player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
+        if (shouldSkipDetection(player)) {
             return;
         }
     }
 
     public void onEntityHit(Player attacker, LivingEntity victim, long timestamp) {
-        if (attacker.hasPermission("anticheat.bypass.killaura")) {
+        if (hasBypassPermission(attacker)) {
             return;
         }
 
@@ -192,7 +179,6 @@ public class KillAuraDetection extends Detection {
 
     public void cleanup(UUID uuid) {
         hitAngles.remove(uuid);
-        hitTimes.remove(uuid);
         cpsHistory.remove(uuid);
         targetSwitches.remove(uuid);
         lastHitTime.remove(uuid);

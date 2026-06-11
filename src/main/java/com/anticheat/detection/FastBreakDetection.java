@@ -26,25 +26,13 @@ public class FastBreakDetection extends Detection {
 
     @Override
     public void check(Player player) {
-        if (!getManager().getPlugin().getConfigManager().isDetectionEnabled("fastbreak")) {
-            return;
-        }
-
-        if (player.hasPermission("anticheat.bypass.fastbreak")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE) {
+        if (shouldSkipDetection(player)) {
             return;
         }
     }
 
     public void onBlockBreak(Player player, Block block, long breakTimeMillis) {
-        if (player.hasPermission("anticheat.bypass.fastbreak")) {
-            return;
-        }
-
-        if (player.getGameMode() == org.bukkit.GameMode.CREATIVE) {
+        if (hasBypassPermission(player) || player.getGameMode() == org.bukkit.GameMode.CREATIVE) {
             return;
         }
 
