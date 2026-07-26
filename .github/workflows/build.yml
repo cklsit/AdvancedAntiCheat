@@ -1,0 +1,160 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'plugin.yml'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'plugin.yml'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: true
+        default: 'Manual build'
+
+env:
+  JAVA_VERSION: '8'
+  MAVEN_VERSION: '3.9.6'
+  MAVEN_CACHE_KEY: 'maven-${{ hashFiles(''**/pom.xml'') }}'
+  BUILD_REPORT_DIR: 'build-reports'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build and Test
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Configure Maven
+        run: |
+          mkdir -p ~/.m2
+          echo "<settings>
+            <mirrors>
+              <mirror>
+                <id>aliyunmaven</id>
+                <mirrorOf>central</mirrorOf>
+                <url>https://maven.aliyun.com/repository/public</url>
+              </mirror>
+              <mirror>
+                <id>aliyunmaven-public</id>
+                <mirrorOf>public</mirrorOf>
+                <url>https://maven.aliyun.com/repository/public</url>
+              </mirror>
+            </mirrors>
+          </settings>" > ~/.m2/settings.xml
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/com/anticheat
+          key: ${{ env.MAVEN_CACHE_KEY }}
+          restore-keys: |
+            maven-
+
+      - name: Validate pom.xml
+        run: mvn validate -q
+        continue-on-error: false
+
+      - name: Compile project
+        run: mvn compile -q
+        continue-on-error: false
+
+      - name: Run unit tests
+        run: mvn test -q
+        continue-on-error: true
+        id: unit-tests
+
+      - name: Package project
+        run: mvn package -DskipTests -q
+        continue-on-error: false
+
+      - name: Verify project
+        run: mvn verify -DskipTests -q
+        continue-on-error: true
+        id: verify
+
+      - name: Generate build report
+        run: |
+          mkdir -p ${{ env.BUILD_REPORT_DIR }}
+          echo "=== Build Report ===" > ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Repository: ${{ github.repository }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Branch: ${{ github.ref }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Commit: ${{ github.sha }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Trigger: ${{ github.event_name }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Workflow: ${{ github.workflow }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Run ID: ${{ github.run_id }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Run Number: ${{ github.run_number }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "=== Build Steps ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "✅ Validate: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "✅ Compile: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "${{ steps.unit-tests.outcome == 'success' ? '✅' : '❌' }} Unit Tests: ${{ steps.unit-tests.outcome }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "✅ Package: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "${{ steps.verify.outcome == 'success' ? '✅' : '❌' }} Verify: ${{ steps.verify.outcome }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "=== Build Artifacts ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          ls -la target/*.jar >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>/dev/null || echo "No JAR files found" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "=== Environment ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          java -version >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>&1
+          mvn -version >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>&1
+          cat ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+
+      - name: Upload build report
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-report
+          path: ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          retention-days: 14
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdvancedAntiCheat-${{ github.sha }}
+          path: target/*.jar
+          retention-days: 14
+
+      - name: Check test results
+        if: steps.unit-tests.outcome != 'success'
+        run: |
+          echo "Unit tests failed! Check the test output above."
+          exit 1
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Build failed for ${{ github.repository }} on branch ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
