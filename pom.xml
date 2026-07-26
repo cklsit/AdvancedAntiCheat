@@ -20,7 +20,7 @@
         <spigot.version>1.8.8-R0.1-SNAPSHOT</spigot.version>
         <api.version>${paper.version}</api.version>
         <api.groupId>io.papermc.paper</api.groupId>
-        <api.artifactId>paper-api</api.groupId>
+        <api.artifactId>paper-api</api.artifactId>
     </properties>
 
     <repositories>
@@ -102,7 +102,7 @@
             <properties>
                 <api.version>${paper.version}</api.version>
                 <api.groupId>io.papermc.paper</api.groupId>
-                <api.artifactId>paper-api</api.groupId>
+                <api.artifactId>paper-api</api.artifactId>
             </properties>
         </profile>
         <profile>
@@ -110,7 +110,7 @@
             <properties>
                 <api.version>${spigot.version}</api.version>
                 <api.groupId>org.spigotmc</api.groupId>
-                <api.artifactId>spigot-api</api.groupId>
+                <api.artifactId>spigot-api</api.artifactId>
             </properties>
         </profile>
     </profiles>
