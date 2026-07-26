@@ -30,7 +30,7 @@ on:
         default: 'Manual build'
 
 env:
-  JAVA_VERSION: '8'
+  JAVA_VERSION: '21'
   BUILD_REPORT_DIR: 'build-reports'
 
 jobs:
