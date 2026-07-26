@@ -8,20 +8,10 @@ on:
       - 'feature/**'
       - 'bugfix/**'
       - 'hotfix/**'
-    paths:
-      - 'src/**'
-      - 'pom.xml'
-      - 'plugin.yml'
-      - '.github/workflows/build.yml'
   pull_request:
     branches:
       - main
       - develop
-    paths:
-      - 'src/**'
-      - 'pom.xml'
-      - 'plugin.yml'
-      - '.github/workflows/build.yml'
   workflow_dispatch:
     inputs:
       reason:
