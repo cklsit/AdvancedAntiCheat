@@ -26,8 +26,21 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Build and Test
-    timeout-minutes: 30
+    name: Build and Test (${{ matrix.api }})
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api:
+          - paper
+          - spigot
+        include:
+          - api: paper
+            api-name: Paper 1.21.11
+            profile: paper
+          - api: spigot
+            api-name: Spigot 1.8.8
+            profile: spigot
 
     steps:
       - name: Checkout code
@@ -66,91 +79,153 @@ jobs:
           path: |
             ~/.m2/repository
             !~/.m2/repository/com/anticheat
-          key: maven-${{ hashFiles('**/pom.xml') }}
+          key: maven-${{ hashFiles('**/pom.xml') }}-${{ matrix.api }}
           restore-keys: |
+            maven-${{ hashFiles('**/pom.xml') }}-
             maven-
 
-      - name: Validate pom.xml
-        run: mvn validate -q
+      - name: Validate pom.xml (${{ matrix.api-name }})
+        run: mvn validate -q -P${{ matrix.profile }}
         continue-on-error: false
 
-      - name: Compile project
-        run: mvn compile -q
+      - name: Compile project (${{ matrix.api-name }})
+        run: mvn compile -q -P${{ matrix.profile }}
         continue-on-error: false
+        id: compile
 
-      - name: Run unit tests
-        run: mvn test -q
+      - name: Run unit tests (${{ matrix.api-name }})
+        run: mvn test -q -P${{ matrix.profile }}
         continue-on-error: true
         id: unit-tests
 
-      - name: Package project
-        run: mvn package -DskipTests -q
+      - name: Package project (${{ matrix.api-name }})
+        run: mvn package -DskipTests -q -P${{ matrix.profile }}
         continue-on-error: false
+        id: package
 
-      - name: Verify project
-        run: mvn verify -DskipTests -q
-        continue-on-error: true
-        id: verify
-
-      - name: Generate build report
+      - name: Generate build report (${{ matrix.api-name }})
         run: |
           mkdir -p ${{ env.BUILD_REPORT_DIR }}
-          echo "=== Build Report ===" > ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Repository: ${{ github.repository }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Branch: ${{ github.ref }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Commit: ${{ github.sha }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Trigger: ${{ github.event_name }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Workflow: ${{ github.workflow }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Run ID: ${{ github.run_id }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Run Number: ${{ github.run_number }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "=== Build Steps ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Validate: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "Compile: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "=== Build Report (${{ matrix.api-name }}) ===" > ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Repository: ${{ github.repository }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Branch: ${{ github.ref }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Commit: ${{ github.sha }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Trigger: ${{ github.event_name }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Workflow: ${{ github.workflow }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Run ID: ${{ github.run_id }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Run Number: ${{ github.run_number }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "API: ${{ matrix.api-name }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "=== Build Steps ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Validate: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "Compile: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
           if [ "${{ steps.unit-tests.outcome }}" = "success" ]; then
-            echo "Unit Tests: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+            echo "Unit Tests: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
           else
-            echo "Unit Tests: Failed" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+            echo "Unit Tests: Failed" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
           fi
-          echo "Package: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          if [ "${{ steps.verify.outcome }}" = "success" ]; then
-            echo "Verify: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          else
-            echo "Verify: Failed" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          fi
-          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "=== Build Artifacts ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          ls -la target/*.jar >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>/dev/null || echo "No JAR files found" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "=== Environment ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          java -version >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>&1
-          mvn -version >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>&1
-          cat ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Package: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "=== Build Artifacts ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          ls -la target/*.jar >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt 2>/dev/null || echo "No JAR files found" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          echo "=== Environment ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
+          java -version >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt 2>&1
+          mvn -version >> ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt 2>&1
+          cat ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
 
-      - name: Upload build report
+      - name: Upload build report (${{ matrix.api-name }})
         uses: actions/upload-artifact@v4
         with:
-          name: build-report
-          path: ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          name: build-report-${{ matrix.api }}
+          path: ${{ env.BUILD_REPORT_DIR }}/build-report-${{ matrix.api }}.txt
           retention-days: 14
 
-      - name: Upload JAR artifact
+      - name: Upload JAR artifact (${{ matrix.api-name }})
+        if: matrix.api == 'paper'
         uses: actions/upload-artifact@v4
         with:
           name: AdvancedAntiCheat-${{ github.sha }}
           path: target/*.jar
           retention-days: 14
 
-      - name: Check test results
+      - name: Check test results (${{ matrix.api-name }})
         if: steps.unit-tests.outcome != 'success'
         run: |
-          echo "Unit tests failed! Check the test output above."
+          echo "Unit tests failed for ${{ matrix.api-name }}! Check the test output above."
           exit 1
 
-      - name: Notify on failure
+      - name: Notify on failure (${{ matrix.api-name }})
         if: failure()
         run: |
           echo "Build failed for ${{ github.repository }} on branch ${{ github.ref }}"
+          echo "API: ${{ matrix.api-name }}"
           echo "Commit: ${{ github.sha }}"
           echo "Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  summary:
+    runs-on: ubuntu-latest
+    name: Build Summary
+    needs: build
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build reports
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.BUILD_REPORT_DIR }}
+
+      - name: Generate summary report
+        run: |
+          mkdir -p ${{ env.BUILD_REPORT_DIR }}
+          echo "=== Build Summary ===" > ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "Repository: ${{ github.repository }}" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "Branch: ${{ github.ref }}" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "Commit: ${{ github.sha }}" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "Trigger: ${{ github.event_name }}" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "Run ID: ${{ github.run_id }}" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "=== Test Results ===" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          
+          for api in paper spigot; do
+            if [ -f "${{ env.BUILD_REPORT_DIR }}/build-report-${api}/build-report-${api}.txt" ]; then
+              api_name="Paper 1.21.11"
+              if [ "$api" = "spigot" ]; then
+                api_name="Spigot 1.8.8"
+              fi
+              echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+              echo "--- $api_name ---" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+              grep -E "(Validate|Compile|Unit Tests|Package):" "${{ env.BUILD_REPORT_DIR }}/build-report-${api}/build-report-${api}.txt" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+            fi
+          done
+          
+          echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          echo "=== Overall Status ===" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          
+          all_passed=true
+          for api in paper spigot; do
+            if [ -f "${{ env.BUILD_REPORT_DIR }}/build-report-${api}/build-report-${api}.txt" ]; then
+              if grep -q "Failed" "${{ env.BUILD_REPORT_DIR }}/build-report-${api}/build-report-${api}.txt"; then
+                all_passed=false
+              fi
+            fi
+          done
+          
+          if [ "$all_passed" = true ]; then
+            echo "All tests passed!" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          else
+            echo "Some tests failed!" >> ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          fi
+          
+          cat ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+
+      - name: Upload summary report
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-summary
+          path: ${{ env.BUILD_REPORT_DIR }}/build-summary.txt
+          retention-days: 14

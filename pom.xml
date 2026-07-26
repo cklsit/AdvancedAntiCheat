@@ -18,6 +18,9 @@
         <maven.compiler.target>21</maven.compiler.target>
         <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
         <spigot.version>1.8.8-R0.1-SNAPSHOT</spigot.version>
+        <api.version>${paper.version}</api.version>
+        <api.groupId>io.papermc.paper</api.groupId>
+        <api.artifactId>paper-api</api.groupId>
     </properties>
 
     <repositories>
@@ -89,6 +92,28 @@
             <version>2.10.1</version>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <profile>
+            <id>paper</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <api.version>${paper.version}</api.version>
+                <api.groupId>io.papermc.paper</api.groupId>
+                <api.artifactId>paper-api</api.groupId>
+            </properties>
+        </profile>
+        <profile>
+            <id>spigot</id>
+            <properties>
+                <api.version>${spigot.version}</api.version>
+                <api.groupId>org.spigotmc</api.groupId>
+                <api.artifactId>spigot-api</api.groupId>
+            </properties>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>
