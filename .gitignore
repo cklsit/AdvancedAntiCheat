@@ -42,3 +42,17 @@ build-reports/
 # Windows
 Thumbs.db
 Desktop.ini
+
+# TRAE IDE configuration and specs
+.trae/
+
+# Build artifacts
+*.jar
+*.war
+*.ear
+
+# Test runner scripts (local use only)
+TestRunner.ps1
+
+# Web dashboard (not ready)
+web-dashboard/
