@@ -23,3 +23,22 @@ test/
 # Release pipeline scripts (local use only)
 Release-Pipeline.ps1
 Release-Pipeline.bat
+
+# Build reports directory
+build-reports/
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini

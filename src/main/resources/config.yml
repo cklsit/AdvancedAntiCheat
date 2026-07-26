@@ -52,10 +52,3 @@ check-client:
 bounty:
   enabled: true
   default-time-limit-minutes: 30
-
-web-panel:
-  enabled: true
-  port: 35677
-  heartbeat-interval: 30
-  reconnect-attempts: 10
-  reconnect-delay: 3000

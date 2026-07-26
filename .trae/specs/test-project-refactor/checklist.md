@@ -1,0 +1,12 @@
+
+- [ ] Checkpoint 1: 旧测试代码已清理
+- [ ] Checkpoint 2: 单元测试框架创建完成
+- [ ] Checkpoint 3: 中文测试脚本创建完成
+- [ ] Checkpoint 4: 日志错误检测功能实现
+- [ ] Checkpoint 5: 测试报告生成功能实现
+- [ ] Checkpoint 6: 测试流程整合完成
+- [ ] Checkpoint 7: 完整测试运行成功
+- [ ] Checkpoint 8: 测试报告生成正确
+- [ ] Checkpoint 9: 界面美观，中文友好
+- [ ] Checkpoint 10: 插件在 Paper 1.21.x 上正常运行
+- [ ] Checkpoint 11: 插件在 Paper 1.8.8 上正常运行

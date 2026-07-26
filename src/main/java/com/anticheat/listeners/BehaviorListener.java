@@ -28,7 +28,6 @@ public class BehaviorListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         plugin.getBehaviorTracker().onPlayerQuit(event);
-        plugin.onPlayerQuit(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.LOW)
