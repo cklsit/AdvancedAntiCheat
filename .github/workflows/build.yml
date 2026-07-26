@@ -31,8 +31,6 @@ on:
 
 env:
   JAVA_VERSION: '8'
-  MAVEN_VERSION: '3.9.6'
-  MAVEN_CACHE_KEY: 'maven-${{ hashFiles(''**/pom.xml'') }}'
   BUILD_REPORT_DIR: 'build-reports'
 
 jobs:
@@ -78,7 +76,7 @@ jobs:
           path: |
             ~/.m2/repository
             !~/.m2/repository/com/anticheat
-          key: ${{ env.MAVEN_CACHE_KEY }}
+          key: maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             maven-
 
@@ -118,11 +116,19 @@ jobs:
           echo "Run Number: ${{ github.run_number }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
           echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
           echo "=== Build Steps ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "✅ Validate: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "✅ Compile: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "${{ steps.unit-tests.outcome == 'success' ? '✅' : '❌' }} Unit Tests: ${{ steps.unit-tests.outcome }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "✅ Package: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
-          echo "${{ steps.verify.outcome == 'success' ? '✅' : '❌' }} Verify: ${{ steps.verify.outcome }}" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Validate: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          echo "Compile: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          if [ "${{ steps.unit-tests.outcome }}" = "success" ]; then
+            echo "Unit Tests: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          else
+            echo "Unit Tests: Failed" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          fi
+          echo "Package: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          if [ "${{ steps.verify.outcome }}" = "success" ]; then
+            echo "Verify: Success" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          else
+            echo "Verify: Failed" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
+          fi
           echo "" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
           echo "=== Build Artifacts ===" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
           ls -la target/*.jar >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt 2>/dev/null || echo "No JAR files found" >> ${{ env.BUILD_REPORT_DIR }}/build-report.txt
