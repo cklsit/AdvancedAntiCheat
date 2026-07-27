@@ -182,30 +182,30 @@ jobs:
           SHA="${{ github.sha }}"
           REF="${{ github.ref }}"
           
-          DATE=$(date '+%Y年%m月%d日')
+          DATE=$(date '+%Y-%m-%d')
           
           RELEASE_NOTES=$(cat <<EOF
-注意！这是一个晚间发布版本（测试版），可能包含未稳定的功能和bug。
+WARNING! This is a nightly release (beta version) and may contain unstable features and bugs.
 
 ## Nightly Release $VERSION-beta
 
-发布日期：$DATE
+Release Date: $DATE
 
-更改内容：
+Changes:
 $CHANGE_LIST
 
 ---
 
-**构建信息：**
-- 构建时间：$(date '+%Y-%m-%d %H:%M:%S UTC')
-- 构建编号：$RUN_ID
-- 提交哈希：$SHA
-- 分支：$REF
+**Build Info:**
+- Build Time: $(date '+%Y-%m-%d %H:%M:%S UTC')
+- Build ID: $RUN_ID
+- Commit Hash: $SHA
+- Branch: $REF
 
-**版本说明：**
-- 基于 Paper API 1.21.11 构建
-- 兼容 Minecraft 1.8.x - 1.21.x
-- 仅供测试使用
+**Version Notes:**
+- Built with Paper API 1.21.11
+- Compatible with Minecraft 1.8.x - 1.21.x
+- For testing purposes only
 EOF
           )
           
