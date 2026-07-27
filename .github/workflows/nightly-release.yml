@@ -183,39 +183,32 @@ jobs:
           REF="${{ github.ref }}"
           
           DATE=$(date '+%Y-%m-%d')
-          
-          RELEASE_NOTES=$(cat <<EOF
-WARNING! This is a nightly release (beta version) and may contain unstable features and bugs.
-
-## Nightly Release $VERSION-beta
-
-Release Date: $DATE
-
-Changes:
-$CHANGE_LIST
-
----
-
-**Build Info:**
-- Build Time: $(date '+%Y-%m-%d %H:%M:%S UTC')
-- Build ID: $RUN_ID
-- Commit Hash: $SHA
-- Branch: $REF
-
-**Version Notes:**
-- Built with Paper API 1.21.11
-- Compatible with Minecraft 1.8.x - 1.21.x
-- For testing purposes only
-EOF
-          )
+          BUILD_TIME=$(date '+%Y-%m-%d %H:%M:%S UTC')
           
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "WARNING! This is a nightly release (beta version) and may contain unstable features and bugs." >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "## Nightly Release $VERSION-beta" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Release Date: $DATE" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "Changes:" >> $GITHUB_OUTPUT
+          echo "$CHANGE_LIST" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "---" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "**Build Info:**" >> $GITHUB_OUTPUT
+          echo "- Build Time: $BUILD_TIME" >> $GITHUB_OUTPUT
+          echo "- Build ID: $RUN_ID" >> $GITHUB_OUTPUT
+          echo "- Commit Hash: $SHA" >> $GITHUB_OUTPUT
+          echo "- Branch: $REF" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "**Version Notes:**" >> $GITHUB_OUTPUT
+          echo "- Built with Paper API 1.21.11" >> $GITHUB_OUTPUT
+          echo "- Compatible with Minecraft 1.8.x - 1.21.x" >> $GITHUB_OUTPUT
+          echo "- For testing purposes only" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "DATE=$DATE" >> $GITHUB_OUTPUT
-          
-          echo "=== Release Notes ==="
-          echo "$RELEASE_NOTES"
 
       - name: Create nightly release
         id: create-release
