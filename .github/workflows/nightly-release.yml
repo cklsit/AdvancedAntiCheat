@@ -10,6 +10,9 @@ on:
         required: true
         default: 'Manual nightly release'
 
+permissions:
+  contents: write
+
 env:
   JAVA_VERSION: '21'
   BUILD_REPORT_DIR: 'build-reports'
