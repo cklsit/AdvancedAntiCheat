@@ -182,6 +182,9 @@ jobs:
           VERSION="${{ steps.calc-version.outputs.VERSION }}"
           TAG_NAME="${{ steps.calc-version.outputs.TAG_NAME }}"
           CHANGE_LIST="${{ steps.get-changes.outputs.CHANGE_LIST }}"
+          RUN_ID="${{ github.run_id }}"
+          SHA="${{ github.sha }}"
+          REF="${{ github.ref }}"
           
           DATE=$(date '+%Y年%m月%d日')
           
@@ -199,9 +202,9 @@ $CHANGE_LIST
 
 **构建信息：**
 - 构建时间：$(date '+%Y-%m-%d %H:%M:%S UTC')
-- 构建编号：${{ github.run_id }}
-- 提交哈希：${{ github.sha }}
-- 分支：${{ github.ref }}
+- 构建编号：$RUN_ID
+- 提交哈希：$SHA
+- 分支：$REF
 
 **版本说明：**
 - 此版本基于 Paper API 1.21.11 构建
