@@ -1,0 +1,15 @@
+name: Test Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for test'
+        required: true
+        default: 'Test'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Test workflow triggered with reason: ${{ github.event.inputs.reason }}"
