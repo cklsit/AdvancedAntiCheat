@@ -152,11 +152,11 @@ jobs:
           while IFS= read -r line; do
             if [ -n "$line" ]; then
               COMMIT_DESC=$(echo "$line" | sed 's/^[0-9a-f]*\s*//')
+              ENTRY=$(printf "  %d. %s" "$COUNT" "$COMMIT_DESC")
               if [ -z "$CHANGE_LIST" ]; then
-                CHANGE_LIST="  $COUNT. $COMMIT_DESC"
+                CHANGE_LIST="$ENTRY"
               else
-                CHANGE_LIST="$CHANGE_LIST
-  $COUNT. $COMMIT_DESC"
+                CHANGE_LIST=$(printf "%s\n%s" "$CHANGE_LIST" "$ENTRY")
               fi
               COUNT=$((COUNT + 1))
             fi
