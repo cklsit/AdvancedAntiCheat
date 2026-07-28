@@ -175,6 +175,17 @@ jobs:
             exit 1
           fi
 
+      - name: Rename JAR file
+        id: rename-jar
+        run: |
+          VERSION="${{ steps.calc-version.outputs.VERSION }}"
+          JAR_NAME="AdvancedAntiCheat-${VERSION}-beta.jar"
+          
+          echo "Renaming JAR to: $JAR_NAME"
+          cp target/AdvancedAntiCheat-*.jar "target/$JAR_NAME"
+          echo "RENAMED_JAR=target/$JAR_NAME" >> $GITHUB_OUTPUT
+          ls -la target/$JAR_NAME
+
       - name: Generate release notes
         id: release-notes
         run: |
@@ -221,8 +232,7 @@ jobs:
           name: Nightly Release ${{ steps.calc-version.outputs.TAG_NAME }} (${{ steps.release-notes.outputs.DATE }})
           body: ${{ steps.release-notes.outputs.RELEASE_NOTES }}
           prerelease: true
-          files: |
-            target/AdvancedAntiCheat-*.jar
+          files: ${{ steps.rename-jar.outputs.RENAMED_JAR }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
