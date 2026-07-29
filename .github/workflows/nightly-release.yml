@@ -88,12 +88,24 @@ jobs:
         id: last-release-commit
         run: |
           TAGS=$(git tag -l "v2.0.*-beta" 2>/dev/null || echo "")
+          echo "All beta tags: $TAGS"
+          
           if [ -z "$TAGS" ]; then
             echo "No previous nightly release found"
             echo "LAST_COMMIT=" >> $GITHUB_OUTPUT
           else
-            LATEST_TAG=$(echo "$TAGS" | sed 's/v2.0.\([0-9]*\)-beta/\1/' | sort -n | tail -n 1 | awk '{print "v2.0."$1"-beta"}')
-            LAST_COMMIT=$(git rev-list -n 1 "$LATEST_TAG")
+            # Extract patch versions and find the max
+            MAX_PATCH=0
+            for tag in $TAGS; do
+              PATCH=$(echo "$tag" | sed -n 's/^v2\.0\.\([0-9]*\)-beta$/\1/p')
+              if [ -n "$PATCH" ] && [ "$PATCH" -gt "$MAX_PATCH" ]; then
+                MAX_PATCH=$PATCH
+              fi
+            done
+            
+            LATEST_TAG="v2.0.${MAX_PATCH}-beta"
+            LAST_COMMIT=$(git rev-list -n 1 "$LATEST_TAG" 2>/dev/null || echo "")
+            
             echo "Latest nightly tag: $LATEST_TAG"
             echo "Last release commit: $LAST_COMMIT"
             echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_OUTPUT
@@ -138,14 +150,24 @@ jobs:
           LAST_COMMIT="${{ steps.last-release-commit.outputs.LAST_COMMIT }}"
           CURRENT_COMMIT="${{ github.sha }}"
           
+          echo "Last release commit: $LAST_COMMIT"
+          echo "Current commit: $CURRENT_COMMIT"
+          
           if [ -z "$LAST_COMMIT" ]; then
+            echo "No previous release, getting recent commits"
             CHANGES=$(git log --oneline --no-merges -10)
           else
-            CHANGES=$(git log "$LAST_COMMIT".."$CURRENT_COMMIT" --oneline --no-merges)
+            echo "Getting changes between $LAST_COMMIT and $CURRENT_COMMIT"
+            CHANGES=$(git log "${LAST_COMMIT}..${CURRENT_COMMIT}" --oneline --no-merges 2>/dev/null)
+            if [ -z "$CHANGES" ]; then
+              echo "No changes with range, getting recent commits"
+              CHANGES=$(git log --oneline --no-merges -5)
+            fi
           fi
           
-          echo "Commit changes:"
+          echo "=== Commit changes ==="
           echo "$CHANGES"
+          echo "=== End changes ==="
           
           CHANGE_LIST=""
           COUNT=1
@@ -161,6 +183,10 @@ jobs:
               COUNT=$((COUNT + 1))
             fi
           done <<< "$CHANGES"
+          
+          echo "=== Change list ==="
+          echo "$CHANGE_LIST"
+          echo "=== End change list ==="
           
           echo "CHANGE_LIST<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGE_LIST" >> $GITHUB_OUTPUT
