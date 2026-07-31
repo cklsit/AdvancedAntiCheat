@@ -2,7 +2,7 @@ name: Nightly Release
 
 on:
   schedule:
-    - cron: '0 21 * * *'
+    - cron: '0 13 * * *'
   workflow_dispatch:
     inputs:
       reason:
@@ -58,14 +58,14 @@ jobs:
         id: get-tags
         run: |
           echo "=== Getting existing nightly release tags ==="
-          TAGS=$(git tag -l "v2.0.*-beta" 2>/dev/null || echo "")
-          if [ -z "$TAGS" ]; then
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v2.0.*-beta" HEAD 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
             echo "No existing nightly release tags found"
             echo "MAX_PATCH=0" >> $GITHUB_OUTPUT
           else
-            echo "Existing nightly tags:"
-            echo "$TAGS"
-            MAX_PATCH=$(echo "$TAGS" | sed 's/v2.0.\([0-9]*\)-beta/\1/' | sort -n | tail -n 1)
+            echo "Last nightly tag: $LAST_TAG"
+            MAX_PATCH=$(echo "$LAST_TAG" | sed -n 's/^v2\.0\.\([0-9]*\)-beta$/\1/p')
             echo "Current max patch version: $MAX_PATCH"
             echo "MAX_PATCH=$MAX_PATCH" >> $GITHUB_OUTPUT
           fi
@@ -87,28 +87,19 @@ jobs:
       - name: Get last nightly release commit
         id: last-release-commit
         run: |
-          TAGS=$(git tag -l "v2.0.*-beta" 2>/dev/null || echo "")
-          echo "All beta tags: $TAGS"
+          # Find the last beta tag in the history
+          LAST_TAG=$(git describe --tags --abbrev=0 --match "v2.0.*-beta" HEAD 2>/dev/null || echo "")
+          echo "Last beta tag: $LAST_TAG"
           
-          if [ -z "$TAGS" ]; then
+          if [ -z "$LAST_TAG" ]; then
             echo "No previous nightly release found"
             echo "LAST_COMMIT=" >> $GITHUB_OUTPUT
+            echo "LAST_TAG=" >> $GITHUB_OUTPUT
           else
-            # Extract patch versions and find the max
-            MAX_PATCH=0
-            for tag in $TAGS; do
-              PATCH=$(echo "$tag" | sed -n 's/^v2\.0\.\([0-9]*\)-beta$/\1/p')
-              if [ -n "$PATCH" ] && [ "$PATCH" -gt "$MAX_PATCH" ]; then
-                MAX_PATCH=$PATCH
-              fi
-            done
-            
-            LATEST_TAG="v2.0.${MAX_PATCH}-beta"
-            LAST_COMMIT=$(git rev-list -n 1 "$LATEST_TAG" 2>/dev/null || echo "")
-            
-            echo "Latest nightly tag: $LATEST_TAG"
+            LAST_COMMIT=$(git rev-parse "$LAST_TAG" 2>/dev/null || echo "")
             echo "Last release commit: $LAST_COMMIT"
             echo "LAST_COMMIT=$LAST_COMMIT" >> $GITHUB_OUTPUT
+            echo "LAST_TAG=$LAST_TAG" >> $GITHUB_OUTPUT
           fi
 
       - name: Check for new commits
@@ -123,17 +114,16 @@ jobs:
           if [ -z "$LAST_COMMIT" ]; then
             echo "No previous release, proceeding"
             echo "HAS_CHANGES=true" >> $GITHUB_OUTPUT
-          elif [ "$LAST_COMMIT" = "$CURRENT_COMMIT" ]; then
-            echo "No new commits since last release"
-            echo "HAS_CHANGES=false" >> $GITHUB_OUTPUT
           else
-            NEW_COMMITS=$(git log "$LAST_COMMIT".."$CURRENT_COMMIT" --oneline 2>/dev/null || echo "")
-            if [ -z "$NEW_COMMITS" ]; then
-              echo "No new commits found"
+            # Count commits between last release and HEAD
+            COMMIT_COUNT=$(git rev-list "${LAST_COMMIT}..HEAD" --count 2>/dev/null || echo "0")
+            echo "Commits since last release: $COMMIT_COUNT"
+            
+            if [ "$COMMIT_COUNT" -eq 0 ]; then
+              echo "No new commits since last release - skipping"
               echo "HAS_CHANGES=false" >> $GITHUB_OUTPUT
             else
-              echo "New commits found:"
-              echo "$NEW_COMMITS"
+              echo "New commits found: $COMMIT_COUNT"
               echo "HAS_CHANGES=true" >> $GITHUB_OUTPUT
             fi
           fi
@@ -147,22 +137,16 @@ jobs:
       - name: Get commit changes for release notes
         id: get-changes
         run: |
-          LAST_COMMIT="${{ steps.last-release-commit.outputs.LAST_COMMIT }}"
-          CURRENT_COMMIT="${{ github.sha }}"
+          LAST_TAG="${{ steps.last-release-commit.outputs.LAST_TAG }}"
           
-          echo "Last release commit: $LAST_COMMIT"
-          echo "Current commit: $CURRENT_COMMIT"
+          echo "Last release tag: $LAST_TAG"
           
-          if [ -z "$LAST_COMMIT" ]; then
+          if [ -z "$LAST_TAG" ]; then
             echo "No previous release, getting recent commits"
             CHANGES=$(git log --oneline --no-merges -10)
           else
-            echo "Getting changes between $LAST_COMMIT and $CURRENT_COMMIT"
-            CHANGES=$(git log "${LAST_COMMIT}..${CURRENT_COMMIT}" --oneline --no-merges 2>/dev/null)
-            if [ -z "$CHANGES" ]; then
-              echo "No changes with range, getting recent commits"
-              CHANGES=$(git log --oneline --no-merges -5)
-            fi
+            echo "Getting changes since $LAST_TAG"
+            CHANGES=$(git log "${LAST_TAG}..HEAD" --oneline --no-merges 2>/dev/null)
           fi
           
           echo "=== Commit changes ==="
