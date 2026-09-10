@@ -474,7 +474,9 @@ replay:
     image: replay-observer:latest  # 构建出的镜像名
     mcServerHost: ""               # 观察者要连的服务端地址；留空=自动探测（server-ip 或本机局域网 IP）
     mcServerPort: 0                # 观察者要连的端口；0=自动取服务器监听端口
-    memoryMb: 1536                 # 每个 observer 容器内存上限（MB）
+    memoryMb: 0                    # 每个 observer 容器内存上限（MB）；0=不限制
+                                   # 注意：Synology DSM 内核不支持 CFS 内存限额，会直接启动失败，
+                                   # 此类环境请保持 0
     startupTimeoutSeconds: 600     # 等待 observer 全部就绪的超时（秒）；首次 build 会较久
     jreUrl: ""                     # 自定义 Temurin JRE 8 下载地址（留空=用内置多源回退）
     client:

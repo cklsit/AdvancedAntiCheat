@@ -93,11 +93,16 @@ public class ObserverProvisioner {
             "run-mc.sh", "observerctl.py", "xorg-dummy.conf"
     };
 
-    /** Temurin JRE 8 下载源（按顺序回退），仅用于构建 MC 1.8.8 客户端运行时 */
+    /**
+     * Temurin JRE 8 下载源（按顺序回退），仅用于构建 MC 1.8.8 客户端运行时。
+     * <p>国内镜像必须排在最前：api.adoptium.net 会 302 到 GitHub Releases，
+     * 国内实测常被限速到 1~2 MB/min（40MB 包要半小时以上），
+     * 而清华 TUNA 镜像实测 20 秒内即可下完。</p>
+     */
     private static final String[] DEFAULT_JRE_URLS = {
-            "https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jre/hotspot/normal/eclipse",
-            "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/8/jre/x64/linux/OpenJDK8U-jre_x64_linux_hotspot_latest.tar.gz",
-            "https://mirrors.cloud.tencent.com/Adoptium/8/jre/x64/linux/OpenJDK8U-jre_x64_linux_hotspot_latest.tar.gz"
+            "https://mirrors.tuna.tsinghua.edu.cn/Adoptium/8/jre/x64/linux/OpenJDK8U-jre_x64_linux_hotspot_8u504b01.tar.gz",
+            "https://mirrors.ustc.edu.cn/adoptium/8/jre/x64/linux/OpenJDK8U-jre_x64_linux_hotspot_8u504b01.tar.gz",
+            "https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jre/hotspot/normal/eclipse"
     };
 
     private final AdvancedAntiCheat plugin;
@@ -567,6 +572,12 @@ public class ObserverProvisioner {
         return true;
     }
 
+    /**
+     * 带进度与停滞检测的下载。
+     * <p>不用「总超时」判断成败，而是监控文件大小：只要还在增长就继续等；
+     * 连续 {@code STALL_TIMEOUT_MS} 无增长即判定该源不可用，取消并回退下一个源。
+     * 这样既能容忍慢速但稳定的源，也不会在死链上干等。</p>
+     */
     private boolean download(String url, Path target, int timeoutSec) throws Exception {
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -576,21 +587,58 @@ public class ObserverProvisioner {
                 .timeout(Duration.ofSeconds(timeoutSec))
                 .header("User-Agent", "AdvancedAntiCheat-Provisioner")
                 .GET().build();
-        HttpResponse<Path> resp = client.send(req, HttpResponse.BodyHandlers.ofFile(target));
+
+        final java.util.concurrent.Future<HttpResponse<Path>> fut =
+                client.sendAsync(req, HttpResponse.BodyHandlers.ofFile(target));
+
+        final long stallTimeoutMs = 120_000L;
+        final long start = System.currentTimeMillis();
+        long lastSize = -1;
+        long lastChange = start;
+        long lastLog = 0;
+
+        while (!fut.isDone()) {
+            Thread.sleep(3000);
+            long size = Files.exists(target) ? Files.size(target) : 0;
+            long now = System.currentTimeMillis();
+            if (size != lastSize) {
+                lastSize = size;
+                lastChange = now;
+                if (now - lastLog > 15_000) {
+                    lastLog = now;
+                    plugin.getLogger().info(String.format(
+                            "[Replay][Provisioner] 下载中 %.1f MB（已用 %.0fs）",
+                            size / 1048576.0, (now - start) / 1000.0));
+                }
+            } else if (now - lastChange > stallTimeoutMs) {
+                plugin.getLogger().warning("[Replay][Provisioner] 下载停滞超过 "
+                        + (stallTimeoutMs / 1000) + "s，放弃该源并尝试下一个: " + url);
+                fut.cancel(true);
+                try {
+                    Files.deleteIfExists(target);
+                } catch (IOException ignored) {
+                }
+                return false;
+            }
+        }
+
+        HttpResponse<Path> resp = fut.get();
         if (resp.statusCode() / 100 != 2) {
             plugin.getLogger().warning("[Replay][Provisioner] HTTP " + resp.statusCode() + " " + url);
             return false;
         }
         long size = Files.size(target);
-        plugin.getLogger().info("[Replay][Provisioner] 下载完成: " + size + " bytes");
-        return size > 1024 * 1024; // 至少 1MB 才算有效
+        plugin.getLogger().info(String.format(
+                "[Replay][Provisioner] 下载完成: %.1f MB（耗时 %.0fs）",
+                size / 1048576.0, (System.currentTimeMillis() - start) / 1000.0));
+        return size > 1024 * 1024;
     }
 
     /** 生成 docker-compose.yml（按当前环境定制路径/端口/内存） */
     private void generateCompose(Path base) throws IOException {
         String host = resolveServerHost();
         int port = resolveServerPort();
-        int memMb = cfgInt("replay.observer.memoryMb", 1536);
+        int memMb = cfgInt("replay.observer.memoryMb", 0);
         String image = imageName();
         Path hlsRoot = hlsRoot();
         Files.createDirectories(hlsRoot);
@@ -609,7 +657,11 @@ public class ObserverProvisioner {
             sb.append("    image: ").append(image).append("\n");
             sb.append("    container_name: replay-observer-").append(id).append("\n");
             sb.append("    restart: unless-stopped\n");
-            sb.append("    mem_limit: ").append(memMb).append("m\n");
+            // 内存上限：Synology DSM 内核对 CFS/内存限额支持不佳（会直接启动失败），
+            // 因此 memoryMb<=0 时不写 mem_limit，交由 Docker 默认行为处理。
+            if (memMb > 0) {
+                sb.append("    mem_limit: ").append(memMb).append("m\n");
+            }
             sb.append("    extra_hosts:\n      - \"host.docker.internal:host-gateway\"\n");
             sb.append("    environment:\n");
             sb.append("      - OBSERVER_ID=").append(id).append("\n");
@@ -690,14 +742,29 @@ public class ObserverProvisioner {
 
     private String detectLanIp() {
         try {
+            String firstSiteLocal = null;
             for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
                 if (!ni.isUp() || ni.isLoopback()) continue;
+                String n = ni.getName().toLowerCase();
+                // 跳过容器/虚拟网桥：它们的地址（如 172.20.0.1）也是 RFC1918，
+                // 但容器访问不到，必须排除，否则观察者会连不上服务器。
+                if (n.startsWith("docker") || n.startsWith("br-") || n.startsWith("veth")
+                        || n.startsWith("virbr") || n.startsWith("tun") || n.startsWith("tap")) {
+                    continue;
+                }
                 for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
-                    if (addr instanceof Inet4Address && addr.isSiteLocalAddress()) {
-                        return addr.getHostAddress();
+                    if (!(addr instanceof Inet4Address) || !addr.isSiteLocalAddress()) continue;
+                    String ip = addr.getHostAddress();
+                    // 优先返回典型局域网地址（192.168.x.x / 10.x.x.x）
+                    if (ip.startsWith("192.168.") || ip.startsWith("10.")) {
+                        return ip;
+                    }
+                    if (firstSiteLocal == null) {
+                        firstSiteLocal = ip;
                     }
                 }
             }
+            return firstSiteLocal;
         } catch (Throwable ignored) {
         }
         return null;
