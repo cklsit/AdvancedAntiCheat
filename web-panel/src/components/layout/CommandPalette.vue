@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Search, Ban, User, Eye, Ghost, History, Megaphone } from 'lucide-vue-next'
-import playersJson from '@/api/mock/players.json'
+import { getPlayerList } from '@/api/players'
 import type { Player } from '@/types'
 
 interface Props {
@@ -48,14 +48,44 @@ const configItems = [
   { key: 'log.retention',       label: '日志保留天数',      value: '90' }
 ]
 
-const players = playersJson as Player[]
+// 从真实 API 加载玩家（搜索时按关键词实时获取）
+const players = ref<Player[]>([])
+const playersLoading = ref(false)
+let playersCache = '' // 缓存上一次搜索关键词，避免重复请求
+
+async function fetchPlayers(keyword: string): Promise<void> {
+  if (keyword === playersCache) return
+  playersCache = keyword
+  playersLoading.value = true
+  try {
+    const resp = await getPlayerList({ page: 1, pageSize: 20, keyword: keyword || undefined })
+    players.value = resp.data?.list ?? []
+  } catch {
+    players.value = []
+  } finally {
+    playersLoading.value = false
+  }
+}
+
+// 监听搜索输入，防抖 200ms 后请求
+let debounceTimer: number | null = null
+watch(query, () => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  const kw = query.value.trim()
+  if (!kw) {
+    players.value = []
+    playersCache = ''
+    return
+  }
+  debounceTimer = window.setTimeout(() => { fetchPlayers(kw) }, 200)
+})
 
 const q = computed(() => query.value.trim().toLowerCase())
 
-// 匹配玩家
+// 匹配玩家（players 已由 API 按关键词过滤，前端只做二次筛选 + 限流）
 const matchedPlayers = computed(() => {
   if (!q.value) return []
-  return players
+  return players.value
     .filter((p) =>
       p.name.toLowerCase().includes(q.value) ||
       p.ip.includes(q.value) ||

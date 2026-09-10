@@ -2,11 +2,13 @@ package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.detection.ViolationRecord;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Item;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -14,9 +16,11 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.metadata.MetadataValue;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -32,11 +36,21 @@ public class HoneypotListener implements Listener {
     private final Map<UUID, Long> playerBreakTimes;
     private final Map<UUID, Map<String, Long>> playerActionHistory;
     private final Map<UUID, List<Long>> packetTimings;
+
+    // 不可能破坏进度：方块开始挖掘时间（world:x:y:z -> 时间戳）
+    private final Map<String, Long> blockBreakStartTimes;
+    // 虚假掉落物：物品实体 UUID -> 诱饵信息
+    private final Map<UUID, FakeDrop> fakeDrops;
+    // 已进入假逃脱沙箱的玩家
+    private final Set<UUID> escapedPlayers;
     
     private static final String HOLOGRAM_PREFIX = "HONEYPOT_ORE_";
     private static final String GHOST_ENTITY_PREFIX = "HONEYPOT_GHOST_";
     private static final String METADATA_KEY = "anticheat_honeypot";
+    private static final String FAKE_DROP_META = "anticheat_fake_drop";
     private static final long MIN_BREAK_TIME_MS = 200;
+    private static final long IMPOSSIBLE_BREAK_MS = 150;   // 不可能破坏进度阈值
+    private static final long FAKE_DROP_LIFETIME_MS = 120000; // 虚假掉落物存活时间
 
     public HoneypotListener(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
@@ -45,8 +59,12 @@ public class HoneypotListener implements Listener {
         this.playerBreakTimes = new ConcurrentHashMap<>();
         this.playerActionHistory = new ConcurrentHashMap<>();
         this.packetTimings = new ConcurrentHashMap<>();
+        this.blockBreakStartTimes = new ConcurrentHashMap<>();
+        this.fakeDrops = new ConcurrentHashMap<>();
+        this.escapedPlayers = ConcurrentHashMap.newKeySet();
         
         initializeHoneypots();
+        startFakeDropTask();
     }
 
     private void initializeHoneypots() {
@@ -114,11 +132,157 @@ public class HoneypotListener implements Listener {
                 
                 Location loc = new Location(world, x, y, z);
                 LivingEntity entity = (LivingEntity) world.spawnEntity(loc, EntityType.PIG);
-                entity.setVisibleByDefault(false);
+                VersionUtil.safeSetVisibleByDefault(entity, false);
                 entity.setMetadata(METADATA_KEY, new FixedMetadataValue(plugin, GHOST_ENTITY_PREFIX + UUID.randomUUID().toString()));
                 ghostEntities.add(entity.getUniqueId());
             }
         }
+    }
+
+    // ---------------- 虚假掉落物 / 假逃脱蜜罐 ----------------
+
+    private void startFakeDropTask() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                if (!plugin.getConfig().getBoolean("honeypot.enabled", true)) return;
+                if (!plugin.getConfig().getBoolean("honeypot.fake-drop.enabled", true)) return;
+
+                // 周期性为部分在线玩家投放虚假掉落物，并回收/判定
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (!player.hasPermission("anticheat.bypass")) {
+                        spawnFakeDrop(player);
+                        break; // 每轮仅投放一个，避免实体过多
+                    }
+                }
+                checkFakeDrops();
+
+                // 假逃脱蜜罐：检查确认作弊者并重定向
+                if (plugin.getConfig().getBoolean("honeypot.fake-escape.enabled", false)) {
+                    for (Player player : Bukkit.getOnlinePlayers()) {
+                        if (!player.hasPermission("anticheat.bypass")) {
+                            handleFakeEscape(player);
+                        }
+                    }
+                }
+            }
+        }.runTaskTimer(plugin, 20L * 90, 20L * 60);
+    }
+
+    /** 投放一个「仅自动拾取/ESP 才会主动收集」的虚假掉落物。 */
+    private void spawnFakeDrop(Player target) {
+        try {
+            Location origin = target.getLocation();
+            double angle = Math.random() * 2 * Math.PI;
+            int distance = 10 + (int) (Math.random() * 6); // 10~16 格开外
+            Location loc = origin.clone().add(Math.cos(angle) * distance, 0, Math.sin(angle) * distance);
+            int highest = origin.getWorld().getHighestBlockYAt(loc);
+            loc.setY(Math.max(1, highest));
+
+            ItemStack bait = new ItemStack(org.bukkit.Material.DIAMOND, 1);
+            org.bukkit.inventory.meta.ItemMeta meta = bait.getItemMeta();
+            if (meta != null) {
+                meta.setDisplayName("§f§k§7" + UUID.randomUUID().toString().substring(0, 8));
+                bait.setItemMeta(meta);
+            }
+
+            Item item = origin.getWorld().dropItem(loc, bait);
+            item.setPickupDelay(0);
+            item.setMetadata(FAKE_DROP_META, new FixedMetadataValue(plugin, target.getUniqueId().toString()));
+
+            fakeDrops.put(item.getUniqueId(), new FakeDrop(item, target.getUniqueId(), loc, System.currentTimeMillis()));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 判定虚假掉落物是否被目标玩家收集。 */
+    private void checkFakeDrops() {
+        long now = System.currentTimeMillis();
+        for (Iterator<Map.Entry<UUID, FakeDrop>> it = fakeDrops.entrySet().iterator(); it.hasNext(); ) {
+            Map.Entry<UUID, FakeDrop> entry = it.next();
+            FakeDrop drop = entry.getValue();
+
+            // 过期清理
+            if (now - drop.spawnTime > FAKE_DROP_LIFETIME_MS) {
+                if (drop.item.isValid()) drop.item.remove();
+                it.remove();
+                continue;
+            }
+
+            boolean itemGone = !drop.item.isValid() || drop.item.isDead();
+            if (!itemGone) {
+                // 记录目标是否靠近过该掉落物
+                Player owner = Bukkit.getPlayer(drop.owner);
+                if (owner != null && owner.isOnline() && owner.getLocation().distanceSquared(drop.location) < 2.25) {
+                    drop.ownerApproached = true;
+                }
+                continue;
+            }
+
+            // 掉落物消失：若目标曾主动靠近并收集，则判定自动拾取/ESP
+            if (drop.ownerApproached) {
+                Player owner = Bukkit.getPlayer(drop.owner);
+                if (owner != null && owner.isOnline()) {
+                    plugin.getDetectionManager().getViolationManager().recordViolation(
+                        owner,
+                        com.anticheat.detection.ViolationRecord.ViolationType.FAKE_DROP,
+                        "收集了虚假掉落物（自动拾取/ESP）",
+                        0.85
+                    );
+                    plugin.getLogger().warning("[Honeypot] 检测到自动拾取/ESP: " + owner.getName());
+                }
+            }
+            it.remove();
+        }
+    }
+
+    /** 假逃脱蜜罐：将确认作弊的玩家重定向到沙箱并记录情报。 */
+    private void handleFakeEscape(Player player) {
+        if (!plugin.getConfig().getBoolean("honeypot.fake-escape.enabled", false)) return;
+        UUID uuid = player.getUniqueId();
+        if (escapedPlayers.contains(uuid)) return;
+
+        int total = plugin.getDetectionManager().getViolationManager()
+            .getViolationHistory(uuid).size();
+        int threshold = plugin.getConfig().getInt("honeypot.fake-escape.threshold", 10);
+        if (total < threshold) return;
+
+        escapedPlayers.add(uuid);
+
+        // 情报记录：输出该玩家的全部违规画像
+        plugin.getLogger().warning("[Honeypot] 假逃脱蜜罐：玩家 " + player.getName() +
+            " 累计违规 " + total + " 次，已重定向至沙箱幻象，记录其作弊行为");
+
+        String sandboxWorld = plugin.getConfig().getString("honeypot.fake-escape.sandbox-world", "");
+        if (sandboxWorld != null && !sandboxWorld.isEmpty()) {
+            org.bukkit.World world = Bukkit.getWorld(sandboxWorld);
+            if (world != null) {
+                final Location dest = world.getSpawnLocation();
+                new BukkitRunnable() {
+                    @Override
+                    public void run() {
+                        player.teleport(dest);
+                        player.sendMessage("§c§l[蜜罐] §f你已被隔离至沙箱服务器进行行为观察。");
+                    }
+                }.runTask(plugin);
+            }
+        }
+
+        plugin.getDetectionManager().getViolationManager().recordViolation(
+            player,
+            com.anticheat.detection.ViolationRecord.ViolationType.FAKE_ESCAPE,
+            "确认作弊者重定向至沙箱（假逃脱蜜罐）",
+            0.9
+        );
+    }
+
+    // ---------------- 不可能破坏进度 ----------------
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockDamage(BlockDamageEvent event) {
+        if (!plugin.getConfig().getBoolean("honeypot.enabled", true)) return;
+        if (event.getPlayer().hasPermission("anticheat.bypass")) return;
+        blockBreakStartTimes.put(blockKey(event.getBlock().getLocation()), System.currentTimeMillis());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -148,6 +312,17 @@ public class HoneypotListener implements Listener {
                 blockLoc.getBlockX() + "," + blockLoc.getBlockY() + "," + blockLoc.getBlockZ());
             
             return;
+        }
+
+        // 不可能破坏进度：开始挖掘到完成破坏的时间过短 → 脚本化瞬挖
+        Long start = blockBreakStartTimes.remove(blockKey(blockLoc));
+        if (start != null && System.currentTimeMillis() - start < IMPOSSIBLE_BREAK_MS) {
+            plugin.getDetectionManager().getViolationManager().recordViolation(
+                event.getPlayer(),
+                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+                "不可能破坏进度: 瞬挖方块（耗时<" + IMPOSSIBLE_BREAK_MS + "ms）",
+                0.8
+            );
         }
         
         recordBreakTime(event.getPlayer());
@@ -336,6 +511,10 @@ public class HoneypotListener implements Listener {
         return coefficientOfVariation < 0.05;
     }
 
+    private String blockKey(Location loc) {
+        return loc.getWorld().getName() + ":" + loc.getBlockX() + ":" + loc.getBlockY() + ":" + loc.getBlockZ();
+    }
+
     private boolean isHologramOre(Location loc) {
         if (loc == null) {
             return false;
@@ -408,5 +587,21 @@ public class HoneypotListener implements Listener {
 
     public Set<UUID> getGhostEntities() {
         return Collections.unmodifiableSet(ghostEntities);
+    }
+
+    /** 虚假掉落物诱饵信息。 */
+    private static class FakeDrop {
+        final Item item;
+        final UUID owner;
+        final Location location;
+        final long spawnTime;
+        boolean ownerApproached = false;
+
+        FakeDrop(Item item, UUID owner, Location location, long spawnTime) {
+            this.item = item;
+            this.owner = owner;
+            this.location = location;
+            this.spawnTime = spawnTime;
+        }
     }
 }

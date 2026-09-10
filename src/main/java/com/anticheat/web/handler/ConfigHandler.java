@@ -2,6 +2,7 @@ package com.anticheat.web.handler;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.managers.AuditManager;
+import com.anticheat.replay.ReplaySettings;
 import com.anticheat.web.BukkitBridge;
 import com.anticheat.web.auth.Permission;
 import com.anticheat.web.dto.ConfigModuleDTO;
@@ -10,7 +11,9 @@ import io.javalin.Javalin;
 import io.javalin.http.Context;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 配置中心 REST 端点：
@@ -29,6 +32,8 @@ public class ConfigHandler extends AbstractHandler {
     public void register(Javalin app) {
         app.get("/api/config/modules", this::list);
         app.put("/api/config/modules/{id}", this::update);
+        app.get("/api/config/replay", this::replayGet);
+        app.put("/api/config/replay", this::replayUpdate);
     }
 
     private static final String[][] MODULES = {
@@ -135,5 +140,70 @@ public class ConfigHandler extends AbstractHandler {
                         + " warningCooldownSecs=" + payload.warningCooldownSecs
                         + " notifyCooldownMs=" + payload.notifyCooldownMs);
         ok(ctx, payload);
+    }
+
+    // ===================== 回放/监视配置（需求 1：面板热更 maxConcurrent 等） =====================
+
+    private void replayGet(Context ctx) {
+        if (!AuthHandler.require(ctx, Permission.CONFIG_READ)) return;
+        ok(ctx, replaySnapshot());
+    }
+
+    private void replayUpdate(Context ctx) {
+        if (!AuthHandler.require(ctx, Permission.CONFIG_UPDATE)) return;
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = JsonMapper.fromJson(ctx.body(), Map.class);
+        if (body == null) {
+            fail(ctx, 400, "请求体非法");
+            return;
+        }
+        ReplaySettings s = plugin.getReplaySettings();
+        if (s == null) {
+            fail(ctx, 500, "回放配置未初始化");
+            return;
+        }
+        final ReplaySettings settings = s;
+        BukkitBridge.syncRun(plugin, () -> {
+            // 仅应用请求体中出现的字段（缺失字段保持不变）
+            applyReplayField(settings, body, "surveillanceEnabled");
+            applyReplayField(settings, body, "autoOnJoin");
+            applyReplayField(settings, body, "maxConcurrent");
+            applyReplayField(settings, body, "queueEnabled");
+            applyReplayField(settings, body, "queueMaxSize");
+            applyReplayField(settings, body, "cameraMode");
+            applyReplayField(settings, body, "autoShoulderOnViolation");
+            settings.persist();
+            // reload：刷新 ReplaySettings 引用 + 触发 SurveillanceScheduler.onConfigReload()（补满/收敛队列）
+            plugin.reloadConfig();
+        });
+        audit(ctx, "config_change", "replay", "success", "body=" + ctx.body());
+        ok(ctx, replaySnapshot());
+    }
+
+    private void applyReplayField(ReplaySettings s, Map<String, Object> body, String key) {
+        if (body.containsKey(key) && body.get(key) != null) {
+            s.setField(key, body.get(key));
+        }
+    }
+
+    private Map<String, Object> replaySnapshot() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        ReplaySettings s = plugin.getReplaySettings();
+        if (s == null) return m;
+        int poolSize = plugin.getObserverPoolManager() != null
+                ? plugin.getObserverPoolManager().getPoolSize() : 0;
+        m.put("surveillanceEnabled", s.isSurveillanceEnabled());
+        m.put("autoOnJoin", s.isAutoOnJoin());
+        m.put("maxConcurrent", s.getMaxConcurrent());
+        m.put("queueEnabled", s.isQueueEnabled());
+        m.put("queueMaxSize", s.getQueueMaxSize());
+        m.put("cameraMode", s.getCameraMode().name().toLowerCase());
+        m.put("autoShoulderOnViolation", s.isAutoShoulderOnViolation());
+        m.put("autoShoulderHoldSeconds", s.getAutoShoulderHoldMs() / 1000L);
+        m.put("crosshairEnabled", s.isCrosshairEnabled());
+        m.put("fullInventory", s.isFullInventory());
+        m.put("observerPoolSize", poolSize);
+        m.put("effectiveMaxConcurrent", Math.min(s.getMaxConcurrent(), Math.max(1, poolSize)));
+        return m;
     }
 }

@@ -61,6 +61,9 @@ public class ViolationManager {
 
         PunishmentResult punishment = calculatePunishment(type, severity, getViolationCount(uuid, type));
 
+        // 违规回放触发（必须在 executePunishment 之前，否则玩家可能已被 kick）
+        try { plugin.getReplayRecorder().onViolationTriggered(uuid, record); } catch (Throwable ignored) {}
+
         executePunishment(player, punishment, type);
 
         saveViolationData();
@@ -99,6 +102,11 @@ public class ViolationManager {
                     record.getType().name(),
                     score
             );
+            // 违规回放联动：填充该玩家最近一次已保存的回放片段 id。
+            // 告警推送先于本次片段 10s 固化落库，故可能指向上一段；前端会按玩家 uuid 兜底查询最新回放。
+            if (plugin.getReplayRecorder() != null) {
+                alert.replayId = plugin.getReplayRecorder().getLastSegmentId(player.getUniqueId());
+            }
             webServer.getBroadcaster().broadcast(alert);
         } catch (Throwable t) {
             // 推送失败不应影响违规处理流程

@@ -25,6 +25,10 @@ public class PlayerDTO {
     public int ping;
     public String gameMode;
     public String world;
+    /** 玩家在世界中的 X 坐标（用于实时地图） */
+    public double locationX;
+    /** 玩家在世界中的 Z 坐标（用于实时地图） */
+    public double locationZ;
     public String version;
     public String country;
     public String hardwareId;

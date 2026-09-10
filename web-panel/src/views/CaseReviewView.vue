@@ -7,6 +7,7 @@ import {
 } from 'lucide-vue-next'
 import type { CaseEntity } from '@/types'
 import { getCaseById } from '@/api/cases'
+import { getReplayPlayers, getReplayArchives } from '@/api/replays'
 import { formatNumber, formatDate } from '@/utils/format'
 import { caseStatusMeta, scoreToHexColor, levelToCssClass, levelToLabel } from '@/utils/risk'
 
@@ -15,6 +16,7 @@ const router = useRouter()
 const loading = ref(true)
 const caseEntity = ref<CaseEntity | null>(null)
 const notFound = ref(false)
+const replayLoading = ref(false)
 
 onMounted(async () => {
   try {
@@ -29,6 +31,59 @@ onMounted(async () => {
 
 function back(): void { router.back() }
 const ce = computed(() => caseEntity.value as CaseEntity)
+
+// —— 全局 toast：复用 App.vue 的 __anticheatToast / app:toast 事件
+type ToastKind = 'success' | 'error' | 'info'
+interface ToastPayload { type: ToastKind; message: string; durationMs?: number }
+function toast(p: ToastPayload): void {
+  const w = window as typeof window & { __anticheatToast?: (p: ToastPayload) => void }
+  if (typeof w.__anticheatToast === 'function') { w.__anticheatToast(p); return }
+  window.dispatchEvent(new CustomEvent('app:toast', { detail: p }))
+}
+
+/**
+ * 开始回放联动：
+ * 1. 优先检查玩家是否在线 → 实时回放；
+ * 2. 其次检查历史存档 → 加载存档；
+ * 3. 都没有则提示。
+ */
+async function startReplay(): Promise<void> {
+  if (replayLoading.value) return
+  if (!import.meta.env.PROD) {
+    toast({ type: 'info', message: '当前为 mock 案例数据，暂无关联的真实回放' })
+    return
+  }
+  const uuid = ce.value?.playerUuid
+  if (!uuid) {
+    toast({ type: 'info', message: '该违规暂无回放数据' })
+    return
+  }
+  replayLoading.value = true
+  try {
+    // 1) 优先尝试在线实时回放
+    const players = await getReplayPlayers()
+    const live = players.find(p => p.uuid === uuid)
+    if (live) {
+      router.push({ name: 'ReplayWatch', query: { uuid } })
+      return
+    }
+    // 2) 其次尝试历史存档
+    const archives = await getReplayArchives()
+    // 找到该玩家最近的一份存档
+    const arch = archives
+      .filter(a => a.playerName === ce.value?.playerName)
+      .sort((a, b) => b.startTime - a.startTime)[0]
+    if (arch) {
+      router.push({ name: 'ReplayWatch', query: { archive: arch.filename } })
+      return
+    }
+    toast({ type: 'info', message: '该违规暂无回放数据' })
+  } catch {
+    toast({ type: 'error', message: '查询回放数据失败，请稍后重试' })
+  } finally {
+    replayLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -72,7 +127,7 @@ const ce = computed(() => caseEntity.value as CaseEntity)
         <div class="flex flex-wrap gap-2 justify-end">
           <button class="btn btn-secondary"><FileText :size="14"/>生成报告</button>
           <button class="btn btn-secondary"><Download :size="14"/>导出证据包</button>
-          <button class="btn btn-outline-cyan"><PlaySquare :size="14"/>开始回放</button>
+          <button class="btn btn-outline-cyan" :disabled="replayLoading" @click="startReplay"><PlaySquare :size="14"/>开始回放</button>
           <button class="btn btn-secondary" :disabled="ce.verdict==='innocent'"><UserCheck :size="14"/>标记无罪</button>
           <button class="btn btn-secondary" :disabled="ce.verdict==='watched'"><Eye :size="14"/>观察模式</button>
           <button class="btn btn-danger" :disabled="ce.verdict==='guilty'"><Ban :size="14"/>判为有罪 / 封禁</button>

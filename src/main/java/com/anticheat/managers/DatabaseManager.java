@@ -167,6 +167,36 @@ public class DatabaseManager {
                             ")");
                     stmt.execute("CREATE INDEX IF NOT EXISTS idx_profiles_player ON player_profiles(player_uuid)");
 
+                    // replay 回放表
+                    stmt.execute("CREATE TABLE IF NOT EXISTS replay_segment (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                            "player_uuid VARCHAR(36) NOT NULL, " +
+                            "player_name VARCHAR(16), " +
+                            "violation_type VARCHAR(32), " +
+                            "violation_level VARCHAR(16), " +
+                            "start_ms BIGINT NOT NULL, " +
+                            "end_ms BIGINT NOT NULL, " +
+                            "violation_offset_ms BIGINT NOT NULL, " +
+                            "created_at BIGINT NOT NULL" +
+                            ")");
+                    stmt.execute("CREATE TABLE IF NOT EXISTS replay_point (" +
+                            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                            "segment_id INTEGER NOT NULL, " +
+                            "time_offset_ms BIGINT NOT NULL, " +
+                            "x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL, " +
+                            "yaw REAL NOT NULL, pitch REAL NOT NULL, " +
+                            "on_ground INTEGER NOT NULL, " +
+                            "game_mode VARCHAR(16), " +
+                            "FOREIGN KEY (segment_id) REFERENCES replay_segment(id) ON DELETE CASCADE" +
+                            ")");
+                    try {
+                        stmt.execute("CREATE INDEX IF NOT EXISTS idx_replay_seg_player ON replay_segment(player_uuid)");
+                        stmt.execute("CREATE INDEX IF NOT EXISTS idx_replay_seg_created ON replay_segment(created_at)");
+                        stmt.execute("CREATE INDEX IF NOT EXISTS idx_replay_point_seg ON replay_point(segment_id)");
+                    } catch (SQLException ignored) {
+                        // 部分方言对 IF NOT EXISTS 不支持，忽略
+                    }
+
                     plugin.getLogger().info("SQL数据库表初始化完成！");
                 }
             } catch (SQLException e) {

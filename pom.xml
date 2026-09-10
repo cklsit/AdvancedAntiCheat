@@ -21,6 +21,7 @@
         <api.version>${paper.version}</api.version>
         <api.groupId>io.papermc.paper</api.groupId>
         <api.artifactId>paper-api</api.artifactId>
+        <skipFrontend>false</skipFrontend>
     </properties>
 
     <repositories>
@@ -84,6 +85,13 @@
             <groupId>net.md-5</groupId>
             <artifactId>bungeecord-chat</artifactId>
             <version>1.8-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- ProtocolLib 软依赖：非法数据包结构 / 微时序 / 协议级假方块（未安装时插件照常运行） -->
+        <dependency>
+            <groupId>com.comphenix.protocol</groupId>
+            <artifactId>ProtocolLib</artifactId>
+            <version>5.3.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -169,6 +177,7 @@
                                     <exclude>io.papermc.paper:*</exclude>
                                     <exclude>org.spigotmc:*</exclude>
                                     <exclude>net.md-5:*</exclude>
+                                    <exclude>com.comphenix.protocol:*</exclude>
                                 </excludes>
                             </artifactSet>
                             <relocations>
@@ -243,6 +252,7 @@
                     <workingDirectory>${project.basedir}/web-panel</workingDirectory>
                     <installDirectory>${project.build.directory}/node</installDirectory>
                     <nodeVersion>v20.11.0</nodeVersion>
+                    <skip>${skipFrontend}</skip>
                 </configuration>
                 <executions>
                     <execution>

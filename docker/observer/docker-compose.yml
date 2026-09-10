@@ -1,0 +1,98 @@
+version: "3.8"
+
+# ============================================================
+# Minecraft 1.8.8 "观察者客户端" 集群（3 实例）
+# 容器网络：默认 bridge
+#   ⚠️ 必须保证容器可以访问 MC_SERVER_HOST:MC_SERVER_PORT
+#     若 MC 服务器在宿主机上运行，请将 MC_SERVER_HOST 改为
+#     "host.docker.internal"（Windows/macOS Docker Desktop）
+#     或宿主机实际局域网 IP（Linux），并注意防火墙放行。
+# VA-API 硬件加速（Intel 核显用户可选）：
+#   取消每个服务下方的 devices 注释，将宿主机
+#     /dev/dri/renderD128
+#   挂载进容器，同时修改 observerctl.py 的 ffmpeg 参数以
+#   使用 vaapi 编码（默认走 CPU libx264）。
+# ============================================================
+
+x-observer-common: &observer-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: replay-observer:latest
+  restart: on-failure:2
+  # mem_limit/cpus 禁用：Synology DSM 内核不支持 CPU CFS scheduler / NanoCPUs
+  # mem_limit: 1.5g
+  # cpus: "2.0"
+  healthcheck:
+    test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/status | grep -qE 'running|stopped'"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 120s
+  # VA-API 核显加速（有核显的用户取消注释启用）：
+  # devices:
+  #   - "/dev/dri/renderD128:/dev/dri/renderD128"
+
+services:
+  replay-observer-1:
+    <<: *observer-common
+    container_name: replay-observer-1
+    environment:
+      - OBSERVER_ID=1
+      - USERNAME=ReplayObserver_1
+      - UUID=ffffffff-ffff-ffff-ffff-fffffffffff1
+      # ================ 管理员请修改这里 ================
+      - MC_SERVER_HOST=192.168.1.132
+      - MC_SERVER_PORT=25565
+      # =================================================
+      - VNC_ENABLE=false
+    volumes:
+      # HLS 输出：直接映射到 NAS MC FlamePaper plugins/AdvancedAntiCheat/hls/N（绝对路径，Synology）
+      - "/volume1/jonson/wjx/Minecraft Server/plugins/AdvancedAntiCheat/hls/1:/hls"
+    ports:
+      # observerctl Flask API（宿主机端口供插件 FfmpegManager 调用）
+      # 与 config.yml replay.observer.<1|2|3>.url 默认值（18081/18082/18083）对齐
+      - "18081:8080"
+    # VNC 调试：设置 VNC_ENABLE=true 后，解除下面注释
+    # ports:
+    #   - "5910:5900"
+
+  replay-observer-2:
+    <<: *observer-common
+    container_name: replay-observer-2
+    environment:
+      - OBSERVER_ID=2
+      - USERNAME=ReplayObserver_2
+      - UUID=ffffffff-ffff-ffff-ffff-fffffffffff2
+      # ================ 管理员请修改这里 ================
+      - MC_SERVER_HOST=192.168.1.132
+      - MC_SERVER_PORT=25565
+      # =================================================
+      - VNC_ENABLE=false
+    volumes:
+      - "/volume1/jonson/wjx/Minecraft Server/plugins/AdvancedAntiCheat/hls/2:/hls"
+    ports:
+      - "18082:8080"
+    # VNC 调试：解除注释
+    # ports:
+    #   - "5911:5900"
+
+  replay-observer-3:
+    <<: *observer-common
+    container_name: replay-observer-3
+    environment:
+      - OBSERVER_ID=3
+      - USERNAME=ReplayObserver_3
+      - UUID=ffffffff-ffff-ffff-ffff-fffffffffff3
+      # ================ 管理员请修改这里 ================
+      - MC_SERVER_HOST=192.168.1.132
+      - MC_SERVER_PORT=25565
+      # =================================================
+      - VNC_ENABLE=false
+    volumes:
+      - "/volume1/jonson/wjx/Minecraft Server/plugins/AdvancedAntiCheat/hls/3:/hls"
+    ports:
+      - "18083:8080"
+    # VNC 调试：解除注释
+    # ports:
+    #   - "5912:5900"

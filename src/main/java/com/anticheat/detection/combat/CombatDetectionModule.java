@@ -17,6 +17,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class CombatDetectionModule implements DetectionModule, Listener {
 
@@ -198,7 +199,8 @@ public class CombatDetectionModule implements DetectionModule, Listener {
         long now = System.currentTimeMillis();
         long cutoff = now - CPS_WINDOW_MS;
 
-        while (!data.clickTimestamps.isEmpty() && data.clickTimestamps.peek() < cutoff) {
+        Long ts;
+        while ((ts = data.clickTimestamps.peek()) != null && ts < cutoff) {
             data.clickTimestamps.poll();
         }
 
@@ -342,7 +344,7 @@ public class CombatDetectionModule implements DetectionModule, Listener {
     }
 
     private static class CombatData {
-        final Queue<Long> clickTimestamps = new LinkedList<>();
+        final Queue<Long> clickTimestamps = new ConcurrentLinkedQueue<>();
         final List<HitData> hitHistory = new ArrayList<>();
         final List<org.bukkit.util.Vector> recentBlocksPlaced = new ArrayList<>();
 

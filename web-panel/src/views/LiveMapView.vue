@@ -1,27 +1,65 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { MapPin, Users, Server, CircleDot, ZoomIn, ZoomOut, Move, Locate, AlertTriangle } from 'lucide-vue-next'
-import playersJson from '@/api/mock/players.json'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { MapPin, Users, CircleDot, ZoomIn, ZoomOut, Move, Locate, AlertTriangle, Loader2, RefreshCw } from 'lucide-vue-next'
 import type { Player } from '@/types'
+import { getPlayerList } from '@/api/players'
 import { scoreToHexColor, playerStatusMeta } from '@/utils/risk'
 
-const players = (playersJson as Player[]).filter((p) => p.status === 'online' || p.status === 'watching')
-  .map((p, i) => ({
+const players = ref<Player[]>([])
+const loading = ref(true)
+const errorMsg = ref<string | null>(null)
+
+async function load(): Promise<void> {
+  loading.value = true
+  errorMsg.value = null
+  try {
+    const res = await getPlayerList({ page: 1, pageSize: 200 })
+    players.value = res.data?.list ?? []
+  } catch (e: unknown) {
+    const status = (e as any)?.response?.status
+    if (status === 401) errorMsg.value = '登录已过期，请重新登录后再试'
+    else if (status === 403) errorMsg.value = '当前账号无权访问实时地图'
+    else if (status >= 500) errorMsg.value = '服务器内部错误'
+    else errorMsg.value = '加载在线玩家失败，请稍后重试'
+  } finally {
+    loading.value = false
+  }
+}
+
+const worldCount = computed(() => new Set(players.value.map((p) => p.world)).size)
+const highRiskCount = computed(() => players.value.filter((p) => p.riskScore >= 70).length)
+
+type PositionedPlayer = Player & { leftPercent: number; topPercent: number }
+const playerPositions = computed<PositionedPlayer[]>(() => {
+  const list = players.value
+  if (list.length === 0) return []
+  const xs = list.map((p) => p.locationX)
+  const zs = list.map((p) => p.locationZ)
+  const minX = Math.min(...xs), maxX = Math.max(...xs)
+  const minZ = Math.min(...zs), maxZ = Math.max(...zs)
+  const rangeX = maxX - minX
+  const rangeZ = maxZ - minZ
+  return list.map((p) => ({
     ...p,
-    x: 20 + ((i * 137) % 60) + (i % 2 === 0 ? 0 : 20),
-    z: 20 + ((i * 211) % 60) + (i % 3 === 0 ? 0 : 10)
+    leftPercent: rangeX === 0 ? 50 : ((p.locationX - minX) / rangeX) * 80 + 10,
+    topPercent: rangeZ === 0 ? 50 : ((p.locationZ - minZ) / rangeZ) * 80 + 10
   }))
+})
 
 const viewport = ref({ zoom: 1, tx: 0, ty: 0 })
-const hoveredPlayer = ref<typeof players[number] | null>(null)
+const hoveredPlayer = ref<PositionedPlayer | null>(null)
 
 let rafId = 0
 const phase = ref(0)
-function tick() {
+function tick(): void {
   phase.value += 0.004
   rafId = requestAnimationFrame(tick)
 }
-onMounted(() => { rafId = requestAnimationFrame(tick) })
+
+onMounted(() => {
+  void load()
+  rafId = requestAnimationFrame(tick)
+})
 onBeforeUnmount(() => cancelAnimationFrame(rafId))
 
 function zoom(delta: number): void {
@@ -38,21 +76,16 @@ function recenter(): void {
 
 <template>
   <div class="space-y-4">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="stat-tile"><div>
         <div class="stat-tile-label">实时在线玩家</div>
         <div class="stat-tile-value">{{ players.length }}</div>
-        <div class="text-caption text-text-secondary">跨 8 个服务器</div>
+        <div class="text-caption text-text-secondary">来自 {{ worldCount }} 个世界</div>
       </div><div class="stat-tile-icon-wrap" style="background: rgba(0,229,255,0.12); color: var(--accent-cyan);"><Users :size="22"/></div></div>
-      <div class="stat-tile"><div>
-        <div class="stat-tile-label">监控大区</div>
-        <div class="stat-tile-value">4</div>
-        <div class="text-caption text-text-secondary">华东 / 华南 / 华北 / 海外</div>
-      </div><div class="stat-tile-icon-wrap" style="background: rgba(56,139,253,0.12); color: var(--accent-blue);"><Server :size="22"/></div></div>
       <div class="stat-tile"><div>
         <div class="stat-tile-label">高风险在线</div>
         <div class="stat-tile-value" style="color: var(--danger-red);">
-          {{ players.filter((p) => p.riskScore >= 70).length }}
+          {{ highRiskCount }}
         </div>
         <div class="text-caption text-text-secondary">正在重点跟踪</div>
       </div><div class="stat-tile-icon-wrap" style="background: rgba(248,81,73,0.12); color: var(--danger-red);"><AlertTriangle :size="22"/></div></div>
@@ -66,7 +99,7 @@ function recenter(): void {
           <div class="w-px h-5 bg-border-line mx-2"></div>
           <button class="btn btn-sm btn-ghost btn-icon" @click="zoom(0.2)" title="放大"><ZoomIn :size="16"/></button>
           <button class="btn btn-sm btn-ghost btn-icon" @click="zoom(-0.2)" title="缩小"><ZoomOut :size="16"/></button>
-          <button class="btn btn-sm btn-ghost btn-icon" title="平移"><Move :size="16" @click="pan(20, 10)"/></button>
+          <button class="btn btn-sm btn-ghost btn-icon" title="平移" @click="pan(20, 10)"><Move :size="16"/></button>
           <button class="btn btn-sm btn-ghost btn-icon" @click="recenter" title="重置视图"><Locate :size="16"/></button>
           <span class="ml-3 text-caption text-text-muted font-mono">×{{ viewport.zoom.toFixed(2) }}</span>
         </div>
@@ -87,18 +120,16 @@ function recenter(): void {
         <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full"
              style="border: 1px dashed rgba(56,139,253,0.15);"></div>
 
-        <!-- 玩家点（使用 transform 模拟位置 + 缩放） -->
+        <!-- 玩家点（坐标归一化映射到画布 80% 区域，保留 transform 缩放/平移） -->
         <div
-          class="absolute left-1/2 top-1/2"
-          :style="{
-            transform: `translate(-50%,-50%) translate(${viewport.tx}px, ${viewport.ty}px) scale(${viewport.zoom})`
-          }"
+          class="absolute inset-0"
+          :style="{ transform: `translate(${viewport.tx}px, ${viewport.ty}px) scale(${viewport.zoom})` }"
         >
           <div
-            v-for="p in players"
+            v-for="p in playerPositions"
             :key="p.uuid"
             class="absolute group"
-            :style="{ left: `calc(${(p.x - 50) * 4}px + 50% - 8px)`, top: `calc(${(p.z - 50) * 4}px + 50% - 8px)` }"
+            :style="{ left: p.leftPercent + '%', top: p.topPercent + '%', transform: 'translate(-50%, -50%)' }"
             @mouseenter="hoveredPlayer = p"
             @mouseleave="hoveredPlayer = null"
           >
@@ -112,7 +143,36 @@ function recenter(): void {
               <span class="text-text-primary font-medium">{{ p.name }}</span>
               <span class="mx-1.5 text-text-muted">·</span>
               <span class="font-mono" :style="{ color: scoreToHexColor(p.riskScore) }">{{ p.riskScore }}</span>
+              <span class="mx-1.5 text-text-muted">·</span>
+              <span class="text-text-secondary">{{ p.world }}</span>
+              <span class="mx-1.5 text-text-muted">·</span>
+              <span class="font-mono text-text-muted">{{ p.ping }}ms</span>
             </div>
+          </div>
+        </div>
+
+        <!-- 加载态 -->
+        <div v-if="loading" class="absolute inset-0 flex items-center justify-center">
+          <div class="flex flex-col items-center gap-2 text-text-secondary">
+            <Loader2 :size="24" class="animate-spin" style="color: var(--accent-cyan);"/>
+            <span class="text-caption">正在加载在线玩家…</span>
+          </div>
+        </div>
+
+        <!-- 错误态 + 重试 -->
+        <div v-else-if="errorMsg" class="absolute inset-0 flex items-center justify-center">
+          <div class="flex flex-col items-center gap-2 text-text-secondary">
+            <AlertTriangle :size="24" style="color: var(--danger-orange);"/>
+            <span class="text-caption">{{ errorMsg }}</span>
+            <button class="btn btn-sm btn-ghost" @click="load"><RefreshCw :size="14"/> 重试</button>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="players.length === 0" class="absolute inset-0 flex items-center justify-center">
+          <div class="flex flex-col items-center gap-2 text-text-muted">
+            <Users :size="28"/>
+            <span class="text-caption">当前无在线玩家</span>
           </div>
         </div>
 
@@ -128,7 +188,7 @@ function recenter(): void {
           </div>
         </div>
 
-        <!-- 右上：选中详情 -->
+        <!-- 右上：悬停详情 -->
         <div class="absolute top-4 right-4 card shadow-md !rounded-tag overflow-hidden" style="width: 300px;">
           <div v-if="hoveredPlayer" class="p-3">
             <div class="flex items-center gap-2 mb-2">

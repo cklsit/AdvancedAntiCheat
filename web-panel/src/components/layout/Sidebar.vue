@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { Component } from 'vue'
 import { ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-vue-next'
 import StatusDot from '@/components/common/StatusDot.vue'
 import type { WSStatus } from '@/stores/global'
+import { getMeta, type MetaInfo } from '@/api/meta'
 
 export interface SidebarNavEntry {
   to: string
@@ -28,6 +29,15 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+
+const meta = ref<MetaInfo | null>(null)
+
+onMounted(async () => {
+  try {
+    const resp = await getMeta()
+    meta.value = resp.data
+  } catch { /* 保持 null，用默认值 */ }
+})
 
 const widthStyle = computed(() => ({
   width: props.collapsed ? '56px' : '220px'
@@ -55,10 +65,10 @@ function go(to: string): void {
     class="flex flex-col border-r border-border-line bg-bg-card transition-[width] duration-200 shrink-0 relative z-30"
     :style="widthStyle"
   >
-    <!-- 折叠切换按钮：右上角 -->
+    <!-- 折叠切换按钮：右侧中部（不遮挡 Logo 与第一项导航） -->
     <button
       type="button"
-      class="absolute -right-3 top-4 z-10 w-6 h-6 rounded-full bg-bg-card border border-border-line
+      class="absolute -right-3 top-[76px] z-40 w-6 h-6 rounded-full bg-bg-card border border-border-line
              flex items-center justify-center hover:bg-bg-hover transition-colors shadow-md"
       @click="emit('toggleCollapse')"
       :title="collapsed ? '展开' : '折叠'"
@@ -132,8 +142,8 @@ function go(to: string): void {
         class="text-[10px] leading-relaxed text-text-muted space-y-0.5 transition-opacity duration-150"
         :class="collapsed ? 'opacity-0 h-0 pointer-events-none' : 'opacity-100 pt-1'"
       >
-        <div>插件 v2.4.0</div>
-        <div>面板 v1.7.0</div>
+        <div>{{ meta?.pluginVersion ? `插件 v${meta.pluginVersion}` : '插件 v2.1.0' }}</div>
+        <div>{{ meta?.panelVersion ? `面板 v${meta.panelVersion}` : '面板 v1.7.0' }}</div>
       </div>
     </div>
   </aside>

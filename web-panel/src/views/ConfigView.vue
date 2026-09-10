@@ -68,6 +68,63 @@ const loading = ref(false)
 const saving = ref(false)
 const toast = ref<{ type: 'success' | 'error' | 'info'; message: string } | null>(null)
 
+// ==================== 回放监视配置（需求 1：maxConcurrent 热更） ====================
+const replayCfg = reactive({
+  surveillanceEnabled: true,
+  autoOnJoin: true,
+  maxConcurrent: 3,
+  queueEnabled: true,
+  queueMaxSize: 50,
+  cameraMode: 'attach',
+  autoShoulderOnViolation: true,
+  observerPoolSize: 3,
+  effectiveMaxConcurrent: 3
+})
+
+async function loadReplayConfig(): Promise<void> {
+  try {
+    const cfg = await request.get<Record<string, unknown>>('/config/replay')
+    if (cfg && typeof cfg === 'object') {
+      if (typeof cfg.surveillanceEnabled === 'boolean') replayCfg.surveillanceEnabled = cfg.surveillanceEnabled
+      if (typeof cfg.autoOnJoin === 'boolean') replayCfg.autoOnJoin = cfg.autoOnJoin
+      if (typeof cfg.maxConcurrent === 'number') replayCfg.maxConcurrent = cfg.maxConcurrent
+      if (typeof cfg.queueEnabled === 'boolean') replayCfg.queueEnabled = cfg.queueEnabled
+      if (typeof cfg.queueMaxSize === 'number') replayCfg.queueMaxSize = cfg.queueMaxSize
+      if (typeof cfg.cameraMode === 'string') replayCfg.cameraMode = cfg.cameraMode
+      if (typeof cfg.autoShoulderOnViolation === 'boolean') replayCfg.autoShoulderOnViolation = cfg.autoShoulderOnViolation
+      if (typeof cfg.observerPoolSize === 'number') replayCfg.observerPoolSize = cfg.observerPoolSize
+      if (typeof cfg.effectiveMaxConcurrent === 'number') replayCfg.effectiveMaxConcurrent = cfg.effectiveMaxConcurrent
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[ConfigView] 加载回放配置失败', e)
+  }
+}
+
+async function saveReplayConfig(): Promise<void> {
+  if (saving.value) return
+  saving.value = true
+  try {
+    await request.put('/config/replay', {
+      surveillanceEnabled: replayCfg.surveillanceEnabled,
+      autoOnJoin: replayCfg.autoOnJoin,
+      maxConcurrent: replayCfg.maxConcurrent,
+      queueEnabled: replayCfg.queueEnabled,
+      queueMaxSize: replayCfg.queueMaxSize,
+      cameraMode: replayCfg.cameraMode,
+      autoShoulderOnViolation: replayCfg.autoShoulderOnViolation
+    })
+    showToast('success', '回放监视配置已保存并热加载')
+    await loadReplayConfig()
+  } catch (e) {
+    showToast('error', '回放配置保存失败，请检查权限')
+    // eslint-disable-next-line no-console
+    console.error('[ConfigView] 保存回放配置失败', e)
+  } finally {
+    saving.value = false
+  }
+}
+
 function showToast(type: 'success' | 'error' | 'info', message: string): void {
   toast.value = { type, message }
   setTimeout(() => { toast.value = null }, 3000)
@@ -152,6 +209,7 @@ async function save(): Promise<void> {
 
 onMounted(() => {
   loadConfig()
+  loadReplayConfig()
 })
 </script>
 
@@ -221,6 +279,57 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 回放监视配置（需求 1） -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="flex items-center gap-2"><Server :size="16" style="color: var(--accent-cyan);"/> 违规回放 · 监视调度</h3>
+        <span class="text-caption text-text-secondary">观察者池 {{ replayCfg.observerPoolSize }} 个 · 生效并发 {{ replayCfg.effectiveMaxConcurrent }}</span>
+      </div>
+      <div class="card-body">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label class="input-label">最大并发监视数 (maxConcurrent)</label>
+            <input type="number" min="1" v-model.number="replayCfg.maxConcurrent" class="input" @input="markDirty"/>
+            <p class="text-caption text-text-muted mt-1">超出按进入顺序排队；物理观察者池固定 {{ replayCfg.observerPoolSize }} 个，调大需增加容器并重启</p>
+          </div>
+          <div>
+            <label class="input-label">队列上限</label>
+            <input type="number" min="1" v-model.number="replayCfg.queueMaxSize" class="input" @input="markDirty"/>
+          </div>
+          <div>
+            <label class="input-label">机位模式</label>
+            <select v-model="replayCfg.cameraMode" class="input" @change="markDirty">
+              <option value="attach">ATTACH（眼位绑定，视角 1:1）</option>
+              <option value="shoulder">SHOULDER（过肩，含手持物品）</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <label class="flex items-center justify-between py-1.5 cursor-pointer">
+            <span class="text-sm text-text-primary">启用监视调度</span>
+            <input type="checkbox" v-model="replayCfg.surveillanceEnabled" class="w-4 h-4" @change="markDirty"/>
+          </label>
+          <label class="flex items-center justify-between py-1.5 cursor-pointer">
+            <span class="text-sm text-text-primary">玩家进入即调度</span>
+            <input type="checkbox" v-model="replayCfg.autoOnJoin" class="w-4 h-4" @change="markDirty"/>
+          </label>
+          <label class="flex items-center justify-between py-1.5 cursor-pointer">
+            <span class="text-sm text-text-primary">违规时自动切过肩取证</span>
+            <input type="checkbox" v-model="replayCfg.autoShoulderOnViolation" class="w-4 h-4" @change="markDirty"/>
+          </label>
+        </div>
+
+        <div class="flex justify-end mt-3">
+          <button class="btn btn-primary" :disabled="saving" @click="saveReplayConfig">
+            <Save :size="14"/> 保存回放配置
+          </button>
         </div>
       </div>
     </div>

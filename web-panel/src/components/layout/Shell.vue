@@ -7,6 +7,7 @@ import {
 } from 'lucide-vue-next'
 import { useGlobalStore } from '@/stores/global'
 import { useNotificationStore } from '@/stores/notification'
+import { getDashboardStats } from '@/api/dashboard'
 import TopNav from '@/components/layout/TopNav.vue'
 import Sidebar, { type SidebarNavEntry } from '@/components/layout/Sidebar.vue'
 import NotificationPanel from '@/components/layout/NotificationPanel.vue'
@@ -33,11 +34,34 @@ const navEntries: SidebarNavEntry[] = [
 // 面板 visible
 const showNotifPanel = ref(false)
 const showCommandPalette = ref(false)
+let statsTimer: ReturnType<typeof setInterval> | null = null
+
+/** 拉取 dashboard/stats，更新顶部栏全局在线数与风险概览 */
+async function refreshTopStats(): Promise<void> {
+  try {
+    const resp = await getDashboardStats()
+    const ds = resp.data
+    if (!ds) return
+    const triggers: string[] = []
+    // 从风险分布计算触发因素
+    const high = ds.riskDistribution?.find(r => r.level === 2 /* HIGH */)?.count ?? 0
+    const extreme = ds.riskDistribution?.find(r => r.level === 3 /* EXTREME */)?.count ?? 0
+    if (high + extreme > 0) triggers.push(`${high + extreme} 个高风险玩家在线`)
+    // 简易风险分：高风险占比 * 60，上限 100
+    const total = ds.totalPlayers > 0 ? ds.totalPlayers : 1
+    const ratio = Math.min(1, (high * 2 + extreme * 4) / Math.max(ds.onlinePlayers, 1))
+    const score = Math.min(100, Math.round(ratio * 60 + (ds.todayViolations > 50 ? 10 : 0)))
+    globalStore.setOnlineStats(ds.onlinePlayers ?? 0, score, triggers)
+  } catch { /* noop，保持旧值 */ }
+}
 
 onMounted(() => {
   notifStore.fetchList().catch(() => void 0)
   // 建立 WS 连接
   try { globalStore.connectWs() } catch { /* noop */ }
+  // 拉取顶部栏全局概览，并每 30 秒刷新
+  refreshTopStats()
+  statsTimer = setInterval(refreshTopStats, 30_000)
 
   // 全局 Ctrl+K 监听
   window.addEventListener('keydown', handleGlobalKeydown)
@@ -45,6 +69,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
+  if (statsTimer) { clearInterval(statsTimer); statsTimer = null }
 })
 
 function handleGlobalKeydown(e: KeyboardEvent): void {
@@ -112,13 +137,15 @@ function handleMarkAllRead(): void {
         @open-notif-panel="handleOpenNotifPanel"
       />
 
-      <!-- 移动端折叠按钮 -->
+      <!-- 移动端折叠按钮（仅 < 1024px 显示，位置下移避免遮挡第一项导航） -->
       <button
+        v-if="collapsed"
         type="button"
-        class="btn btn-ghost btn-icon lg:hidden fixed top-[64px] left-2 z-30 bg-bg-card/80 backdrop-blur-sm"
+        class="btn btn-ghost btn-icon lg:hidden fixed top-[92px] left-3 z-40 w-9 h-9 bg-bg-card/90 backdrop-blur-sm shadow-md border border-border-line rounded-btn"
         @click="toggleSidebar"
+        aria-label="展开菜单"
       >
-        <component :is="collapsed ? Menu : X" :size="18" />
+        <component :is="Menu" :size="18" />
       </button>
 
       <!-- 内容区 -->

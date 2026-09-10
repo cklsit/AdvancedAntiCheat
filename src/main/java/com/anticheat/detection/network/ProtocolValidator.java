@@ -97,7 +97,7 @@ public class ProtocolValidator {
         if (!validateClientBrand(info.brand)) {
             plugin.getDetectionManager().getViolationManager().recordViolation(
                 player,
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+                com.anticheat.detection.ViolationRecord.ViolationType.BRAND_SPOOF,
                 "客户端品牌异常: " + (info.brand == null ? "空品牌" : info.brand),
                 0.5
             );
@@ -107,8 +107,8 @@ public class ProtocolValidator {
         if (!validateProtocolVersion(info.protocolVersion)) {
             plugin.getDetectionManager().getViolationManager().recordViolation(
                 player,
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
-                "协议版本异常: " + info.protocolVersion,
+                com.anticheat.detection.ViolationRecord.ViolationType.PROTOCOL_SPOOF,
+                "协议版本异常: 客户端 " + info.protocolVersion + " / 服务端 " + getServerProtocolVersion(),
                 0.5
             );
             return false;
@@ -133,11 +133,34 @@ public class ProtocolValidator {
     }
 
     public boolean validateProtocolVersion(int clientVersion) {
+        // 无效/伪造版本号：非正数或异常巨大，属于明显的欺骗行为。
+        if (clientVersion <= 0 || clientVersion > 1000) {
+            return false;
+        }
+
+        // 若服务器安装了跨版本兼容插件（ViaVersion / ProtocolSupport / Geyser），
+        // 客户端上报的是其真实协议版本（如 1.20.x = 765），与 1.8 服务端（47）差异巨大属正常现象，
+        // 不应判定为 protocol_spoof，否则会导致正常跨版本玩家被误封。
+        if (isCrossVersionProxyPresent()) {
+            return true;
+        }
+
         int serverVersion = getServerProtocolVersion();
-        
         int versionDiff = Math.abs(clientVersion - serverVersion);
-        
+
         return versionDiff <= 5;
+    }
+
+    /**
+     * 检测服务器是否安装了跨版本兼容代理插件。
+     * 这些插件会把不同版本客户端的协议翻译成服务端版本，导致客户端真实版本号与服务端版本号差异巨大。
+     */
+    private boolean isCrossVersionProxyPresent() {
+        return Bukkit.getPluginManager().getPlugin("ViaVersion") != null
+            || Bukkit.getPluginManager().getPlugin("ProtocolSupport") != null
+            || Bukkit.getPluginManager().getPlugin("Geyser-Spigot") != null
+            || Bukkit.getPluginManager().getPlugin("Geyser-Velocity") != null
+            || Bukkit.getPluginManager().getPlugin("Floodgate") != null;
     }
 
     public void recordPacketTiming(Player player, long timestamp) {
@@ -206,11 +229,39 @@ public class ProtocolValidator {
         if (packetClassName.contains("非法") || packetClassName.contains("Invalid")) {
             plugin.getDetectionManager().getViolationManager().recordViolation(
                 player,
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+                com.anticheat.detection.ViolationRecord.ViolationType.MALFORMED_PACKET,
                 "非法数据包结构: " + packetClassName,
                 0.8
             );
             return false;
+        }
+        
+        // 结构校验：反射读取关键字段，检测空引用/越界数值（越界值是注入型客户端的典型特征）
+        try {
+            for (java.lang.reflect.Field field : packet.getClass().getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                    continue;
+                }
+                field.setAccessible(true);
+                Object value = field.get(packet);
+                if (value == null) {
+                    continue;
+                }
+                if (value instanceof Number) {
+                    double d = ((Number) value).doubleValue();
+                    if (Double.isNaN(d) || Double.isInfinite(d)) {
+                        plugin.getDetectionManager().getViolationManager().recordViolation(
+                            player,
+                            com.anticheat.detection.ViolationRecord.ViolationType.MALFORMED_PACKET,
+                            "数据包字段非法数值: " + packetClassName + "." + field.getName() + "=" + d,
+                            0.8
+                        );
+                        return false;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // 反射失败不判定违规，避免误报
         }
         
         return true;
@@ -270,7 +321,7 @@ public class ProtocolValidator {
         if (packetsPerSecond > 100) {
             plugin.getDetectionManager().getViolationManager().recordViolation(
                 player,
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+                com.anticheat.detection.ViolationRecord.ViolationType.MALFORMED_PACKET,
                 "数据包频率异常: " + String.format("%.1f", packetsPerSecond) + " 包/秒",
                 0.6
             );
@@ -288,13 +339,26 @@ public class ProtocolValidator {
         if (detectFakedDelay(uuid)) {
             plugin.getDetectionManager().getViolationManager().recordViolation(
                 player,
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+                com.anticheat.detection.ViolationRecord.ViolationType.CLOCK_DRIFT,
                 "检测到伪造延迟",
                 0.7
             );
             
             plugin.getLogger().warning("[ProtocolValidator] 玩家 " + player.getName() + 
                 " 检测到伪造延迟");
+        }
+        
+        // 序列异常：乱序/回退/跳号 → 结构异常
+        if (!detectPacketSequenceAnomaly(uuid)) {
+            List<Integer> seq = packetSequenceMap.get(uuid);
+            if (seq != null && seq.size() >= 20) {
+                plugin.getDetectionManager().getViolationManager().recordViolation(
+                    player,
+                    com.anticheat.detection.ViolationRecord.ViolationType.MALFORMED_PACKET,
+                    "数据包序列异常（乱序/跳号/回退）",
+                    0.7
+                );
+            }
         }
         
         checkPacketRate(player);
@@ -321,7 +385,7 @@ public class ProtocolValidator {
         }
     }
 
-    private int getServerProtocolVersion() {
+    public int getServerProtocolVersion() {
         String version = plugin.getServer().getBukkitVersion();
         
         if (version.contains("1.8")) {

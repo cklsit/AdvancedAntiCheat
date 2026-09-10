@@ -55,7 +55,34 @@ public class ViolationRecord implements Serializable {
         AUTO_FISH("自动钓鱼", Severity.LOW),
         AUTO_STACK("自动整理", Severity.MINOR),
         INVENTORY_DUPE("物品复制", Severity.CRITICAL),
-        BEHAVIOR_ANOMALY("行为异常", Severity.MEDIUM);
+        BEHAVIOR_ANOMALY("行为异常", Severity.MEDIUM),
+        // ==== 以下为全项检测重构新增类型（追加至末尾，保持既有 ordinal 稳定） ====
+        PHASE("相位/穿墙", Severity.CRITICAL),
+        JESUS("水面/岩浆行走", Severity.HIGH),
+        AIM_ANGLE("攻击角度异常", Severity.HIGH),
+        AIMBOT_SPECTRUM("自瞄频谱异常", Severity.HIGH),
+        KNOCKBACK_ENTROPY("击退熵异常", Severity.MEDIUM),
+        ANTI_KNOCKBACK("反击退", Severity.MEDIUM),
+        AUTO_ARMOR("自动盔甲", Severity.MEDIUM),
+        AUTO_POTION("自动喝药", Severity.MEDIUM),
+        BREAK_CONSISTENCY("破坏曲线一致性", Severity.HIGH),
+        MINING_COORD("挖掘移动协调异常", Severity.MEDIUM),
+        ILLEGAL_PLACE("非法放置", Severity.MEDIUM),
+        CONTAINER_SPAM("容器操作异常", Severity.MINOR),
+        ITEM_MOVE_SPAM("物品移动异常", Severity.MINOR),
+        OFFHAND_SWAP("副手切换异常", Severity.MEDIUM),
+        CLOCK_DRIFT("时钟漂移", Severity.HIGH),
+        PROTOCOL_SPOOF("协议版本欺骗", Severity.HIGH),
+        BRAND_SPOOF("伪造客户端品牌", Severity.HIGH),
+        MALFORMED_PACKET("非法数据包", Severity.HIGH),
+        GUI_FINGERPRINT("GUI响应指纹异常", Severity.MEDIUM),
+        RENDER_DISTANCE("渲染距离异常", Severity.HIGH),
+        KEYSTROKE("操作生物特征异常", Severity.MEDIUM),
+        ANTI_RECON("反侦察行为", Severity.MEDIUM),
+        GLOBAL_ANOMALY("全局异常", Severity.MEDIUM),
+        // ==== 蜜罐补充类型（追加至末尾，保持既有 ordinal 稳定） ====
+        FAKE_DROP("虚假掉落物", Severity.HIGH),
+        FAKE_ESCAPE("假逃脱情报", Severity.HIGH);
 
         private final String displayName;
         private final Severity defaultSeverity;

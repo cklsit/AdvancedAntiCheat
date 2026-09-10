@@ -9,8 +9,6 @@ import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import StatusDot from '@/components/common/StatusDot.vue'
 import RiskIndicator from '@/components/common/RiskIndicator.vue'
-import playersJson from '@/api/mock/players.json'
-import type { Player } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -47,29 +45,10 @@ function handleGlobalClick(e: MouseEvent): void {
   }
 }
 
-// 在线玩家数（从 mock 取）
-const onlineCount = computed(() => {
-  return (playersJson as Player[]).filter((p) => p.status === 'online').length
-})
-
-// 综合风险分
-const riskScore = computed(() => {
-  const players = playersJson as Player[]
-  if (onlineCount.value > 100) return 60
-  const onlinePlayers = players.filter((p) => p.status === 'online' || p.status === 'watching')
-  if (onlinePlayers.length === 0) return 0
-  const avg = onlinePlayers.reduce((sum, p) => sum + p.riskScore, 0) / onlinePlayers.length
-  return Math.round(avg * 0.8)
-})
-
-// 触发因素
-const riskTriggers = computed(() => {
-  const players = playersJson as Player[]
-  const highRiskOnline = players.filter((p) => p.riskScore >= 70 && (p.status === 'online' || p.status === 'watching')).length
-  const arr: string[] = []
-  if (highRiskOnline > 0) arr.push(`${highRiskOnline} 个高风险玩家在线`)
-  return arr
-})
+// 在线玩家数、综合风险分、触发因素：均来自全局 store（由 Shell 定时拉取 dashboard/stats 更新）
+const onlineCount = computed(() => globalStore.onlinePlayers)
+const riskScore = computed(() => globalStore.riskScore)
+const riskTriggers = computed(() => globalStore.riskTriggers)
 
 const formattedTime = computed(() => {
   const d = currentTime.value
@@ -164,7 +143,7 @@ function onSearchKeydown(e: KeyboardEvent): void {
           class="btn btn-ghost btn-icon relative"
           @click="handleBellClick"
         >
-          <Bell :size="18" />
+          <Bell :size="18" class="shrink-0" />
           <span
             v-if="notifStore.unreadCount > 0"
             class="badge-num absolute -top-0.5 -right-0.5"

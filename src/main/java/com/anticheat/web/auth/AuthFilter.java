@@ -29,8 +29,9 @@ public class AuthFilter implements Handler {
     @Override
     public void handle(Context ctx) {
         String path = ctx.path();
-        // 白名单：登录与登录页资源（保留扩展空间）
-        if (path.equals("/api/auth/login") || path.equals("/api/auth/register")) {
+        // 白名单：登录与登录页资源（保留扩展空间）、调试端点（无需鉴权，方便直接 curl 诊断）
+        if (path.equals("/api/auth/login") || path.equals("/api/auth/register") || path.equals("/api/meta")
+                || path.equals("/api/debug/online")) {
             return;
         }
 

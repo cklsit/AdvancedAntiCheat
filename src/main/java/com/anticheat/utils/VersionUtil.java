@@ -6,10 +6,15 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffectType;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
 import java.util.logging.Level;
 
 public class VersionUtil {
@@ -327,6 +332,31 @@ public class VersionUtil {
     }
 
     /**
+     * 设置实体默认可见性（蜜罐幽灵实体用）。
+     * 优先 1.19.4+ 的 LivingEntity.setVisibleByDefault(boolean)；
+     * 1.8 无此方法，降级为 LivingEntity.setInvisible(boolean)（语义近似：让诱饵实体对正常玩家不可见）；
+     * 都失败时静默跳过（no-op），保证插件在老版本上能正常启用而不抛 NoSuchMethodError。
+     */
+    public static void safeSetVisibleByDefault(LivingEntity entity, boolean visibleByDefault) {
+        if (entity == null) return;
+        // 路径 1：1.19.4+ Paper 的 setVisibleByDefault(boolean)
+        try {
+            Method m = LivingEntity.class.getMethod("setVisibleByDefault", boolean.class);
+            m.invoke(entity, visibleByDefault);
+            return;
+        } catch (Throwable ignored) {
+            // fall through
+        }
+        // 路径 2：降级 setInvisible(boolean)，取反语义（visibleByDefault=false → 隐身）
+        try {
+            Method m = LivingEntity.class.getMethod("setInvisible", boolean.class);
+            m.invoke(entity, !visibleByDefault);
+        } catch (Throwable ignored) {
+            // 彻底降级：no-op
+        }
+    }
+
+    /**
      * 玩家瞄准实体：优先 Player.getTargetEntity(int maxDistance)（1.13+）。
      * 1.8 无此方法，回退到简单的视线 5 格内最近实体遍历（保证不 NoSuchMethodError）。
      */
@@ -401,6 +431,57 @@ public class VersionUtil {
             m.invoke(world, rule, value);
         } catch (Throwable t) {
             Bukkit.getLogger().log(Level.WARNING, "[VersionUtil] 设置游戏规则 " + rule + " 失败: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 跨版本安全获取在线玩家列表。
+     * <p>
+     * 1.8.x / FlamePaper 1.8.8 中 {@code Bukkit.getOnlinePlayers()} 返回原始
+     * {@code Player[]}；Paper/Spigot 1.13+ 返回 {@code Collection<? extends Player>}。
+     * 现代版 JAR 编译后，老服务器上按数组调用会发生不兼容（ArrayList(Collection) 构造失败、
+     * 或产生空列表）。本方法通过反射检测返回类型并统一转换为 List。
+     * </p>
+     *
+     * @return 当前在线玩家的可变 List；服务器异常时返回空 List（永不为 null）
+     */
+    public static List<Player> safeGetOnlinePlayers() {
+        try {
+            Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers called");
+            Method method = Bukkit.class.getMethod("getOnlinePlayers");
+            Object ret = method.invoke(null);
+            List<Player> result = new ArrayList<>();
+            if (ret == null) {
+                Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers returning 0 players (null return)");
+                return result;
+            }
+            if (ret instanceof Collection) {
+                @SuppressWarnings("unchecked")
+                Collection<? extends Player> col = (Collection<? extends Player>) ret;
+                result = new ArrayList<>(col);
+            } else if (ret instanceof Player[]) {
+                result = new ArrayList<>(Arrays.asList((Player[]) ret));
+            } else {
+                // 兜底：无法识别时尝试 Bukkit 直接 API
+                try {
+                    result = new ArrayList<>(Bukkit.getOnlinePlayers());
+                } catch (Throwable ignoredFallback) {
+                    // result 保持空
+                }
+            }
+            Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers called, returning " + result.size() + " players (type=" + result.getClass().getSimpleName() + ")");
+            return result;
+        } catch (Throwable t) {
+            Bukkit.getLogger().log(Level.WARNING, "[VersionUtil] safeGetOnlinePlayers 反射失败: " + t.getMessage());
+            // 兜底（在编译目标为 Paper 的 JAR 上可用；若 1.8 上又出错，返回空）
+            try {
+                List<Player> result = new ArrayList<>(Bukkit.getOnlinePlayers());
+                Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers (fallback) returning " + result.size() + " players");
+                return result;
+            } catch (Throwable ignored2) {
+                Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers returning 0 players (all fallbacks failed)");
+                return new ArrayList<>();
+            }
         }
     }
 }

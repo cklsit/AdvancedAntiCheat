@@ -53,6 +53,203 @@ detection:
     warningCooldownSecs: 2
     notifyCooldownMs: 5000
 
+  # ============ 全项检测重构新增检测项（按违规类型名作为配置键） ============
+  # 说明：下方键名对应 ViolationRecord.ViolationType 枚举名的小写形式，
+  # 由违规上报链路（managers.ViolationManager → DetectionManager.addViolation）读取，
+  # 用于控制封禁阈值与开关。每个键支持 enabled / maxViolations / banTime 等通用字段。
+
+  # ---- 一、移动类 ----
+  timer:
+    enabled: true
+    maxViolations: 3
+    banTime: "7d"
+  water_walk:
+    enabled: true
+    maxViolations: 3
+    banTime: "1d"
+  high_jump:
+    enabled: true
+    maxViolations: 3
+    banTime: "1d"
+  no_fall:
+    enabled: true
+    maxViolations: 3
+    banTime: "1d"
+  spider:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  phase:
+    enabled: true
+    maxViolations: 2
+    banTime: "permanent"
+  jesus:
+    enabled: true
+    maxViolations: 3
+    banTime: "1d"
+  clock_drift:
+    enabled: true
+    maxViolations: 3
+    banTime: "7d"
+
+  # ---- 二、战斗类 ----
+  auto_hit:
+    enabled: true
+    maxViolations: 5
+    banTime: "1d"
+  cps_anomaly:
+    enabled: true
+    maxViolations: 5
+    banTime: "1d"
+  no_knockback:
+    enabled: true
+    maxViolations: 3
+    banTime: "7d"
+  auto_totem:
+    enabled: true
+    maxViolations: 3
+    banTime: "7d"
+  aim_angle:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  aimbot_spectrum:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  knockback_entropy:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  anti_knockback:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  auto_armor:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  auto_potion:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+
+  # ---- 三、挖掘与建筑类 ----
+  fast_break:
+    enabled: true
+    maxViolations: 3
+    banTime: "1d"
+  auto_miner:
+    enabled: true
+    maxViolations: 2
+    banTime: "permanent"
+  break_consistency:
+    enabled: true
+    maxViolations: 3
+    banTime: "1d"
+  mining_coord:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  illegal_place:
+    enabled: true
+    maxViolations: 4
+    banTime: "1d"
+  no_slow_mining:
+    enabled: true
+    maxViolations: 3
+    banTime: "3d"
+
+  # ---- 四、背包与物品交互类 ----
+  auto_stack:
+    enabled: true
+    maxViolations: 5
+    banTime: "1d"
+  container_spam:
+    enabled: true
+    maxViolations: 5
+    banTime: "1h"
+  item_move_spam:
+    enabled: true
+    maxViolations: 5
+    banTime: "1h"
+  offhand_swap:
+    enabled: true
+    maxViolations: 4
+    banTime: "3d"
+  inventory_dupe:
+    enabled: true
+    maxViolations: 1
+    banTime: "permanent"
+
+  # ---- 五、网络与协议类 ----
+  protocol_spoof:
+    enabled: true
+    maxViolations: 2
+    banTime: "7d"
+  brand_spoof:
+    enabled: true
+    maxViolations: 2
+    banTime: "7d"
+  malformed_packet:
+    enabled: true
+    maxViolations: 3
+    banTime: "7d"
+
+  # ---- 六、客户端与环境指纹类 ----
+  gui_fingerprint:
+    enabled: true
+    maxViolations: 5
+    banTime: "1d"
+  render_distance:
+    enabled: true
+    maxViolations: 2
+    banTime: "permanent"
+
+  # ---- 七、蜜罐类 ----
+  x_ray:
+    enabled: true
+    maxViolations: 2
+    banTime: "14d"
+  chest_esp:
+    enabled: true
+    maxViolations: 2
+    banTime: "7d"
+  player_radar:
+    enabled: true
+    maxViolations: 2
+    banTime: "7d"
+  tracer:
+    enabled: true
+    maxViolations: 3
+    banTime: "7d"
+  fake_drop:
+    enabled: true
+    maxViolations: 2
+    banTime: "7d"
+  fake_escape:
+    enabled: true
+    maxViolations: 2
+    banTime: "7d"
+
+  # ---- 八、行为分析类 ----
+  behavior_anomaly:
+    enabled: true
+    maxViolations: 5
+    banTime: "1d"
+  keystroke:
+    enabled: true
+    maxViolations: 5
+    banTime: "3d"
+  anti_recon:
+    enabled: true
+    maxViolations: 4
+    banTime: "7d"
+  global_anomaly:
+    enabled: true
+    maxViolations: 5
+    banTime: "3d"
+
 ban:
   minTime: "1m"
   maxTime: "1d"
@@ -85,6 +282,58 @@ check-client:
 bounty:
   enabled: true
   default-time-limit-minutes: 30
+
+# ============ 蜜罐与陷阱（第七大类 5 项检测） ============
+honeypot:
+  enabled: true
+  # 幻象矿石：向玩家发送假钻石矿坐标，挖掘即判透视
+  hologram-ore:
+    enabled: true
+    count: 20
+    worlds: ["world"]
+  # 幽灵实体：不可见生物，被攻击/锁定即判 ESP/杀戮光环
+  ghost-entity:
+    enabled: true
+    count: 10
+    worlds: ["world"]
+  # 不可能破坏进度：瞬挖/过短挖掘耗时判定脚本化
+  impossible-break:
+    enabled: true
+    max-distance: 4.5
+  # 虚假掉落物：投放仅自动拾取/ESP 才会收集的诱饵
+  fake-drop:
+    enabled: true
+  # 假逃脱蜜罐：确认作弊者重定向沙箱并记录情报
+  fake-escape:
+    enabled: false
+    threshold: 10
+    sandbox-world: ""
+
+# ============ 客户端与环境指纹（第六大类 3 项检测） ============
+fingerprint:
+  # 渲染距离验证（矿透）：渲染距离外埋设诱饵矿石
+  render-distance:
+    enabled: true
+  # GUI 响应时间指纹：弹出自定义 GUI 记录响应延迟
+  gui:
+    enabled: true
+    # 低频自动探针：仅对「已有违规记录」的玩家周期性弹 GUI 测响应，避免打扰正常玩家
+    auto-probe: false
+    auto-probe-interval-minutes: 5
+  # 隐写特征标记：发放带唯一 ID 物品追踪小号流转（1.14+ 写入 NBT，低版本回退显示名）
+  stegano:
+    enabled: true
+
+# ============ 行为分析与自适应学习（第八大类 5 项检测） ============
+# 说明：个人行为基线 / 动态贝叶斯融合由 ProfileManager + fusion 融合中心承载；
+# 全局异常（孤立森林）/ 操作生物特征 / 反侦察 为独立检测模块，阈值见各模块常量。
+behavior:
+  global-anomaly:
+    enabled: true
+  keystroke:
+    enabled: true
+  anti-recon:
+    enabled: true
 
 # Web 管理面板配置
 # 插件启动时自动启动内嵌 HTTP+WS 服务器，访问 http://<server-ip>:<port>/ 即打开面板
@@ -134,3 +383,93 @@ web:
           - "dashboard:read"
           - "players:read"
           - "notifications:read"
+
+# 观察者回放 / HLS 录制相关（容器 observerctl 调用与 HLS 静态目录）
+# observer id 从 1 开始编号，与 docker-compose 中容器暴露的 observerctl 端口一致。
+# Synology / 生产部署：请将容器的 volume 挂载到 plugins/AdvancedAntiCheat/<hls.dir> 下，
+# 以便 ffmpeg 写出的 HLS 切片与最终 mp4 可被本插件的 Javalin 静态路由 /hls 直接访问。
+replay:
+  hls:
+    dir: hls   # 相对插件 data 目录（plugins/AdvancedAntiCheat/）
+  # 宿主机 HLS 根目录（容器内 /hls 对应的宿主机路径）。
+  # ObserverPoolManager.zipVideoSession 打包 ZIP 时，需要从该目录读取 concat 生成的 mp4
+  # （容器内路径 /hls/archive/xxx.mp4 → 宿主机 ${hlsHostRoot}/archive/xxx.mp4）。
+  # 若留空（默认），fallback 到 plugin.getDataFolder()/hls，
+  # 即与 replay.hls.dir 同目录（适用于插件和 docker 容器运行在同一台宿主机、
+  # volume 直接挂载到 plugins/AdvancedAntiCheat/hls 的简单部署场景）。
+  # 生产 / Synology NAS 部署示例：/data/anticheat/hls
+  hlsHostRoot: ""
+
+  # ===== 监视调度（需求 1：进入即调度，超出并发排队）=====
+  # 热更新：面板 GET/PUT /api/config/replay，改后调用 SurveillanceScheduler.onConfigReload()
+  surveillance:
+    enabled: true            # 总开关
+    autoOnJoin: true         # 玩家进入即入队调度；false 则退回"管理员订阅驱动"
+    maxConcurrent: 3         # ★ 需求 1 的 x：最多同时监视的玩家数（超出排队）
+    queue:
+      enabled: true          # 池满时排队（false 则直接拒绝）
+      maxSize: 50            # 队列上限，超出丢弃并上报 degraded{reason:queue_overflow}
+      priorityBoostOnViolation: false  # 严重违规插队（默认关，保持 FIFO）
+    exclude:                 # 不监视的对象
+      permissions: ["anticheat.admin"]
+      uuids: []
+
+  # ===== 采集（视频 + 机位）=====
+  capture:
+    camera:
+      mode: attach           # ★ 机位：attach(眼位绑定，视角1:1零抖动) | shoulder(过肩，画面含手持物品)
+      autoShoulderOnViolation: true   # ★ 方案 A：记录到违规时自动切过肩，录下手持物品
+      autoShoulderHoldSeconds: 8      # 切换后保持时长，之后回落 attach
+      shoulder:
+        distance: 3.0        # 目标后方距离（格）
+        height: 1.2          # 目标上方偏移（格）
+        yawOffset: 0         # 相对目标朝向的水平偏角（度）
+      allowManualSwitch: true
+    hls:
+      dir: hls               # 与顶层 replay.hls.dir 保持一致（保留字段，供容器侧读取）
+      segmentSeconds: 2
+      partialSegmentSeconds: 0.5   # LL-HLS 部分切片（低延迟）
+      lowLatency: true
+    video:
+      width: 1280
+      height: 720
+      fps: 30
+      bitrateKbps: 2500
+      minBitrateKbps: 1200   # ★ 码率下限（取证锁定时不得低于此值）
+      minHeight: 720         # ★ 分辨率下限，取证会话不得降破（§4.4.4 清晰度优先）
+      evidenceLock: true     # ★ 记录到违规即锁画质，禁止再降档
+      encoder: h264          # h264 | h264_vaapi | av1
+      preset: veryfast
+      tune: zerolatency
+    ladder:                  # ABR 阶梯：清晰度优先，取消 360p（不具备取证价值）
+      - {name: "720p", width: 1280, height: 720,  bitrateKbps: 2500}
+      - {name: "1080p", width: 1920, height: 1080, bitrateKbps: 4500}
+
+  # ===== 遥测采样 =====
+  telemetry:
+    rateHz: 20               # 采样频率（坐标/血量/准星 20Hz）
+    crosshair:
+      enabled: true          # 准星目标采集（补缺口 7）
+      maxDistance: 6.0
+    inventory:
+      fullInventory: true    # ★ 36 格背包（补缺口 8）
+      deltaEncoding: true
+      rateHz: 5
+
+  # ===== 归档 =====
+  archive:
+    onQuit: true             # 玩家退出即归档（需求 3）
+    retentionDays: 7
+    telemetryFormat: jsonl   # telemetry.jsonl（20Hz 全量，JSON Lines）
+
+  observer:
+    provisioner: docker        # docker | internal（观察者客户端供给方式）
+    client:
+      renderDistance: 8        # ★ 观察者客户端渲染距离（区块）：过大加载慢、过小视野差
+      chunkPrewarmRadius: 3    # ★ 绑定前预热目标周围区块半径，避免"世界空洞"（0=关闭）
+    1:
+      url: http://127.0.0.1:18081
+    2:
+      url: http://127.0.0.1:18082
+    3:
+      url: http://127.0.0.1:18083

@@ -15,6 +15,8 @@ public class AlertDTO {
     public String time;
     public String module;
     public int score;
+    /** 关联的违规回放片段 id（该玩家最近一次已保存的片段；可能为 null） */
+    public Long replayId;
 
     public AlertDTO() {
     }

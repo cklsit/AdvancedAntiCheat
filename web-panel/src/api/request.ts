@@ -55,8 +55,16 @@ service.interceptors.response.use(
   (error) => {
     const status = error?.response?.status
     let msg = error?.message || '网络异常'
-    if (status === 401) msg = '登录已过期，请重新登录'
-    else if (status === 403) msg = '无权限访问该资源'
+    if (status === 401) {
+      try {
+        localStorage.removeItem('anticheat_token')
+        localStorage.removeItem('anticheat_user')
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('app:auth-expired', { detail: { reason: 'token_expired' } }))
+        }
+      } catch { /* noop */ }
+      msg = '登录已过期，请重新登录'
+    } else if (status === 403) msg = '无权限访问该资源'
     else if (status === 404) msg = '接口不存在'
     else if (status >= 500) msg = '服务器内部错误'
     toastError(msg)

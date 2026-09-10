@@ -2,14 +2,26 @@ package com.anticheat.managers;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.detection.combat.CombatDetectionModule;
+import com.anticheat.detection.combat.AdvancedCombatDetector;
 import com.anticheat.detection.fusion.AdaptiveLearningSystem;
 import com.anticheat.detection.fusion.DecisionActionCenter;
 import com.anticheat.detection.fusion.ProbabilityFusionEngine;
 import com.anticheat.detection.fusion.RCPComputer;
 import com.anticheat.detection.movement.MovementDetectionModule;
+import com.anticheat.detection.inventory.InventoryDetectionModule;
+import com.anticheat.detection.mining.MiningDetectionModule;
+import com.anticheat.detection.network.ClockDriftDetector;
+import com.anticheat.detection.network.ProtocolValidator;
+import com.anticheat.detection.network.BrandChannelListener;
+import com.anticheat.detection.fingerprint.ClientFingerprintModule;
+import com.anticheat.detection.behavior.GlobalAnomalyDetector;
+import com.anticheat.detection.behavior.KeystrokeDynamics;
+import com.anticheat.detection.behavior.AntiReconDetector;
 import com.anticheat.detection.association.AssociationDetector;
 import com.anticheat.detection.association.SocialGraph;
 import com.anticheat.detection.association.TeamCheatingDetector;
+import com.anticheat.integration.ProtocolIntegration;
+import com.anticheat.integration.ProtocolLibHook;
 import com.anticheat.listeners.HoneypotListener;
 import com.anticheat.profiles.BehaviorTracker;
 import com.anticheat.profiles.BehaviorAnalysisEngine;
@@ -30,6 +42,19 @@ public class AdvancedDetectionManager {
     private MovementDetectionModule movementModule;
     private CombatDetectionModule combatModule;
     private HoneypotListener honeypotSystem;
+
+    // 全项检测重构新增模块
+    private AdvancedCombatDetector advancedCombatDetector;
+    private InventoryDetectionModule inventoryModule;
+    private MiningDetectionModule miningModule;
+    private ClockDriftDetector clockDriftDetector;
+    private ProtocolValidator protocolValidator;
+    private ProtocolIntegration protocolIntegration;
+    private ProtocolLibHook protocolLibHook;
+    private ClientFingerprintModule clientFingerprintModule;
+    private GlobalAnomalyDetector globalAnomalyDetector;
+    private KeystrokeDynamics keystrokeDynamics;
+    private AntiReconDetector antiReconDetector;
 
     private ProfileManager profileManager;
     private BehaviorTracker behaviorTracker;
@@ -105,10 +130,36 @@ public class AdvancedDetectionManager {
         this.combatModule = new CombatDetectionModule(plugin);
         this.honeypotSystem = new HoneypotListener(plugin);
 
+        // ==== 全项检测重构：实例化并注册所有补充检测模块（各自自注册事件监听） ====
+        this.advancedCombatDetector = new AdvancedCombatDetector(plugin);   // 攻击角度/自瞄频谱/击退熵/反击退/自动喝药
+        this.inventoryModule = new InventoryDetectionModule(plugin);        // 背包状态机/物品移动/容器开关/副手切换
+        this.miningModule = new MiningDetectionModule(plugin);              // 破坏一致性/挖掘移动协调/非法放置
+        this.clockDriftDetector = new ClockDriftDetector(plugin);           // Timer 时钟漂移
+        this.protocolValidator = new ProtocolValidator(plugin);             // 品牌/协议版本/非法包结构
+        new BrandChannelListener(plugin, this.protocolValidator);           // 品牌通道上报接线
+
+        // ProtocolLib 软依赖：底层包校验 + 微时序 + 协议级假方块（未安装则保持 null）
+        this.protocolIntegration = null;
+        this.protocolLibHook = null;
+        if (plugin.getServer().getPluginManager().isPluginEnabled("ProtocolLib")) {
+            try {
+                this.protocolLibHook = new ProtocolLibHook(plugin, this.protocolValidator);
+                this.protocolIntegration = this.protocolLibHook;
+                plugin.getLogger().info("[AdvancedDetectionManager] ProtocolLib 已检测，启用底层包校验 / 微时序 / 协议级假方块");
+            } catch (Throwable t) {
+                plugin.getLogger().warning("[AdvancedDetectionManager] ProtocolLib 初始化失败，退回事件级检测: " + t.getMessage());
+            }
+        }
+
+        this.clientFingerprintModule = new ClientFingerprintModule(plugin, this.protocolIntegration); // 渲染距离/GUI指纹/隐写标记
+        this.globalAnomalyDetector = new GlobalAnomalyDetector(plugin);     // 孤立森林全局异常
+        this.keystrokeDynamics = new KeystrokeDynamics(plugin);             // 操作生物特征
+        this.antiReconDetector = new AntiReconDetector(plugin);             // 反侦察行为
+
         plugin.getServer().getPluginManager().registerEvents(movementModule, plugin);
         plugin.getServer().getPluginManager().registerEvents(honeypotSystem, plugin);
 
-        plugin.getLogger().info("[AdvancedDetectionManager] 第一层引擎初始化完成");
+        plugin.getLogger().info("[AdvancedDetectionManager] 第一层引擎初始化完成（含 9 类全项补充检测）");
     }
 
     private void initializeLayer2Engines(AdvancedAntiCheat plugin) {
@@ -345,6 +396,10 @@ public class AdvancedDetectionManager {
     public void shutdown() {
         enabled = false;
 
+        if (protocolLibHook != null) {
+            protocolLibHook.close();
+        }
+
         if (periodicCheckTask != null) {
             periodicCheckTask.cancel();
         }
@@ -390,6 +445,46 @@ public class AdvancedDetectionManager {
 
     public HoneypotListener getHoneypotSystem() {
         return honeypotSystem;
+    }
+
+    public AdvancedCombatDetector getAdvancedCombatDetector() {
+        return advancedCombatDetector;
+    }
+
+    public InventoryDetectionModule getInventoryModule() {
+        return inventoryModule;
+    }
+
+    public MiningDetectionModule getMiningModule() {
+        return miningModule;
+    }
+
+    public ClockDriftDetector getClockDriftDetector() {
+        return clockDriftDetector;
+    }
+
+    public ProtocolValidator getProtocolValidator() {
+        return protocolValidator;
+    }
+
+    public ProtocolIntegration getProtocolIntegration() {
+        return protocolIntegration;
+    }
+
+    public ClientFingerprintModule getClientFingerprintModule() {
+        return clientFingerprintModule;
+    }
+
+    public GlobalAnomalyDetector getGlobalAnomalyDetector() {
+        return globalAnomalyDetector;
+    }
+
+    public KeystrokeDynamics getKeystrokeDynamics() {
+        return keystrokeDynamics;
+    }
+
+    public AntiReconDetector getAntiReconDetector() {
+        return antiReconDetector;
     }
 
     public ProfileManager getProfileManager() {

@@ -9,8 +9,8 @@ import {
   TitleComponent, TooltipComponent, LegendComponent, GridComponent, DatasetComponent
 } from 'echarts/components'
 import {
-  Users, Ban, AlertTriangle, FolderKanban, Server, Cpu, Activity, TrendingUp,
-  ChevronRight, ShieldAlert, Swords, Footprints, Gauge
+  Users, Ban, AlertTriangle, FolderKanban, Server, Cpu, Activity,
+  ChevronRight, ShieldAlert, Swords, Footprints, Gauge, PlaySquare
 } from 'lucide-vue-next'
 import type { DashboardStats, AlertItem } from '@/types'
 import { getDashboardStats, getRecentAlerts } from '@/api/dashboard'
@@ -149,7 +149,7 @@ function openPlayer(playerName?: string): void {
           <div class="stat-tile-value">{{ formatNumber(ds.onlinePlayers) }} <span class="text-sm font-normal text-text-secondary">/ {{ formatNumber(ds.totalPlayers, true) }}</span></div>
           <div class="mt-1 flex items-center gap-2 text-caption">
             <span class="status-dot online"></span>
-            <span class="text-text-secondary">来自 8 个服务器实例</span>
+            <span class="text-text-secondary">来自 {{ ds.serverStatus.length }} 个服务器实例</span>
           </div>
         </div>
         <div class="stat-tile-icon-wrap" style="background: rgba(0,229,255,0.12); color: var(--accent-cyan);"><Users :size="22"/></div>
@@ -160,7 +160,7 @@ function openPlayer(playerName?: string): void {
           <div class="stat-tile-label">今日违规事件</div>
           <div class="stat-tile-value">{{ formatNumber(ds.todayViolations, true) }}</div>
           <div class="mt-1 flex items-center gap-2 text-caption text-text-secondary">
-            <TrendingUp :size="14" style="color: var(--warning);"/> 较昨日 +6.2%
+            今日累计统计
           </div>
         </div>
         <div class="stat-tile-icon-wrap" style="background: rgba(210,153,34,0.12); color: var(--warning);"><AlertTriangle :size="22"/></div>
@@ -171,7 +171,7 @@ function openPlayer(playerName?: string): void {
           <div class="stat-tile-label">今日自动封禁</div>
           <div class="stat-tile-value">{{ ds.todayBans }}</div>
           <div class="mt-1 flex items-center gap-2 text-caption text-text-secondary">
-            <Ban :size="14" style="color: var(--danger-red);"/> 其中 3 起由 AI 判决
+            <Ban :size="14" style="color: var(--danger-red);"/> 自动执行
           </div>
         </div>
         <div class="stat-tile-icon-wrap" style="background: rgba(248,81,73,0.12); color: var(--danger-red);"><Ban :size="22"/></div>
@@ -182,7 +182,7 @@ function openPlayer(playerName?: string): void {
           <div class="stat-tile-label">待处理案件</div>
           <div class="stat-tile-value">{{ ds.activeCases }}</div>
           <div class="mt-1 flex items-center gap-2 text-caption text-text-secondary">
-            <FolderKanban :size="14" style="color: var(--accent-blue);"/> 平均审理时长 18 分钟
+            <FolderKanban :size="14" style="color: var(--accent-blue);"/> 待人工审理
           </div>
         </div>
         <div class="stat-tile-icon-wrap" style="background: rgba(56,139,253,0.12); color: var(--accent-blue);"><FolderKanban :size="22"/></div>
@@ -225,7 +225,14 @@ function openPlayer(playerName?: string): void {
                   </span>
                 </div>
                 <p class="text-caption text-text-secondary m-0 line-clamp-2">{{ a.message }}</p>
-                <div class="mt-1 text-caption text-text-muted font-mono">{{ formatDate(a.time, 'relative') }}</div>
+                <div class="mt-1 flex items-center justify-between gap-2">
+                  <span class="text-caption text-text-muted font-mono">{{ formatDate(a.time, 'relative') }}</span>
+                  <!-- 违规回放联动：告警带 replayId 时可直接跳转对应回放 -->
+                  <button v-if="a.replayId" class="btn btn-sm btn-ghost !px-2 !py-0.5 gap-1" title="查看该违规的回放"
+                          @click.stop="router.push({ path: '/replay', query: { replayId: String(a.replayId) } })">
+                    <PlaySquare :size="14" style="color: var(--accent-cyan);"/>回放
+                  </button>
+                </div>
               </div>
             </div>
           </div>

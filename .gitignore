@@ -70,3 +70,20 @@ web-panel/*.local
 
 # Dispatch / local API test files
 dispatch.json
+
+# Local ops / scratch tooling (deploy, monitor, diag helpers - not part of the project)
+/*.py
+/*.sh
+/*.ps1
+/*.log
+/_*
+
+# Local observer build cache (JRE extracted at build time)
+docker/observer/jdk8/
+
+# Workspace-local agent memory
+.workbuddy/
+
+# Frontend transient artifacts
+web-panel/vite.config.ts.timestamp-*.mjs
+web-panel/dist.bak/

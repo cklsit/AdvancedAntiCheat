@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { NotificationItem } from '@/types'
-import notificationsJson from '@/api/mock/notifications.json'
-import { delay } from '@/utils/mockDelay'
+import { getNotifications, markNotificationRead, markAllNotificationsRead, clearAllNotifications } from '@/api/notification'
 
 const LS_READ_IDS = 'anticheat_notif_read_ids'
 
@@ -12,7 +11,7 @@ export const useNotificationStore = defineStore('notification', () => {
   const loaded = ref(false)
   const loading = ref(false)
 
-  // ---------- hydrate read flag ----------
+  // ---------- hydrate read flag (兼容旧数据) ----------
   let readIds = new Set<string>()
   try {
     const raw = localStorage.getItem(LS_READ_IDS)
@@ -34,29 +33,38 @@ export const useNotificationStore = defineStore('notification', () => {
 
   // ---------- actions ----------
   async function fetchList(): Promise<void> {
-    if (loaded.value) return
     loading.value = true
     try {
-      await delay()
-      list.value = applyReadFlags(notificationsJson as NotificationItem[]).sort(
-        (a, b) => (a.time < b.time ? 1 : -1)
-      )
+      // 优先使用真实 API，失败时返回空列表（不填充 mock 默认数据）
+      try {
+        const resp = await getNotifications({ page: 1, pageSize: 50 })
+        if (resp && resp.code === 0 && resp.data && Array.isArray(resp.data.list)) {
+          list.value = applyReadFlags(resp.data.list as NotificationItem[]).sort(
+            (a, b) => (a.time < b.time ? 1 : -1)
+          )
+        } else {
+          list.value = []
+        }
+      } catch {
+        list.value = []
+      }
       loaded.value = true
     } finally {
       loading.value = false
     }
   }
 
-  function markRead(id: string): void {
+  async function markRead(id: string): Promise<void> {
     const item = list.value.find((n) => n.id === id)
     if (item && !item.read) {
       item.read = true
       readIds.add(id)
       persistRead()
+      try { await markNotificationRead(id) } catch { /* noop */ }
     }
   }
 
-  function markAllRead(): void {
+  async function markAllRead(): Promise<void> {
     list.value.forEach((n) => {
       if (!n.read) {
         n.read = true
@@ -64,17 +72,19 @@ export const useNotificationStore = defineStore('notification', () => {
       }
     })
     persistRead()
+    try { await markAllNotificationsRead() } catch { /* noop */ }
   }
 
-  /** 对外: 模拟新通知到达 (可被 WS 消息驱动调用) */
+  /** 对外: 新通知到达 (被 WS 消息驱动调用) */
   function pushNotification(n: NotificationItem): void {
     list.value.unshift(applyReadFlags([n])[0])
   }
 
-  function clearAll(): void {
+  async function clearAll(): Promise<void> {
     list.value = []
     readIds = new Set()
     persistRead()
+    try { await clearAllNotifications() } catch { /* noop */ }
   }
 
   return {

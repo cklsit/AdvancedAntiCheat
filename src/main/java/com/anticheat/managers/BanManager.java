@@ -87,7 +87,9 @@ public class BanManager {
         }
 
         saveBans();
-        String msg = String.format(plugin.getConfigManager().getMessage("banSuccess"), name, formatDuration(duration));
+        String msg = plugin.getConfigManager().getMessage("commands.ban-success")
+            .replace("{player}", name)
+            .replace("{banTime}", formatDuration(duration));
         Bukkit.broadcast(msg, "anticheat.notify");
     }
 
@@ -113,7 +115,8 @@ public class BanManager {
         }
         if (info != null) {
             saveBans();
-            String msg = String.format(plugin.getConfigManager().getMessage("unbanSuccess"), info.getName());
+            String msg = plugin.getConfigManager().getMessage("commands.unban-success")
+                .replace("{player}", info.getName());
             Bukkit.broadcast(msg, "anticheat.notify");
         }
     }
@@ -133,7 +136,8 @@ public class BanManager {
                 UUID uuid = getPlayerUUID(name);
                 if (uuid != null) {
                     databaseManager.unbanPlayer(uuid);
-                    String msg = String.format(plugin.getConfigManager().getMessage("unbanSuccess"), name);
+                    String msg = plugin.getConfigManager().getMessage("commands.unban-success")
+                        .replace("{player}", name);
                     Bukkit.broadcast(msg, "anticheat.notify");
                 }
             }

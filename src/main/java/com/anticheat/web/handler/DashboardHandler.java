@@ -4,6 +4,7 @@ import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.managers.ViolationManager;
 import com.anticheat.detection.ViolationRecord;
 import com.anticheat.managers.AuditManager;
+import com.anticheat.utils.VersionUtil;
 import com.anticheat.web.BukkitBridge;
 import com.anticheat.web.auth.Permission;
 import com.anticheat.web.dto.AlertDTO;
@@ -12,7 +13,6 @@ import com.anticheat.web.dto.StatsDTO;
 import com.anticheat.web.ws.AlertBroadcaster;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.time.Instant;
@@ -52,10 +52,14 @@ public class DashboardHandler extends AbstractHandler {
     private void stats(Context ctx) {
         if (!AuthHandler.require(ctx, Permission.DASHBOARD_READ)) return;
 
-        // 在主线程快照在线玩家
-        List<Player> online = BukkitBridge.syncSupply(plugin, () -> new ArrayList<>(Bukkit.getOnlinePlayers()));
+        // 在主线程快照在线玩家（1.8 兼容：通过反射安全读取）
+        List<Player> online = BukkitBridge.syncSupply(plugin, VersionUtil::safeGetOnlinePlayers);
+        plugin.getLogger().info("[Web] /api/dashboard/stats safeGetOnlinePlayers returned " + online.size() + " players");
 
-        ViolationManager vm = plugin.getDetectionManager().getViolationManager();
+        ViolationManager vm = null;
+        try {
+            vm = plugin.getDetectionManager().getViolationManager();
+        } catch (Throwable ignored) { /* keep null */ }
 
         // 风险分桶
         int[] bucket = new int[]{0, 0, 0, 0};
@@ -148,12 +152,19 @@ public class DashboardHandler extends AbstractHandler {
     // ===== 辅助 =====
 
     private int computeScore(ViolationManager vm, UUID uuid) {
-        List<ViolationRecord> history = vm.getViolationHistory(uuid);
-        int score = 0;
-        for (ViolationRecord r : history) {
-            score += (int) Math.round(r.getViolationLevel() * 10);
+        if (vm == null) return 0;
+        try {
+            List<ViolationRecord> history = vm.getViolationHistory(uuid);
+            int score = 0;
+            if (history != null) {
+                for (ViolationRecord r : history) {
+                    score += (int) Math.round(r.getViolationLevel() * 10);
+                }
+            }
+            return Math.min(100, score);
+        } catch (Throwable ignored) {
+            return 0;
         }
-        return Math.min(100, score);
     }
 
     private int scoreToLevel(int score) {

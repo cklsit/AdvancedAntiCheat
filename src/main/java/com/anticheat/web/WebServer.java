@@ -8,6 +8,8 @@ import com.anticheat.web.dto.ApiResp;
 import com.anticheat.web.util.JsonMapper;
 import com.anticheat.web.ws.AlertBroadcaster;
 import com.anticheat.web.ws.WebSocketHandler;
+import com.anticheat.web.ws.replay.ReplayBroadcaster;
+import com.anticheat.web.ws.replay.ReplayWSHandler;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.http.staticfiles.Location;
@@ -80,6 +82,17 @@ public class WebServer {
 
                 // ===== WebSocket 路由 =====
                 new WebSocketHandler(authManager, broadcaster).register(app);
+
+                // ===== Replay WS 路由 /ws/replay/:uuid =====
+                final ReplayWSHandler replayWS = new ReplayWSHandler(plugin);
+                replayWS.register(app);
+                // 把 ReplayWSHandler 创建的 broadcaster 注入给 ReplayRecorder 用于 HUD / violation / offline 推送
+                ReplayBroadcaster rb = replayWS.getBroadcaster();
+                if (plugin.getReplayRecorder() != null) {
+                    plugin.getReplayRecorder().setReplayBroadcaster(rb);
+                }
+                // 同时注入到 AdvancedAntiCheat 全局，供 ObserverPoolManager 推送 observer_ready/observer_error 事件
+                plugin.setReplayBroadcaster(rb);
 
                 // ===== REST 路由：由 Router 统一注册 =====
                 com.anticheat.web.WebRouter.register(app, plugin, this);

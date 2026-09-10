@@ -14,6 +14,8 @@ public final class Permission {
 
     public static final String PLAYERS_READ = "players:read";
     public static final String PLAYERS_BAN = "players:ban";
+    public static final String PLAYERS_KICK = "players:kick";
+    public static final String PLAYERS_GAMEMODE = "players:gamemode";
     public static final String PLAYERS_UNBAN = "players:unban";
     public static final String PLAYERS_ALL = "players:*";
 

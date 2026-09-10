@@ -301,7 +301,6 @@ public class PlayerProfile implements Serializable {
                                     double currentJumpInterval, double currentInterfaceActions,
                                     double currentWalkStayRatio) {
         StringBuilder report = new StringBuilder();
-        report.append("§6§l=== 行为异常分析报告 ===\n");
 
         if (isCPSAnomaly(currentCPS)) {
             report.append("§c[CPS异常] ").append(String.format("当前: %.2f, 历史均值: %.2f, 标准差: %.2f\n", 
@@ -332,11 +331,12 @@ public class PlayerProfile implements Serializable {
             report.append("§e[行为模式迁移] 检测到玩家行为发生统计显著性变化！\n");
         }
 
+        // 只有存在实际异常项时才输出报告，避免出现"只有标题、没有内容"的空报告。
         if (report.length() == 0) {
             return null;
         }
 
-        return report.toString();
+        return "§6§l=== 行为异常分析报告 ===\n" + report.toString();
     }
 
     public UUID getPlayerUUID() {

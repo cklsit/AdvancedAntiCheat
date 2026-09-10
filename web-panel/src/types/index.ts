@@ -34,6 +34,10 @@ export interface Player {
   ping: number
   gameMode: string
   world: string
+  /** 玩家在世界中的 X 坐标（实时地图用） */
+  locationX: number
+  /** 玩家在世界中的 Z 坐标（实时地图用） */
+  locationZ: number
   version: string
   country: string
   hardwareId?: string
@@ -78,6 +82,8 @@ export interface CaseEntity {
   verdict?: 'guilty' | 'innocent' | 'watched'
   modules: ModuleStat[]
   evidenceSummary: EvidenceSummary[]
+  /** 关联的违规回放片段 id（后端填充；可能为空） */
+  replayId?: number | null
 }
 
 export interface EvidenceSummary {
@@ -146,6 +152,8 @@ export interface AlertItem {
   time: string
   module: string
   score: number
+  /** 关联的违规回放片段 id（后端填充；可能为空） */
+  replayId?: number | null
 }
 
 // ==================== Dashboard 统计 ====================
@@ -237,3 +245,46 @@ export interface UserInfo {
   lastIp: string
   permissions: string[]
 }
+
+// ==================== 联盟图谱 ====================
+export interface AllianceNode {
+  id: string
+  label: string
+  type: 'player' | 'hardware' | 'ip' | 'cluster'
+  score: number
+  x: number
+  y: number
+  ip?: string
+  world?: string
+}
+
+export interface AllianceEdge {
+  source: string
+  target: string
+  kind: 'behavior' | 'ip' | 'hardware'
+  weight: number
+}
+
+export interface AllianceGroup {
+  members: string[]
+  suspicionScore: number
+  density: number
+}
+
+export interface AllianceGraph {
+  nodes: AllianceNode[]
+  edges: AllianceEdge[]
+  groups: AllianceGroup[]
+  stats: { nodeCount: number; edgeCount: number; groupCount: number }
+}
+
+// ==================== 违规回放 ====================
+export type {
+  TracePoint,
+  ViolationMarker,
+  ReplayPlayer,
+  ReplaySession,
+  ReplayArchive,
+  ReplayDelta,
+  ReplayLayers
+} from './replay'

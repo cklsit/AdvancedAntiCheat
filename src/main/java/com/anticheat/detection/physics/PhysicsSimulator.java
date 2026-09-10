@@ -1,7 +1,7 @@
 package com.anticheat.detection.physics;
 
-import org.bukkit.Material;
-import org.bukkit.entity.Entity;
+import com.anticheat.utils.VersionUtil;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffectType;
 
@@ -243,7 +243,10 @@ public class PhysicsSimulator {
      * 从快照获取玩家对象（如果可用）
      */
     private Player getPlayerFromSnapshot(EntitySnapshot snapshot) {
-        return null;
+        if (snapshot == null || snapshot.getUuid() == null) {
+            return null;
+        }
+        return Bukkit.getPlayer(snapshot.getUuid());
     }
 
     /**
@@ -288,8 +291,15 @@ public class PhysicsSimulator {
      * @return 如果在液体中返回true
      */
     public boolean isInLiquid(EntitySnapshot snapshot) {
-        Vector3D pos = snapshot.getPosition();
-        return false;
+        Player player = getPlayerFromSnapshot(snapshot);
+        if (player == null) {
+            return false;
+        }
+        try {
+            return VersionUtil.isInWater(player) || VersionUtil.isInLava(player);
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /**
@@ -298,7 +308,11 @@ public class PhysicsSimulator {
      * @return 如果在滑翔中返回true
      */
     public boolean isGlidingWithElytra(EntitySnapshot snapshot) {
-        return false;
+        Player player = getPlayerFromSnapshot(snapshot);
+        if (player == null) {
+            return false;
+        }
+        return VersionUtil.safeIsGliding(player);
     }
 
     /**

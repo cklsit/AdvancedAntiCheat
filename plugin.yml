@@ -9,6 +9,7 @@ website: https://github.com/cklsit/AntiCheat
 softdepend:
   - BungeeCord
   - Velocity
+  - ProtocolLib
 
 commands:
   report:
@@ -51,6 +52,14 @@ commands:
     description: 漏洞赏金计划命令
     usage: /bounty <enter|leave|invite|report|lb|start|complete>
     permission: anticheat.bounty
+  aac_replay_follow:
+    description: 让观察者客户端跟随指定目标玩家
+    usage: /aac_replay_follow <观察者名> <目标玩家名或UUID>
+    permission: anticheat.replay.control
+  aac_replay_unfollow:
+    description: 停止观察者客户端跟随
+    usage: /aac_replay_unfollow <观察者名>
+    permission: anticheat.replay.control
 
 permissions:
   anticheat.report:
@@ -85,4 +94,10 @@ permissions:
     default: op
   anticheat.bounty.unlimited:
     description: 无限制沙箱时间
+    default: op
+  anticheat.replay.observer:
+    description: 观察者客户端账号权限（免踢/免拦截）
+    default: false
+  anticheat.replay.control:
+    description: 控制观察者跟随/解绑
     default: op

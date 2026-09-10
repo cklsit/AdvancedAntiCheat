@@ -12,6 +12,10 @@ export const useGlobalStore = defineStore('global', () => {
   const serverName = ref<string>('AntiCheat Command Center')
   const wsState = ref<WSStatus>('disconnected')
   const wsLatency = ref<number>(0)
+  // 顶部栏全局在线数与风险概览（由 Shell 定时拉取 dashboard/stats 更新）
+  const onlinePlayers = ref<number>(0)
+  const riskScore = ref<number>(0)
+  const riskTriggers = ref<string[]>([])
 
   // hydrate sidebar
   try {
@@ -38,6 +42,13 @@ export const useGlobalStore = defineStore('global', () => {
 
   function setServerName(name: string): void {
     serverName.value = name
+  }
+
+  /** 由 Shell 拉取 dashboard/stats 后更新顶部栏全局概览 */
+  function setOnlineStats(online: number, risk: number, triggers: string[]): void {
+    onlinePlayers.value = online
+    riskScore.value = risk
+    riskTriggers.value = triggers
   }
 
   /** 懒加载 WebSocket 连接 */
@@ -96,12 +107,16 @@ export const useGlobalStore = defineStore('global', () => {
     serverName,
     wsState,
     wsLatency,
+    onlinePlayers,
+    riskScore,
+    riskTriggers,
     // getters
     wsConnected,
     // actions
     toggleSidebar,
     setSidebarCollapsed,
     setServerName,
+    setOnlineStats,
     connectWs,
     disconnectWs,
     getWsClient,

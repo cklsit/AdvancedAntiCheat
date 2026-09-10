@@ -58,7 +58,15 @@ const routes: RouteRecordRaw[] = [
         path: 'replay',
         name: 'Replay',
         component: () => import('@/views/ReplayView.vue'),
-        meta: { title: '违规回放', icon: 'PlaySquare' }
+        meta: { title: '违规回放', icon: 'PlaySquare' },
+        children: [
+          {
+            path: 'watch',
+            name: 'ReplayWatch',
+            component: () => import('@/views/ReplayWatchView.vue'),
+            meta: { title: '回放播放', hidden: true }
+          }
+        ]
       },
       {
         path: 'ai-lab',

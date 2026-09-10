@@ -1,198 +1,482 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
-  Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Maximize2, Download,
-  Camera, Layers, Move3D, Grid3x3, User as UserIcon, ClipboardList
+  PlaySquare, RefreshCw, Trash2, Users, Archive, AlertTriangle,
+  Loader2, CircleDot, Clock, Flag, HardDrive
 } from 'lucide-vue-next'
-import casesJson from '@/api/mock/cases.json'
-import type { CaseEntity } from '@/types'
+import {
+  getReplayPlayers,
+  getReplayArchives,
+  deleteReplayArchive
+} from '@/api/replays'
+import type { ReplayPlayer, ReplayArchive } from '@/types/replay'
+import { formatDate, formatDuration } from '@/utils/format'
 
-const recentCases: CaseEntity[] = (casesJson as CaseEntity[]).slice(0, 6)
+const route = useRoute()
+const router = useRouter()
 
-const playing = ref(false)
-const muted = ref(false)
-const t = ref(24)       // 当前秒
-const total = ref(97)   // 总秒数
-const speed = ref(1)    // 倍速
-const layers = ref({ world: true, hitbox: true, motion: true, packets: false })
+// ==================== 是否在子路由（播放器） ====================
+const inWatch = computed(() => route.name === 'ReplayWatch')
 
-const cur = computed(() => `${String(Math.floor(t.value/60)).padStart(2,'0')}:${String(t.value%60).padStart(2,'0')}`)
-const dur = computed(() => `${String(Math.floor(total.value/60)).padStart(2,'0')}:${String(total.value%60).padStart(2,'0')}`)
-const progress = computed(() => Math.min(100, t.value / total.value * 100))
+// ==================== 状态 ====================
+const players = ref<ReplayPlayer[]>([])
+const archives = ref<ReplayArchive[]>([])
+const playersLoading = ref(false)
+const archivesLoading = ref(false)
+const playersError = ref('')
+const archivesError = ref('')
+const deleting = ref<string | null>(null)
 
-function seek(e: MouseEvent): void {
-  const el = e.currentTarget as HTMLDivElement
-  const r = el.getBoundingClientRect()
-  const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-  t.value = Math.round(total.value * ratio)
+// 自动轮询
+let pollTimer = 0
+
+// ==================== 统计 ====================
+const onlineCount = computed(() => players.value.length)
+const archiveCount = computed(() => archives.value.length)
+
+// ==================== 轮询加载 ====================
+async function loadAll(): Promise<void> {
+  await Promise.allSettled([loadPlayers(), loadArchives()])
 }
 
-function toggle(): void { playing.value = !playing.value }
-function back(): void { t.value = Math.max(0, t.value - 5) }
-function fwd(): void  { t.value = Math.min(total.value, t.value + 5) }
-function setSpeed(s: number): void { speed.value = s }
+async function loadPlayers(): Promise<void> {
+  playersLoading.value = true
+  playersError.value = ''
+  try {
+    players.value = await getReplayPlayers()
+  } catch {
+    playersError.value = '在线玩家列表加载失败'
+  } finally {
+    playersLoading.value = false
+  }
+}
 
-const LAYERS_LABEL: Record<string, string> = {
-  world: '世界渲染',
-  hitbox: '命中盒',
-  motion: '运动轨迹',
-  packets: '报文可视化'
+async function loadArchives(): Promise<void> {
+  archivesLoading.value = true
+  archivesError.value = ''
+  try {
+    archives.value = await getReplayArchives()
+  } catch {
+    archivesError.value = '历史存档加载失败'
+  } finally {
+    archivesLoading.value = false
+  }
 }
-function layerLabel(k: string | number | symbol): string {
-  return LAYERS_LABEL[String(k)] || String(k)
+
+function startPolling(): void {
+  stopPolling()
+  // 每 2 秒刷一次在线玩家（频繁变化），存档每 10 秒刷一次（低频）
+  pollTimer = window.setInterval(() => {
+    if (document.visibilityState !== 'visible') return
+    void loadPlayers()
+    // 每 5 轮刷一次存档
+    pollCounter++
+    if (pollCounter % 5 === 0) void loadArchives()
+  }, 2000)
 }
+let pollCounter = 0
+
+function stopPolling(): void {
+  if (pollTimer) {
+    window.clearInterval(pollTimer)
+    pollTimer = 0
+  }
+}
+
+// ==================== 工具 ====================
+/** h:mm:ss 格式化 */
+function formatHms(seconds: number): string {
+  if (seconds < 0) seconds = 0
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  const mm = m.toString().padStart(2, '0')
+  const ss = s.toString().padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`
+}
+
+/** 时长 → H:MM（存档用） */
+function formatDurationHm(seconds: number): string {
+  if (seconds < 0) seconds = 0
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  return `${h}:${m.toString().padStart(2, '0')}`
+}
+
+/** 违规等级 → tag class */
+function levelTagClass(level: string | null): string {
+  switch ((level ?? '').toUpperCase()) {
+    case 'CRITICAL': return 'tag tag-red'
+    case 'HIGH': return 'tag tag-orange'
+    case 'MEDIUM': return 'tag tag-yellow'
+    case 'LOW': return 'tag tag-blue'
+    default: return 'tag tag-blue'
+  }
+}
+
+/** 玩家头像渐变（根据 uuid hash 取 6 种之一） */
+function avatarGradient(uuid: string): string {
+  const palettes = [
+    'linear-gradient(135deg,#1f6feb,#00e5ff)',
+    'linear-gradient(135deg,#f85149,#ff6d00)',
+    'linear-gradient(135deg,#8b5cf6,#ec4899)',
+    'linear-gradient(135deg,#22c55e,#00e5ff)',
+    'linear-gradient(135deg,#f59e0b,#ef4444)',
+    'linear-gradient(135deg,#0ea5e9,#8b5cf6)'
+  ]
+  let hash = 0
+  for (let i = 0; i < uuid.length; i++) hash = (hash * 31 + uuid.charCodeAt(i)) >>> 0
+  return palettes[hash % palettes.length]
+}
+
+// ==================== 跳转播放器 ====================
+function openWatchWithUuid(uuid: string): void {
+  router.push({ name: 'ReplayWatch', query: { uuid } })
+}
+
+function openWatchWithArchive(filename: string): void {
+  router.push({ name: 'ReplayWatch', query: { archive: filename } })
+}
+
+async function handleDeleteArchive(filename: string): Promise<void> {
+  if (deleting.value) return
+  if (!window.confirm(`确认删除存档 ${filename}？删除后不可恢复。`)) return
+  deleting.value = filename
+  try {
+    await deleteReplayArchive(filename)
+    archives.value = archives.value.filter(a => a.filename !== filename)
+  } catch {
+    archivesError.value = '删除存档失败'
+  } finally {
+    deleting.value = null
+  }
+}
+
+// ==================== 生命周期 ====================
+onMounted(() => {
+  void loadAll()
+  startPolling()
+})
+
+onBeforeUnmount(() => {
+  stopPolling()
+})
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-4">
-      <!-- 播放器主区 -->
-      <div class="card flex flex-col">
-        <!-- 画布 -->
-        <div class="relative card-body p-0 overflow-hidden" style="aspect-ratio: 16 / 9;">
-          <!-- 背景地图 -->
-          <div class="absolute inset-0"
-               style="background:
-                 radial-gradient(800px 400px at 30% 40%, rgba(0,229,255,0.08), transparent 60%),
-                 linear-gradient(180deg, #0B1018 0%, #141C27 60%, #0B121B 100%);">
-          </div>
-          <div class="absolute inset-0"
-               style="background-image:
-                 linear-gradient(rgba(48,54,61,0.35) 1px, transparent 1px),
-                 linear-gradient(90deg, rgba(48,54,61,0.35) 1px, transparent 1px);
-                 background-size: 48px 48px;"></div>
+  <!-- 子路由（播放器） -->
+  <router-view v-if="inWatch" />
 
-          <!-- 世界结构占位 -->
-          <div class="absolute left-[30%] top-[55%] -translate-x-1/2 -translate-y-1/2 w-[32%] h-[22%] rounded-card"
-               style="background: repeating-linear-gradient(90deg, rgba(139,148,158,0.08) 0 24px, rgba(139,148,158,0.12) 24px 25px); border: 1px solid rgba(139,148,158,0.25);"></div>
+  <!-- 默认列表页 -->
+  <div v-else class="space-y-4">
 
-          <!-- 玩家 A -->
-          <div class="absolute left-[42%] top-[50%] -translate-x-1/2 -translate-y-1/2">
-            <div class="relative">
-              <div class="w-6 h-6 rounded-t-md" style="background: linear-gradient(180deg, #FF6D00 0%, #F85149 100%); transform: perspective(400px) rotateX(60deg);"></div>
-              <div class="absolute -top-10 left-1/2 -translate-x-1/2 text-caption whitespace-nowrap px-2 py-0.5 rounded-tag bg-bg-card border border-danger-red text-danger-red">
-                <span class="font-mono">Herobrine · 98</span>
-              </div>
-              <!-- 视线 -->
-              <div class="absolute left-1/2 top-1/2 w-0 h-0" style="transform-origin: left top;">
-                <div class="absolute w-[220px] h-[1px]" style="background: linear-gradient(90deg, rgba(248,81,73,0.8), transparent); transform: rotate(-15deg);"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 玩家 B -->
-          <div class="absolute left-[62%] top-[54%] -translate-x-1/2 -translate-y-1/2">
-            <div class="w-5 h-5 rounded-t-md" style="background: linear-gradient(180deg, #00E5FF 0%, #388BFD 100%); transform: perspective(400px) rotateX(60deg);"></div>
-            <div class="absolute -top-8 left-1/2 -translate-x-1/2 text-caption whitespace-nowrap px-2 py-0.5 rounded-tag bg-bg-card border border-border-line text-text-secondary font-mono">
-              Victim_01
-            </div>
-          </div>
-
-          <!-- 命中方块 -->
-          <div class="absolute left-[54%] top-[50%] w-4 h-4 rounded-sm animate-pulse" style="border: 1px solid var(--danger-red); background: rgba(248,81,73,0.18);"></div>
-
-          <!-- 左上 HUD -->
-          <div class="absolute top-3 left-3 space-y-1.5">
-            <span class="tag tag-red">REC · LIVE DEMO</span>
-            <div class="text-caption text-text-secondary font-mono space-y-0.5 px-2 py-1.5 rounded-tag bg-bg-card/70 border border-border-line">
-              <div>CASE-001 · KillAura</div>
-              <div>server: pvp-02</div>
-              <div>tick 982471 → 982500</div>
-            </div>
-          </div>
-
-          <!-- 右上 HUD -->
-          <div class="absolute top-3 right-3 flex flex-col items-end gap-1.5">
-            <span class="tag tag-cyan font-mono">×{{ speed }} 倍速</span>
-            <div class="flex flex-wrap gap-1.5 max-w-[260px] justify-end">
-              <span v-if="layers.world"   class="tag tag-blue">世界层</span>
-              <span v-if="layers.hitbox"  class="tag tag-orange">命中盒</span>
-              <span v-if="layers.motion"  class="tag tag-purple">轨迹</span>
-              <span v-if="layers.packets" class="tag tag-yellow">报文</span>
-            </div>
-          </div>
-
-          <!-- 底部控制条 -->
-          <div class="absolute bottom-0 left-0 right-0 p-3 pt-5" style="background: linear-gradient(180deg, transparent, rgba(0,0,0,0.55));"></div>
-          <div class="absolute bottom-3 left-3 right-3 flex flex-col gap-2">
-            <div class="h-1.5 rounded-full bg-bg-hover/80 cursor-pointer" @click="seek">
-              <div class="h-full rounded-full" :style="{ width: progress + '%', background: 'linear-gradient(90deg, var(--accent-blue), var(--accent-cyan))' }"></div>
-            </div>
-            <div class="flex items-center gap-3">
-              <button class="btn btn-ghost btn-icon" @click="back"><SkipBack :size="16"/></button>
-              <button class="btn btn-primary btn-icon !w-10 !h-10" @click="toggle">
-                <component :is="playing ? Pause : Play" :size="18"/>
-              </button>
-              <button class="btn btn-ghost btn-icon" @click="fwd"><SkipForward :size="16"/></button>
-              <span class="font-mono text-caption text-text-secondary">{{ cur }} / {{ dur }}</span>
-
-              <div class="ml-auto flex items-center gap-1.5">
-                <div class="flex rounded-btn border border-border-line overflow-hidden">
-                  <button v-for="s in [0.5, 1, 2, 4]" :key="s" class="px-2.5 h-8 text-caption transition-colors"
-                    :class="speed === s ? 'bg-accent-blue/20 text-accent-blue' : 'text-text-secondary hover:bg-bg-hover'"
-                    @click="setSpeed(s)">{{ s }}×</button>
-                </div>
-                <button class="btn btn-ghost btn-icon" @click="muted = !muted">
-                  <component :is="muted ? VolumeX : Volume2" :size="16"/>
-                </button>
-                <button class="btn btn-ghost btn-icon"><Camera :size="16"/></button>
-                <button class="btn btn-ghost btn-icon"><Download :size="16"/></button>
-                <button class="btn btn-ghost btn-icon"><Maximize2 :size="16"/></button>
-              </div>
-            </div>
-          </div>
+    <!-- ========== 顶部控制栏 ========== -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="flex items-center gap-2">
+          <PlaySquare :size="16" style="color: var(--accent-cyan);" />
+          回放监控中心
+        </h3>
+        <div class="flex items-center gap-2">
+          <button class="btn btn-ghost btn-sm" :disabled="playersLoading || archivesLoading" @click="loadAll">
+            <RefreshCw :size="14" :class="{ 'animate-spin': playersLoading || archivesLoading }" />
+            刷新
+          </button>
         </div>
       </div>
+      <div class="card-body flex flex-wrap items-center gap-4 text-caption">
+        <span class="flex items-center gap-1.5 text-text-secondary">
+          <Users :size="14" style="color: var(--accent-cyan);" />
+          在线 <span class="font-mono text-text-primary">{{ onlineCount }}</span>
+        </span>
+        <span class="flex items-center gap-1.5 text-text-secondary">
+          <Archive :size="14" style="color: var(--accent-blue);" />
+          存档 <span class="font-mono text-text-primary">{{ archiveCount }}</span>
+        </span>
+        <span class="text-text-muted flex items-center gap-1.5">
+          <Loader2 v-if="playersLoading" :size="12" class="animate-spin" />
+          {{ playersLoading ? '实时同步中…' : '2 秒自动刷新' }}
+        </span>
+        <span v-if="playersError" class="text-text-muted" style="color: var(--danger-red);">{{ playersError }}</span>
+      </div>
+    </div>
 
-      <!-- 侧栏：证据列表 + 图层 -->
-      <div class="space-y-4">
-        <div class="card">
-          <div class="card-header"><h3 class="flex items-center gap-2"><Layers :size="16" style="color: var(--accent-purple);"/>图层开关</h3></div>
-          <div class="card-body space-y-2">
-            <label v-for="(v, k) in layers" :key="String(k)" class="flex items-center justify-between py-1.5 cursor-pointer">
-              <span class="text-sm text-text-primary capitalize">{{ layerLabel(k) }}</span>
-              <input type="checkbox" class="w-4 h-4" v-model="layers[k as keyof typeof layers]" />
-            </label>
-            <div class="divider my-2"></div>
-            <div class="flex items-center gap-2">
-              <button class="btn btn-sm btn-ghost flex-1"><Move3D :size="14"/> 视角</button>
-              <button class="btn btn-sm btn-ghost flex-1"><Grid3x3 :size="14"/> 栅格</button>
-            </div>
-          </div>
+    <!-- ========== 在线玩家卡片网格 ========== -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="flex items-center gap-2">
+          <CircleDot :size="16" style="color: var(--accent-cyan);" />
+          在线玩家（持续录制中）
+        </h3>
+        <span class="text-caption text-text-muted font-normal">共 {{ onlineCount }} 位</span>
+      </div>
+      <div class="card-body">
+
+        <!-- 空状态 -->
+        <div v-if="!playersLoading && players.length === 0" class="py-10 text-center">
+          <Users :size="42" class="mx-auto mb-3 opacity-40" style="color: var(--text-muted);" />
+          <div class="text-sm text-text-muted">暂无玩家正在录制轨迹</div>
+          <div class="text-caption text-text-muted mt-1 opacity-70">当玩家在线时，这里会自动出现</div>
         </div>
 
-        <div class="card flex flex-col">
-          <div class="card-header"><h3 class="flex items-center gap-2"><ClipboardList :size="16" style="color: var(--warning);"/> 证据序列</h3></div>
-          <div class="card-body p-0 max-h-[420px] overflow-y-auto">
-            <div v-for="c in recentCases" :key="c.id"
-                 class="px-4 py-3 border-b last:border-b-0 border-border-line hover:bg-bg-hover cursor-pointer flex items-start gap-3">
-              <div class="mt-0.5 w-1.5 h-1.5 rounded-full shrink-0"
-                   :style="{ background: c.topScore >= 90 ? 'var(--danger-red)' : c.topScore >= 70 ? 'var(--danger-orange)' : c.topScore >= 50 ? 'var(--warning)' : 'var(--accent-blue)' }"></div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center justify-between gap-2 mb-1">
-                  <span class="font-mono text-accent-blue text-sm">{{ c.id }}</span>
-                  <span class="tag tag-blue text-[10px]">{{ c.topModule }}</span>
-                </div>
-                <div class="text-sm text-text-primary truncate">{{ c.playerName }} · {{ c.evidenceCount }} 条证据</div>
-              </div>
-            </div>
-          </div>
+        <!-- 加载中 -->
+        <div v-else-if="playersLoading && players.length === 0" class="py-10 text-center text-text-muted">
+          <Loader2 :size="28" class="mx-auto mb-3 animate-spin" style="color: var(--accent-cyan);" />
+          加载中…
         </div>
 
-        <div class="card">
-          <div class="card-header"><h3 class="flex items-center gap-2"><UserIcon :size="16" style="color: var(--accent-cyan);"/> 参与实体</h3></div>
-          <div class="card-body space-y-2 text-sm">
-            <div class="flex items-center gap-3 p-2 rounded-btn bg-bg-hover">
-              <div class="avatar avatar-sm" style="background: linear-gradient(135deg, #FF6D00, #F85149);">H</div>
-              <div class="flex-1"><div class="text-text-primary">Herobrine <span class="tag tag-red ml-1 text-[10px]">嫌疑人</span></div><div class="text-caption text-text-muted">Ping 96ms · 得分 98</div></div>
+        <!-- 卡片网格 -->
+        <div v-else class="player-grid">
+          <div
+            v-for="p in players"
+            :key="p.uuid"
+            class="player-card"
+            @click="openWatchWithUuid(p.uuid)"
+          >
+            <!-- 圆形头像 -->
+            <div class="avatar" :style="{ background: avatarGradient(p.uuid) }">
+              {{ p.playerName.charAt(0).toUpperCase() }}
             </div>
-            <div class="flex items-center gap-3 p-2 rounded-btn hover:bg-bg-hover">
-              <div class="avatar avatar-sm" style="background: linear-gradient(135deg, #00E5FF, #388BFD);">V</div>
-              <div class="flex-1"><div class="text-text-primary">Victim_01 <span class="tag tag-green ml-1 text-[10px]">受害人</span></div><div class="text-caption text-text-muted">Ping 38ms</div></div>
+
+            <!-- 违规红点徽章 -->
+            <div v-if="p.violationCount > 0" class="violation-badge" :title="`累计 ${p.violationCount} 次违规`">
+              {{ p.violationCount > 99 ? '99+' : p.violationCount }}
+            </div>
+
+            <div class="p-name" :title="p.playerName">{{ p.playerName }}</div>
+
+            <div class="p-times">
+              <span class="time-item" :title="'在线时长'">
+                <Clock :size="12" />
+                {{ formatHms(p.onlineSeconds) }}
+              </span>
+              <span class="time-sep">·</span>
+              <span class="time-item" :title="'可回放时长'">
+                {{ formatDurationHm(p.replaySeconds) }}
+              </span>
+            </div>
+
+            <!-- 最后违规类型 tag -->
+            <div v-if="p.lastViolationType" class="p-violation-row">
+              <span :class="levelTagClass(p.lastViolationLevel)">{{ p.lastViolationLevel }}</span>
+              <span class="tag tag-red font-mono">{{ p.lastViolationType }}</span>
+            </div>
+            <div v-else class="p-violation-row text-text-muted text-caption">
+              暂无违规
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- ========== 历史存档表格 ========== -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="flex items-center gap-2">
+          <Archive :size="16" style="color: var(--accent-blue);" />
+          历史存档
+        </h3>
+        <span class="text-caption text-text-muted font-normal">共 {{ archiveCount }} 份</span>
+      </div>
+      <div class="card-body">
+
+        <!-- 空状态 -->
+        <div v-if="!archivesLoading && archives.length === 0" class="py-10 text-center">
+          <HardDrive :size="42" class="mx-auto mb-3 opacity-40" style="color: var(--text-muted);" />
+          <div class="text-sm text-text-muted">暂无历史存档</div>
+          <div class="text-caption text-text-muted mt-1 opacity-70">有违规案件结案后会自动存档</div>
+        </div>
+
+        <!-- 加载中 -->
+        <div v-else-if="archivesLoading && archives.length === 0" class="py-10 text-center text-text-muted">
+          <Loader2 :size="28" class="mx-auto mb-3 animate-spin" style="color: var(--accent-cyan);" />
+          加载中…
+        </div>
+
+        <!-- 表格 -->
+        <table v-else class="archive-table">
+          <thead>
+            <tr>
+              <th>文件名</th>
+              <th>玩家</th>
+              <th>时长</th>
+              <th>大小</th>
+              <th>违规数</th>
+              <th>日期</th>
+              <th class="text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="a in archives" :key="a.filename">
+              <td class="font-mono text-text-secondary">{{ a.filename }}</td>
+              <td class="text-text-primary">{{ a.playerName }}</td>
+              <td class="font-mono text-caption">{{ formatDuration(a.durationMs / 1000) }}</td>
+              <td class="font-mono text-caption">{{ a.sizeKB }} KB</td>
+              <td>
+                <span v-if="a.violationCount > 0" class="tag tag-red">{{ a.violationCount }}</span>
+                <span v-else class="tag tag-blue">0</span>
+              </td>
+              <td class="font-mono text-caption">{{ formatDate(a.startTime, 'full') }}</td>
+              <td class="text-right">
+                <button class="btn btn-primary btn-sm" @click="openWatchWithArchive(a.filename)">
+                  <PlaySquare :size="13" />
+                  加载回放
+                </button>
+                <button
+                  class="btn btn-ghost btn-sm btn-danger-ghost"
+                  :disabled="deleting === a.filename"
+                  @click="handleDeleteArchive(a.filename)"
+                >
+                  <Trash2 :size="13" :class="{ 'animate-spin': deleting === a.filename }" />
+                  删除
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="archivesError" class="text-caption mt-2" style="color: var(--danger-red);">{{ archivesError }}</div>
+      </div>
+    </div>
+
   </div>
 </template>
+
+<style scoped>
+/* ==================== 玩家卡片网格 ==================== */
+.player-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.player-card {
+  position: relative;
+  padding: 16px;
+  border: 1px solid var(--border-line);
+  border-radius: var(--radius-card);
+  background: linear-gradient(135deg, rgba(20, 28, 38, 0.85), rgba(14, 20, 28, 0.9));
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+.player-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(200px 120px at 100% 0%, rgba(0, 229, 255, 0.08), transparent 70%);
+  pointer-events: none;
+}
+.player-card:hover {
+  border-color: rgba(0, 229, 255, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 229, 255, 0.15);
+}
+
+/* 头像 */
+.avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  margin-bottom: 10px;
+}
+
+/* 违规红点徽章 */
+.violation-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--danger-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 8px rgba(248, 81, 73, 0.6);
+}
+
+.p-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.p-times {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-bottom: 8px;
+}
+.time-item { display: inline-flex; align-items: center; gap: 3px; }
+.time-sep { opacity: 0.4; }
+
+.p-violation-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ==================== 存档表格 ==================== */
+.archive-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.archive-table thead th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-line);
+  background: transparent;
+}
+.archive-table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-line);
+  color: var(--text-secondary);
+}
+.archive-table tbody tr {
+  transition: background 0.15s;
+}
+.archive-table tbody tr:hover td {
+  background: rgba(0, 229, 255, 0.03);
+}
+.archive-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.btn-danger-ghost {
+  color: var(--danger-red);
+  border: 1px solid transparent;
+}
+.btn-danger-ghost:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.1);
+  border-color: rgba(248, 81, 73, 0.4);
+}
+</style>

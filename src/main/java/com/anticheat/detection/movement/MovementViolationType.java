@@ -14,7 +14,9 @@ public enum MovementViolationType {
     PHASE("穿墙", ViolationSeverity.CRITICAL),
     TELEPORT("传送", ViolationSeverity.HIGH),
     AIR_STRAFE("空气摆动", ViolationSeverity.MEDIUM),
-    HIGH_JUMP("高跳", ViolationSeverity.MEDIUM);
+    HIGH_JUMP("高跳", ViolationSeverity.MEDIUM),
+    SPIDER("蜘蛛攀爬", ViolationSeverity.MEDIUM),
+    LAVA_WALK("岩浆行走", ViolationSeverity.HIGH);
 
     private final String displayName;
     private final ViolationSeverity defaultSeverity;

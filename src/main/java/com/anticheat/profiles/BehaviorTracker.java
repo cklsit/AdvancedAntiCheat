@@ -9,6 +9,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -193,8 +194,11 @@ public class BehaviorTracker {
     private double calculateCPS(PlayerBehaviorData data) {
         long now = System.currentTimeMillis();
         long cutoff = now - CPS_WINDOW_MS;
-        
-        while (!data.clickTimestamps.isEmpty() && data.clickTimestamps.peek() < cutoff) {
+
+        // null-safe：peek() 与 isEmpty() 之间存在竞态（异步检查线程与主线程事件处理器并发），
+        // 必须用 peek() != null 守卫，避免 auto-unbox null 导致 NPE。
+        Long ts;
+        while ((ts = data.clickTimestamps.peek()) != null && ts < cutoff) {
             data.clickTimestamps.poll();
         }
 
@@ -268,7 +272,7 @@ public class BehaviorTracker {
     }
 
     private static class PlayerBehaviorData {
-        final ArrayDeque<Long> clickTimestamps = new ArrayDeque<>();
+        final Queue<Long> clickTimestamps = new ConcurrentLinkedQueue<>();
         final AtomicInteger interfaceActionsThisMinute = new AtomicInteger(0);
         final AtomicInteger walkTimeThisPeriod = new AtomicInteger(0);
         final AtomicLong lastArmSwing = new AtomicLong(0);

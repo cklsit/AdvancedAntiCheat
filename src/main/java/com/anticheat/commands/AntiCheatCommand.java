@@ -23,7 +23,7 @@ public class AntiCheatCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("anticheat.admin")) {
-            sender.sendMessage(plugin.getConfigManager().getMessage("noPermission"));
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
             return true;
         }
 

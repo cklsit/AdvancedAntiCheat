@@ -5,6 +5,7 @@ import com.anticheat.detection.core.Evidence;
 import com.anticheat.detection.physics.EntitySnapshot;
 import com.anticheat.detection.physics.MovementInput;
 import com.anticheat.detection.physics.PhysicsConstants;
+import com.anticheat.detection.physics.PhysicsSimulator;
 import com.anticheat.detection.physics.Vector3D;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -34,6 +35,8 @@ public class MovementDetectionModule implements DetectionModule, Listener {
 
     private final ConcurrentMap<UUID, PlayerMovementData> playerDataMap = new ConcurrentHashMap<>();
     private final ImpossibleActionDetector impossibleActionDetector;
+    private final AdvancedMovementDetector advancedMovementDetector;
+    private final PhysicsSimulator physicsSimulator;
     private boolean enabled = true;
     private String name = "MovementDetection";
     private double probability = 0.8;
@@ -44,12 +47,16 @@ public class MovementDetectionModule implements DetectionModule, Listener {
     private static final double MAX_AIR_STRAFE_SPEED = 0.035;
     private static final double MAX_JUMP_DISTANCE = 1.5;
     private static final double MIN_TELEPORT_DISTANCE = 10.0;
+    // 预测式物理：位置增量超过药水修正后最大速度的该倍率即判定异常
+    private static final double PHYSICS_EXCEED_RATIO = 1.6;
 
     /**
      * 构造函数
      */
     public MovementDetectionModule() {
         this.impossibleActionDetector = new ImpossibleActionDetector();
+        this.advancedMovementDetector = new AdvancedMovementDetector();
+        this.physicsSimulator = new PhysicsSimulator();
     }
 
     /**
@@ -114,6 +121,9 @@ public class MovementDetectionModule implements DetectionModule, Listener {
                     handleViolation(player, jumpViolation);
                 }
             }
+            
+            // 预测式物理模拟：药水修正后的最大速度 + 无摩擦滑行
+            checkPhysicsAnomalies(player, data.lastSnapshot, currentSnapshot);
         }
         
         recordSnapshot(player, currentSnapshot, data);
@@ -143,6 +153,16 @@ public class MovementDetectionModule implements DetectionModule, Listener {
         }
         
         violation = impossibleActionDetector.checkPhase(player, from, to);
+        if (violation != null) {
+            return violation;
+        }
+        
+        violation = advancedMovementDetector.checkSpider(player, from, to);
+        if (violation != null) {
+            return violation;
+        }
+        
+        violation = advancedMovementDetector.checkLavaWalk(player, from, to);
         if (violation != null) {
             return violation;
         }
@@ -182,6 +202,48 @@ public class MovementDetectionModule implements DetectionModule, Listener {
         }
         
         return false;
+    }
+
+    /**
+     * 预测式物理异常检测（药水修正后的最大速度 + 液体/鞘翅/速度冲量豁免）
+     *
+     * <p>以 {@link PhysicsSimulator#getMaxSpeed}（已计入速度/缓慢药水）作为单步水平位移上限。
+     * 正常疾跑约 0.28 格/tick，即便两次检测间累积两 tick 也不足 0.65 格；只有微加速、
+     * 无减速或 Timer 类作弊才会突破该上限。为规避击退/爆炸/弹射等速度冲量导致的误报，
+     * 当实体速度向量模长较大时直接跳过。</p>
+     */
+    private void checkPhysicsAnomalies(Player player, EntitySnapshot from, EntitySnapshot to) {
+        // 液体中 / 鞘翅滑翔会显著改变物理规则，交由专门检测处理，这里直接豁免
+        if (physicsSimulator.isInLiquid(to) || physicsSimulator.isGlidingWithElytra(to)) {
+            return;
+        }
+
+        // 速度冲量（击退/爆炸/弹射/瞬移）会使位置骤增，跳过以规避误报
+        if (player.getVelocity().lengthSquared() > 0.3) {
+            return;
+        }
+
+        double maxSpeed = physicsSimulator.getMaxSpeed(to);
+        double dx = to.getPosition().getX() - from.getPosition().getX();
+        double dz = to.getPosition().getZ() - from.getPosition().getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+
+        if (horizontal > maxSpeed * PHYSICS_EXCEED_RATIO) {
+            double exceedRatio = horizontal / maxSpeed;
+            double prob = Math.min(0.9, 0.55 + exceedRatio * 0.06);
+            MovementViolation v = new MovementViolation(
+                player.getUniqueId(),
+                player.getName(),
+                MovementViolationType.SPEED,
+                from,
+                to,
+                prob,
+                String.format("预测式物理：单步位移 %.3f 超过药水修正上限 %.3f（比例 %.2f）",
+                    horizontal, maxSpeed, exceedRatio),
+                (int) exceedRatio
+            );
+            handleViolation(player, v);
+        }
     }
 
     /**
@@ -367,6 +429,13 @@ public class MovementDetectionModule implements DetectionModule, Listener {
     }
 
     /**
+     * 获取补充移动检测器实例
+     */
+    public AdvancedMovementDetector getAdvancedMovementDetector() {
+        return advancedMovementDetector;
+    }
+
+    /**
      * 获取玩家的违规统计
      */
     public Map<MovementViolationType, Integer> getPlayerViolationStats(UUID playerId) {
@@ -391,6 +460,8 @@ public class MovementDetectionModule implements DetectionModule, Listener {
     public void clearPlayerData(UUID playerId) {
         playerDataMap.remove(playerId);
         impossibleActionDetector.clearAllData(playerId);
+        advancedMovementDetector.clearPlayerData(playerId);
+        physicsSimulator.clearPlayerData(playerId);
     }
 
     @Override
