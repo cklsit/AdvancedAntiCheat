@@ -463,7 +463,20 @@ replay:
     telemetryFormat: jsonl   # telemetry.jsonl（20Hz 全量，JSON Lines）
 
   observer:
-    provisioner: docker        # docker | internal（观察者客户端供给方式）
+    provisioner: docker        # docker = 自动部署观察者集群；none = 关闭该功能
+    # ===== 自动部署（方案 A）=====
+    # 首次启动时自动检测 Docker：可用则自动 build + up；不可用则打印「二选一」提示：
+    #   A. /ac replay docker install   （Linux 自动安装；其它平台给官方链接）
+    #   B. /ac replay disable           （仅关闭违规回放，其它检测不受影响）
+    autoProvision: true            # 启动时自动部署（false 则需手动 /ac replay setup）
+    promptOnMissingDocker: true    # Docker 缺失时打印提示框并通知在线管理员
+    allowAutoInstallDocker: false  # 是否允许 /ac replay docker install 执行官方安装脚本（安全起见默认关闭）
+    image: replay-observer:latest  # 构建出的镜像名
+    mcServerHost: ""               # 观察者要连的服务端地址；留空=自动探测（server-ip 或本机局域网 IP）
+    mcServerPort: 0                # 观察者要连的端口；0=自动取服务器监听端口
+    memoryMb: 1536                 # 每个 observer 容器内存上限（MB）
+    startupTimeoutSeconds: 600     # 等待 observer 全部就绪的超时（秒）；首次 build 会较久
+    jreUrl: ""                     # 自定义 Temurin JRE 8 下载地址（留空=用内置多源回退）
     client:
       renderDistance: 8        # ★ 观察者客户端渲染距离（区块）：过大加载慢、过小视野差
       chunkPrewarmRadius: 3    # ★ 绑定前预热目标周围区块半径，避免"世界空洞"（0=关闭）

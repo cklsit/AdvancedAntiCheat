@@ -54,6 +54,8 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private ReplaySettings replaySettings;
     private CameraBinder cameraBinder;
     private SurveillanceScheduler surveillanceScheduler;
+    /** 方案 A 的观察者自动部署器（Docker 检测 / 部署 / 降级提示） */
+    private com.anticheat.managers.replay.ObserverProvisioner observerProvisioner;
 
     // Web 面板相关
     private AuditManager auditManager;
@@ -122,6 +124,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         }
         if (surveillanceScheduler != null) {
             surveillanceScheduler.shutdown();
+        }
+        if (observerProvisioner != null) {
+            observerProvisioner.shutdown();
         }
         if (cameraBinder != null) {
             cameraBinder.shutdown();
@@ -204,6 +209,15 @@ public class AdvancedAntiCheat extends JavaPlugin {
         } catch (Throwable t) {
             getLogger().warning("[Replay] 监视调度器初始化失败: " + t.getMessage());
             t.printStackTrace();
+        }
+
+        // === 方案 A：观察者自动部署器（检测 Docker，缺失时提示管理员二选一）===
+        try {
+            observerProvisioner = new com.anticheat.managers.replay.ObserverProvisioner(this);
+            // 异步执行：docker 探测/构建可能耗时，绝不能阻塞主线程
+            observerProvisioner.initAsync();
+        } catch (Throwable t) {
+            getLogger().warning("[Replay] ObserverProvisioner 初始化失败: " + t.getMessage());
         }
     }
 
@@ -386,6 +400,10 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public SurveillanceScheduler getSurveillanceScheduler() {
         return surveillanceScheduler;
+    }
+
+    public com.anticheat.managers.replay.ObserverProvisioner getObserverProvisioner() {
+        return observerProvisioner;
     }
 
     public com.anticheat.web.ws.replay.ReplayBroadcaster getReplayBroadcaster() {

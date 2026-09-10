@@ -51,11 +51,74 @@ public class AntiCheatCommand implements CommandExecutor {
             handleProfile(sender, args);
         } else if (subCommand.equals("genpwd")) {
             handleGenpwd(sender, args);
+        } else if (subCommand.equals("replay")) {
+            handleReplay(sender, args);
         } else {
             sender.sendMessage("§c未知子命令！使用 /ac help 查看帮助");
         }
 
         return true;
+    }
+
+    // ================================================================
+    // /ac replay —— 违规回放观察者部署管理（方案 A）
+    // ================================================================
+    private void handleReplay(CommandSender sender, String[] args) {
+        com.anticheat.managers.replay.ObserverProvisioner prov = plugin.getObserverProvisioner();
+        if (prov == null) {
+            sender.sendMessage("§c[AntiCheat] 观察者部署器未初始化，请检查控制台是否有 replay 相关报错。");
+            return;
+        }
+        String action = args.length > 1 ? args[1].toLowerCase() : "status";
+        switch (action) {
+            case "status":
+                for (String line : prov.statusLines()) {
+                    sender.sendMessage(line);
+                }
+                break;
+            case "setup":
+            case "deploy":
+                sender.sendMessage("§e[AntiCheat] 开始部署观察者集群（构建镜像可能耗时数分钟）...");
+                sender.sendMessage("§7进度请留意控制台日志，完成后会自动通知在线管理员。");
+                prov.bootstrap("管理员手动触发");
+                break;
+            case "disable":
+                prov.disableFeature(sender);
+                break;
+            case "enable":
+                prov.enableFeature(sender);
+                break;
+            case "down":
+            case "stop":
+                prov.teardown(sender);
+                break;
+            case "docker":
+            case "install":
+                if (action.equals("install")
+                        || (args.length > 2 && args[2].equalsIgnoreCase("install"))) {
+                    prov.installDockerAsync(sender);
+                } else {
+                    sender.sendMessage("§7用法: §f/ac replay docker install");
+                }
+                break;
+            default:
+                showReplayHelp(sender);
+                break;
+        }
+    }
+
+    private void showReplayHelp(CommandSender sender) {
+        sender.sendMessage("");
+        sender.sendMessage("§8╔══════════════════════════════════════════════════╗");
+        sender.sendMessage("§8║       §6违规回放 · 观察者部署 §8(/ac replay)      §8║");
+        sender.sendMessage("§8╚══════════════════════════════════════════════════╝");
+        sender.sendMessage(" §a" + pad("/ac replay status", 32) + "§8» §7查看部署状态与环境检测结果");
+        sender.sendMessage(" §a" + pad("/ac replay setup", 32) + "§8» §7检测并部署观察者集群（首次较慢）");
+        sender.sendMessage(" §a" + pad("/ac replay docker install", 32) + "§8» §7安装 Docker（选项 A）");
+        sender.sendMessage(" §a" + pad("/ac replay disable", 32) + "§8» §7禁用违规回放（选项 B）");
+        sender.sendMessage(" §a" + pad("/ac replay enable", 32) + "§8» §7重新启用违规回放");
+        sender.sendMessage(" §a" + pad("/ac replay down", 32) + "§8» §7停止并移除观察者容器");
+        sender.sendMessage("");
     }
 
     private void showHelp(CommandSender sender) {
@@ -72,6 +135,7 @@ public class AntiCheatCommand implements CommandExecutor {
         sender.sendMessage(" §a" + pad("/ac reports", 34) + "§8» §7查看待处理举报列表");
         sender.sendMessage(" §a" + pad("/ac profile <玩家>", 34) + "§8» §7查看玩家行为档案");
         sender.sendMessage(" §a" + pad("/ac genpwd <密码>", 34) + "§8» §7生成 Web 面板密码哈希");
+        sender.sendMessage(" §a" + pad("/ac replay <status|setup|...>", 34) + "§8» §7违规回放观察者部署管理");
         sender.sendMessage(" §a" + pad("/ac help", 34) + "§8» §7显示此帮助信息");
         sender.sendMessage("");
 

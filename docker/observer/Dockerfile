@@ -326,6 +326,25 @@ RUN set -eux; \
     fi; \
     echo "[build] client.jar OK: $(stat -c%s /mc/client.jar) bytes, sha1=$ACTUAL_SHA1"
 
+# 1.8.8 资源索引（assets/indexes/1.8.json）
+# 注意：MC 1.8.x 系列共用资源索引 id="1.8"（不是版本号 1.8.8）。缺失该文件会导致
+# 客户端报 "Can't find the resource index file" 并连服失败；启动参数需用
+# --assetIndex "1.8" 与之对应。
+# 只取索引即可：缺失的声音/语言对象只会产生 "unknown soundEvent" 警告，不影响录制画面，
+# 因此无需下载上百 MB 的完整 assets。
+RUN set -eux; \
+    mkdir -p /mc/assets/indexes; \
+    IDX_SHA1="f6ad102bcaa53b1a58358f16e376d548d44933ec"; \
+    wget -q --tries=3 --timeout=60 -O /mc/assets/indexes/1.8.json \
+      "https://launchermeta.mojang.com/v1/packages/${IDX_SHA1}/1.8.json" || \
+    wget -q --tries=3 --timeout=60 -O /mc/assets/indexes/1.8.json \
+      "https://bmclapi2.bangbang93.com/indexes/1.8.json" || \
+    wget -q --tries=2 --timeout=45 -O /mc/assets/indexes/1.8.json \
+      "https://piston-meta.mojang.com/v1/packages/${IDX_SHA1}/1.8.json"; \
+    _sz=$(stat -c%s /mc/assets/indexes/1.8.json); \
+    echo "[build] assets/indexes/1.8.json = ${_sz} bytes"; \
+    test "$_sz" -gt 10000
+
 COPY entrypoint.sh /mc/entrypoint.sh
 COPY healthcheck.sh /mc/healthcheck.sh
 COPY run-mc.sh /mc/run-mc.sh

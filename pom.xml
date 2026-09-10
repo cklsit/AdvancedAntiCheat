@@ -323,6 +323,19 @@
                     <include>**/*</include>
                 </includes>
             </resource>
+            <!-- 观察者容器构建文件随 jar 打包，供 ObserverProvisioner 运行期释放并 docker build -->
+            <resource>
+                <directory>docker/observer</directory>
+                <targetPath>observer</targetPath>
+                <includes>
+                    <include>Dockerfile</include>
+                    <include>entrypoint.sh</include>
+                    <include>healthcheck.sh</include>
+                    <include>run-mc.sh</include>
+                    <include>observerctl.py</include>
+                    <include>xorg-dummy.conf</include>
+                </includes>
+            </resource>
         </resources>
     </build>
 </project>
