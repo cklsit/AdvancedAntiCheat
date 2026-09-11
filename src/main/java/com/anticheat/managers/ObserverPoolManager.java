@@ -269,6 +269,8 @@ public class ObserverPoolManager {
         picked.busyTarget = targetUuid;
         busyObservers.put(targetUuid, picked);
         final Observer obs = picked;
+        // 有新观看请求：取消该 observer 的空闲退服计划（否则可能刚拉起就被判空闲下线）
+        cancelIdleShutdown(obs.id);
         logger.info("[Replay-Pool] 已分配 observer#" + obs.id + " name=" + obs.name
                 + " → target=" + targetUuid);
 
@@ -279,28 +281,34 @@ public class ObserverPoolManager {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             boolean followOk = false;
             try {
-                // 5. 触发 MC 客户端自动连接服务器（1.8.8 不支持 --server 参数）
+                // 5. 按需进服：观察者客户端常态**不在服务器里**，
+                //    这里先下单要求它进服（容器内 run-mc.sh 会在 ~2s 内拉起 MC，
+                //    客户端带 --server 启动即直连，跳过主菜单 GUI）。
                 FfmpegManager.ConnectResponse cr = plugin.getFfmpegManager()
-                        .connectServer(obs.id);
+                        .mcUp(obs.id);
                 if (!cr.success) {
                     logger.warning("[Replay-Pool] observer#" + obs.id
-                            + " 连接服务器失败: " + cr.error);
+                            + " 下发进服指令失败: " + cr.error);
                     rollbackObserver(obs, targetUuid, false);
                     reportObserverErrorInternal(targetUuid,
-                            "observer 连接服务器失败: " + (cr.error == null ? "unknown" : cr.error)
+                            "observer 进服指令下发失败: " + (cr.error == null ? "unknown" : cr.error)
                                     + "，10s 后自动重试");
                     return;
                 }
-                logger.info("[Replay-Pool] observer#" + obs.id + " 已发送连接服务器指令，等待登录...");
+                logger.info("[Replay-Pool] observer#" + obs.id + " 已下发进服指令，等待客户端登录...");
 
-                // 6. 等待 observer 账号登录到 Bukkit 服务器（最长 30s）
-                boolean loggedIn = waitForObserverLogin(obs.name, 30_000L);
+                // 6. 等待 observer 账号登录到 Bukkit 服务器
+                //    客户端冷启动链路（JVM + llvmpipe 软件渲染 + 连服）需要数十秒，
+                //    因此超时按配置放大；若客户端本已在服内则几乎立即返回。
+                long loginTimeoutSec = Math.max(30, plugin.getConfig()
+                        .getInt("replay.observer.loginTimeoutSeconds", 150));
+                boolean loggedIn = waitForObserverLogin(obs.name, TimeUnit.SECONDS.toMillis(loginTimeoutSec));
                 if (!loggedIn) {
                     logger.warning("[Replay-Pool] observer#" + obs.id + " (" + obs.name
-                            + ") 未在 30s 内登录服务器");
+                            + ") 未在 " + loginTimeoutSec + "s 内登录服务器");
                     rollbackObserver(obs, targetUuid, false);
                     reportObserverErrorInternal(targetUuid,
-                            "observer 未在 30s 内登录服务器，10s 后自动重试");
+                            "observer 未在 " + loginTimeoutSec + "s 内登录服务器，10s 后自动重试");
                     return;
                 }
                 logger.info("[Replay-Pool] observer#" + obs.id + " (" + obs.name + ") 已登录服务器");
@@ -443,7 +451,62 @@ public class ObserverPoolManager {
             obs.followStartTimeMs = 0;
             obs.status = "READY";
             logger.info("[Replay-Pool] observer#" + obs.id + " 已归还为 READY");
+
+            // 7. 按需进服：最后一名观看者已离开 → 延迟一段时间后让客户端退出服务器
+            scheduleIdleShutdown(obs);
         });
+    }
+
+    // ======================= 按需进服：空闲退服调度 =======================
+
+    /** 每个 observer 的"空闲退服"延迟任务（observerId → task） */
+    private final ConcurrentHashMap<Integer, BukkitTask> idleShutdownTasks = new ConcurrentHashMap<>();
+
+    /**
+     * 安排「空闲退服」：延迟若干秒后，若该 observer 仍未被占用，就让客户端退出服务器。
+     * <p>为什么要延迟：客户端冷启动要几十秒，若管理员只是刷新页面或切换视角，
+     * 立刻退服会导致反复上下线、体验很差。延迟窗口内若产生新的观看请求，
+     * {@link #acquire(UUID)} 会调用 {@link #cancelIdleShutdown(int)} 取消本次退服。
+     * <p>若配置 {@code replay.observer.mcOnDemand=false}（常驻模式）则不做任何事。
+     */
+    private void scheduleIdleShutdown(final Observer obs) {
+        cancelIdleShutdown(obs.id);
+        if (!plugin.getConfig().getBoolean("replay.observer.mcOnDemand", true)) {
+            return;
+        }
+        int delaySec = Math.max(0, plugin.getConfig()
+                .getInt("replay.observer.idleShutdownSeconds", 120));
+        if (delaySec <= 0) {
+            return;
+        }
+        BukkitTask task = Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
+            idleShutdownTasks.remove(obs.id);
+            try {
+                // 复用检查：期间又被分配则放弃退服
+                if (!"READY".equals(obs.status) || busyObservers.containsValue(obs)) {
+                    return;
+                }
+                FfmpegManager.ConnectResponse r = plugin.getFfmpegManager().mcDown(obs.id);
+                if (r.success) {
+                    logger.info("[Replay-Pool] observer#" + obs.id + " 空闲 " + delaySec
+                            + "s 无人观看，已让客户端退出服务器（容器保持运行）");
+                } else {
+                    logger.warning("[Replay-Pool] observer#" + obs.id
+                            + " 空闲退服失败: " + r.error);
+                }
+            } catch (Throwable t) {
+                logger.warning("[Replay-Pool] 空闲退服异常 observer#" + obs.id + ": " + t.getMessage());
+            }
+        }, delaySec * 20L);
+        idleShutdownTasks.put(obs.id, task);
+    }
+
+    /** 取消某 observer 待执行的空闲退服任务。 */
+    private void cancelIdleShutdown(int observerId) {
+        BukkitTask t = idleShutdownTasks.remove(observerId);
+        if (t != null) {
+            try { t.cancel(); } catch (Throwable ignored) { }
+        }
     }
 
     // ======================= 公开：错误上报 / 调试 / 关闭 =======================
@@ -535,6 +598,12 @@ public class ObserverPoolManager {
         }
         errorRetryMap.clear();
 
+        // cancel 所有待执行的空闲退服任务
+        for (BukkitTask t : idleShutdownTasks.values()) {
+            try { t.cancel(); } catch (Throwable ignored) {}
+        }
+        idleShutdownTasks.clear();
+
         // 对每个 busyObservers 条目：强制停止跟随 + stopStream + 归还 READY
         List<Map.Entry<UUID, Observer>> snapshot = new ArrayList<>(busyObservers.entrySet());
         for (Map.Entry<UUID, Observer> e : snapshot) {
@@ -558,6 +627,23 @@ public class ObserverPoolManager {
                 obs.status = "READY";
             });
         }
+
+        // 插件停用：让所有观察者客户端退出服务器（按需模式下的正确收尾），
+        // 并清理所有 observer 占用状态。
+        for (Observer o : observers) {
+            final Observer obs = o;
+            busyObservers.remove(obs.busyTarget);
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                try {
+                    plugin.getFfmpegManager().mcDown(obs.id);
+                } catch (Throwable t) {
+                    logger.warning("[Replay-Pool] shutdown 退服失败 observer#" + obs.id
+                            + ": " + t.getMessage());
+                }
+            });
+        }
+        busyObservers.clear();
+        subscribersPerTarget.clear();
 
         logger.info("[Replay-Pool] shutdown 完成");
     }

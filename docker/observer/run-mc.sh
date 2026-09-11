@@ -1,17 +1,28 @@
 #!/bin/bash
 set -euo pipefail
 
-# ===== Minecraft 1.8.8 客户端启动包装器（常驻 + 断线自愈版） =====
-# - 无限重启：observer 客户端必须保持在线，以便随时被插件调度录制。
-#   无论 MC 崩溃、被 kill、还是正常退出（code 0），都在短暂等待后重新拉起。
-# - 不再有 300s 强制超时：assets/libraries 已在镜像内就绪，MC 应长时间运行。
-# - 崩溃退避：若进程存活不足 60s 即退出（启动即崩），等待时间 3s 起步逐步 +3s，
-#   上限 30s，避免崩溃风暴打爆 CPU；一次存活超过 60s 后重置退避。
-# - 1.8.8 Main 类支持 --server/--port：启动即自动连接服务器，跳过主菜单 GUI。
-# - 断线自愈看门狗：客户端断线后只会退回主菜单且进程不退出，--server 不会重试，
-#   这会导致服务器重启/重载后 observer 永久停在主菜单（表现为"登录不上"）。
-#   看门狗通过内核 TCP 表检测连接状态，必要时重启 MC 进程以重新连接。
-# - JVM 输出同时写入 /tmp/mc.log，便于排查。
+# ===== Minecraft 1.8.8 客户端启动包装器（按需进服 + 断线自愈）=====
+#
+# 设计目标：观察者客户端**不再开机常驻服务器**。只有当管理员通过网页面板
+# 观看某玩家直播时，才让客户端进入服务器；最后一名观看者离开后过一段时间
+# 自动退服。这样 NAS 上常态下的占用就只有 Xorg + observerctl（很轻），
+# 而不是一个 720p 软件渲染的完整 MC 客户端。
+#
+# 进服/退服由 observerctl 的 /mc/up 与 /mc/down 控制，落地方式是标志文件：
+#   MC_ONDEMAND=true（默认）
+#     - 容器启动时清除标志 → 客户端不启动，容器保持 healthy
+#     - 标志出现 → 拉起 MC，--server 自动连服
+#     - 标志消失 → 终止 MC，客户端退服
+#   MC_ONDEMAND=false
+#     - 保持旧的常驻行为（开机即进服），适合观察者专机
+#
+# 其它行为保持不变：
+#   - 崩溃自动重启 + 退避（3s 起、上限 30s；存活 >60s 重置退避）
+#   - 断线自愈看门狗：客户端断线后只会退回主菜单且进程不退出，--server 也不会
+#     重试，会导致服务器重启/重载后 observer 永久停在主菜单（表现为"登录不上"）。
+#     看门狗通过内核 TCP 表检测连接状态，必要时重启 MC 进程以重新连接。
+#   - 1.8.8 Main 类支持 --server/--port：启动即自动连服，跳过主菜单 GUI。
+#   - JVM 输出同时写入 /tmp/mc.log，便于排查。
 
 cd /mc
 
@@ -25,12 +36,29 @@ MAIN_CLASS="net.minecraft.client.main.Main"
 : "${MC_SERVER_HOST:?MC_SERVER_HOST env is required}"
 : "${MC_SERVER_PORT:?MC_SERVER_PORT env is required}"
 
+MC_ONDEMAND="${MC_ONDEMAND:-true}"
+WANT_FLAG="${MC_ONDEMAND_FLAG:-/tmp/mc_wanted}"
+
 STABLE_SECS=60
 BACKOFF=3
 MAX_BACKOFF=30
+IDLE_POLL_SECS=2
 
 mkdir -p /mc/assets
 touch /tmp/mc.log
+
+# 按需模式下容器启动时先清掉标志：避免上次异常退出残留标志导致"开机即进服"
+if [ "$MC_ONDEMAND" = "true" ]; then
+    rm -f "$WANT_FLAG"
+fi
+
+# 当前是否被要求进服
+want_mc() {
+    if [ "$MC_ONDEMAND" != "true" ]; then
+        return 0
+    fi
+    [ -f "$WANT_FLAG" ]
+}
 
 # ------------------------------------------------------------------
 # 断线自动重连看门狗
@@ -60,6 +88,13 @@ watchdog_loop() {
     local miss=0 last_pid="" proc_start=0 pid age
     while true; do
         sleep 20
+
+        # 空闲状态不判定（主循环负责，不在此处拉起或杀进程）
+        if ! want_mc; then
+            miss=0; last_pid=""; proc_start=0
+            continue
+        fi
+
         pid=$(pgrep -f "$MAIN_CLASS" 2>/dev/null | head -n1 || true)
 
         # 进程不在（由主循环负责拉起）：重置状态
@@ -112,10 +147,23 @@ WATCHDOG_PID=$!
 echo "[run-mc] 断线自愈看门狗已启动 (pid=${WATCHDOG_PID})，目标 ${MC_SERVER_HOST}:${MC_SERVER_PORT}" \
     | tee -a /tmp/mc.log
 
-echo "[run-mc] 常驻模式启动：MC 退出后自动重启。MC_SERVER_HOST=${MC_SERVER_HOST}:${MC_SERVER_PORT}" \
+echo "[run-mc] 模式：$( [ "$MC_ONDEMAND" = "true" ] && echo '按需进服（等待 /mc/up 指令）' || echo '常驻进服' )，标志文件 ${WANT_FLAG}" \
     | tee -a /tmp/mc.log
 
 while true; do
+    # ---------- 空闲：不进服，低频轮询等待指令 ----------
+    if ! want_mc; then
+        if pgrep -f "$MAIN_CLASS" >/dev/null 2>&1; then
+            echo "[run-mc] $(date '+%F %T') 收到退服指令，终止 MC 客户端" | tee -a /tmp/mc.log
+            pkill -f "$MAIN_CLASS" >/dev/null 2>&1 || true
+            sleep 3
+        fi
+        BACKOFF=3
+        sleep "$IDLE_POLL_SECS"
+        continue
+    fi
+
+    # ---------- 进服：拉起 MC ----------
     echo "[run-mc] ========== 启动 MC $(date '+%F %T') ==========" | tee -a /tmp/mc.log
     echo "[run-mc] USERNAME=${USERNAME} UUID=${UUID}" | tee -a /tmp/mc.log
     echo "[run-mc] NATIVE_DIR=${NATIVE_DIR}" | tee -a /tmp/mc.log
@@ -165,6 +213,13 @@ while true; do
     # 存活超过 60s = 正常启动过，重置崩溃退避
     if [ "$ELAPSED" -gt "$STABLE_SECS" ]; then
         BACKOFF=3
+    fi
+
+    # 若期间已被要求退服，直接回到空闲分支，不做重启
+    if ! want_mc; then
+        echo "[run-mc] 已处于空闲状态，等待 /mc/up 指令" | tee -a /tmp/mc.log
+        BACKOFF=3
+        continue
     fi
 
     echo "[run-mc] ${BACKOFF}s 后重新拉起 MC ..." | tee -a /tmp/mc.log

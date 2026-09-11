@@ -6,6 +6,9 @@ observerctl.py  –  观察者客户端 HTTP 控制 API
   GET  /status              查看 Xvfb / MC / ffmpeg 状态
   POST /start?uuid=<uuid>   开始对 Xvfb 画面录制 HLS 到 /hls/<uuid>/
   POST /stop?uuid=<uuid>    结束录制 + 合成 /hls/<uuid>.mp4
+  POST /connect             用 xdotool 走菜单加入服务器（旧路径，--server 可用后一般不再需要）
+  POST /mc/up               按需进服：要求 MC 客户端进入服务器
+  POST /mc/down             离线：终止 MC 客户端（容器与 observerctl 仍常驻）
 """
 
 import os
@@ -30,6 +33,11 @@ UUID_RE = re.compile(r"^[A-Fa-f0-9\-]{4,128}$")
 SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 HLS_ROOT = Path("/hls")
+
+# 按需进服标志文件：存在 = 要求 MC 客户端进入服务器。
+# run-mc.sh 轮询该文件决定是否拉起/终止 MC 进程，由 /mc/up 与 /mc/down 写入/删除。
+# 这样观察者常态下不进服，只在管理员观看直播时才加入服务器。
+MC_WANT_FLAG = Path(os.environ.get("MC_ONDEMAND_FLAG", "/tmp/mc_wanted"))
 
 # /start 返回前等待首个切片 + playlist 落盘的最长秒数。
 # ffmpeg 使用 -hls_time 2，正常约 2s 产出首个切片；给足余量以覆盖
@@ -245,6 +253,8 @@ def route_status():
         "observer_id": OBSERVER_ID,
         "sessions": sessions,
         "ready": True,
+        # 按需进服：是否已被要求进服（标志文件存在）
+        "mc_wanted": MC_WANT_FLAG.exists(),
     })
 
 
@@ -442,6 +452,60 @@ def route_connect():
         return jsonify({"ok": True, "address": address, "message": "connect sequence sent"})
     except Exception as e:
         return jsonify({"ok": False, "error": f"connect: {e.__class__.__name__}: {e}"}), 500
+
+
+@app.route("/mc/up", methods=["POST"])
+def route_mc_up():
+    """要求 MC 客户端进入服务器（按需进服）。
+
+    只写标志文件，run-mc.sh 会在 ~2s 内拉起客户端；客户端带 --server 启动，
+    因此会直接连服并跳过主菜单。调用方（插件）随后轮询 /status 与服务器
+    玩家列表确认登录成功。
+    """
+    try:
+        MC_WANT_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        MC_WANT_FLAG.write_text(str(time.time()), encoding="utf-8")
+        return jsonify({
+            "ok": True,
+            "wanted": True,
+            "mc_running": _mc_running(),
+            "flag": str(MC_WANT_FLAG),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"mc/up: {e.__class__.__name__}: {e}"}), 500
+
+
+@app.route("/mc/down", methods=["POST"])
+def route_mc_down():
+    """要求 MC 客户端退出服务器（离线）。
+
+    清标志 + 终止 MC 进程；同时停掉可能在跑的 ffmpeg，避免留下无画面的录制。
+    进程退出后容器仍保持运行（observerctl / Xorg 常驻），随时可被再次拉起。
+    """
+    try:
+        try:
+            MC_WANT_FLAG.unlink()
+        except FileNotFoundError:
+            pass
+
+        if _ffmpeg_running():
+            try:
+                _kill_ffmpeg()
+            except Exception:
+                pass
+
+        _run_cmd(["pkill", "-f", "net.minecraft.client.main.Main"], timeout=10)
+        # 给进程一点退出时间，让调用方拿到较准确的 mc_running
+        time.sleep(1.0)
+
+        return jsonify({
+            "ok": True,
+            "wanted": False,
+            "mc_running": _mc_running(),
+            "flag": str(MC_WANT_FLAG),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"mc/down: {e.__class__.__name__}: {e}"}), 500
 
 
 @app.route("/stop", methods=["POST"])

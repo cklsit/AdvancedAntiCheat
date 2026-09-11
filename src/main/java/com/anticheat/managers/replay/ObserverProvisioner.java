@@ -168,9 +168,9 @@ public class ObserverProvisioner {
             }
         }
         if (ids.isEmpty()) {
+            // 默认只部署 1 个观察者：观察者客户端是完整 MC 客户端 + 软件渲染，
+            // 每多一个都是实打实的 CPU/内存开销（曾因 3 个实例压垮过 NAS）。
             ids.add(1);
-            ids.add(2);
-            ids.add(3);
         }
         return ids;
     }
@@ -671,6 +671,9 @@ public class ObserverProvisioner {
             sb.append("      - MC_SERVER_PORT=").append(port).append("\n");
             sb.append("      - VNC_ENABLE=false\n");
             sb.append("      - RENDER_DISTANCE=").append(cfgInt("replay.observer.client.renderDistance", 8)).append("\n");
+            // 按需进服开关：true = 客户端只在有人观看时才进服（默认）
+            sb.append("      - MC_ONDEMAND=").append(
+                    plugin.getConfig().getBoolean("replay.observer.mcOnDemand", true)).append("\n");
             sb.append("    volumes:\n");
             sb.append("      - \"").append(obsHls.toString().replace('\\', '/')).append(":/hls\"\n");
             sb.append("    ports:\n");

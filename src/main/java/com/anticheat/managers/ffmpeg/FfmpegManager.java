@@ -269,6 +269,64 @@ public class FfmpegManager {
     }
 
     /**
+     * 让 observer 客户端**按需进入服务器**。
+     * <p>观察者不再开机常驻：容器容器只跑 Xorg + observerctl（很轻），
+     * 只有管理员通过网页面板观看直播时才调用本方法把 MC 客户端拉起来进服。
+     * <p>调用方拿到 success 后还需轮询登录状态（客户端冷启动需数十秒）。
+     */
+    public ConnectResponse mcUp(int observerId) {
+        return postAction(observerId, "/mc/up", "mcUp");
+    }
+
+    /**
+     * 让 observer 客户端**退出服务器**（离线），容器与 observerctl 仍保持运行，
+     * 以便下次有观看请求时可被快速拉起。
+     */
+    public ConnectResponse mcDown(int observerId) {
+        return postAction(observerId, "/mc/down", "mcDown");
+    }
+
+    /** 对 observerctl 发起一个无 body 的 POST 动作，统一处理错误与超时。 */
+    private ConnectResponse postAction(int observerId, String path, String actionName) {
+        String base = observerBaseUrls.get(observerId);
+        if (base == null) {
+            return new ConnectResponse(false, "observer id=" + observerId + " 未在池中配置 baseUrl");
+        }
+        try {
+            HttpRequest req = HttpRequest.newBuilder()
+                    .uri(URI.create(base + path))
+                    .timeout(START_TIMEOUT)
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            String body = resp.body() == null ? "" : resp.body();
+            int code = resp.statusCode();
+            if (code < 200 || code >= 300) {
+                return new ConnectResponse(false,
+                        actionName + " 返回非 2xx: HTTP " + code + ", body=" + truncate(body));
+            }
+            boolean ok = body.contains("\"ok\":true") || body.contains("\"success\":true")
+                    || body.trim().equalsIgnoreCase("ok");
+            return new ConnectResponse(ok, ok ? null : actionName + " 返回未成功: " + truncate(body));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new ConnectResponse(false, actionName + " 被中断: " + e.getMessage());
+        } catch (IOException e) {
+            String cls = e.getClass().getSimpleName();
+            String detail = e.getMessage();
+            String hint = (e instanceof java.net.ConnectException)
+                    ? "（容器可能未启动、端口未开放、或 URL 配置错误）"
+                    : "";
+            return new ConnectResponse(false,
+                    actionName + " I/O 失败 (observer=" + base + "): " + cls
+                            + (detail == null ? hint : ": " + detail));
+        } catch (Throwable t) {
+            return new ConnectResponse(false, actionName + " 异常: " + t.getMessage());
+        }
+    }
+
+    /**
      * 停止指定 observer 正在进行的录制，并等待 ffmpeg 合成 mp4。
      *
      * @return success=true 时 mp4FileAbsolutePath 为宿主侧绝对路径（由容器 volume 写入）。
