@@ -942,21 +942,24 @@ public class ObserverPoolManager {
         } else {
             hostHlsRoot = new File(plugin.getDataFolder(), "hls");
         }
-        // 容器路径 /hls/archive/xxx.mp4 对应宿主机 ${hostHlsRoot}/archive/xxx.mp4
-        File hostMp4File = new File(new File(hostHlsRoot, "archive"), mp4OutFilename);
-        if (!hostMp4File.exists()) {
-            // 尝试用 FfmpegManager 的 hlsRootDir（容器 volume 挂载）
+        // 容器内 observerctl 写 /hls/archive/xxx.mp4，而当前 docker-compose 把容器
+        // 的 /hls 整体挂到宿主 hls/<observerId>/，真实落点其实是
+        // hls/<observerId>/archive/xxx.mp4。必须在各 observer 子目录中回退查找，
+        // 否则 ZIP 存档会一直因"宿主机 mp4 文件不存在"而打包失败。
+        File hostMp4File = resolveArchiveMp4(hostHlsRoot, mp4OutFilename);
+        if (hostMp4File == null || !hostMp4File.isFile()) {
             FfmpegManager fm = plugin.getFfmpegManager();
             if (fm != null) {
-                File alt = new File(new File(fm.getHlsRootDir(), "archive"), mp4OutFilename);
-                if (alt.exists()) {
+                File alt = resolveArchiveMp4(fm.getHlsRootDir(), mp4OutFilename);
+                if (alt != null && alt.isFile()) {
                     hostMp4File = alt;
                 }
             }
         }
-        if (!hostMp4File.exists()) {
-            logger.warning("[Replay-Pool][Zip] 宿主机 mp4 文件不存在: " + hostMp4File.getAbsolutePath()
-                    + "（期望 concat 写入的文件），无法打包 ZIP");
+        if (hostMp4File == null || !hostMp4File.isFile()) {
+            logger.warning("[Replay-Pool][Zip] 宿主机 mp4 文件不存在: "
+                    + new File(new File(hostHlsRoot, "archive"), mp4OutFilename).getAbsolutePath()
+                    + "（已尝试 hls/*/archive/ 回退查找），无法打包 ZIP");
             return;
         }
 

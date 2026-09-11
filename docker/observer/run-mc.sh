@@ -21,7 +21,12 @@ set -euo pipefail
 #   - 断线自愈看门狗：客户端断线后只会退回主菜单且进程不退出，--server 也不会
 #     重试，会导致服务器重启/重载后 observer 永久停在主菜单（表现为"登录不上"）。
 #     看门狗通过内核 TCP 表检测连接状态，必要时重启 MC 进程以重新连接。
+#   - 显示焦点保持器：容器内无窗口管理器，X 焦点默认是 PointerRoot，MC 窗口收不到
+#     FocusIn 会被判为失焦 —— 既会自动弹出 Game menu（暂停菜单挡住录制画面），
+#     也会让键盘事件送不进去。这里持续把输入焦点钉在 MC 窗口上，并关闭
+#     pauseOnLostFocus 作为双保险。
 #   - 1.8.8 Main 类支持 --server/--port：启动即自动连服，跳过主菜单 GUI。
+#   - 窗口尺寸固定为 1280x720（与 Xorg dummy 屏幕一致），避免四周黑边。
 #   - JVM 输出同时写入 /tmp/mc.log，便于排查。
 
 cd /mc
@@ -39,6 +44,11 @@ MAIN_CLASS="net.minecraft.client.main.Main"
 MC_ONDEMAND="${MC_ONDEMAND:-true}"
 WANT_FLAG="${MC_ONDEMAND_FLAG:-/tmp/mc_wanted}"
 
+# 客户端窗口尺寸：与 Xorg dummy 屏幕一致（1280x720），这样 x11grab 抓整屏时
+# 画面能填满，不会像用 MC 默认 854x480 那样四周留大片黑边。
+MC_WINDOW_W="${MC_WINDOW_W:-1280}"
+MC_WINDOW_H="${MC_WINDOW_H:-720}"
+
 STABLE_SECS=60
 BACKOFF=3
 MAX_BACKOFF=30
@@ -46,6 +56,24 @@ IDLE_POLL_SECS=2
 
 mkdir -p /mc/assets
 touch /tmp/mc.log
+
+# 关掉「失去焦点即暂停」：与 display_keeper 形成双保险。
+# 即使某次瞬间失焦，客户端也不会弹出 Game menu 遮挡录制画面。
+ensure_options() {
+    local opt=/mc/options.txt
+    if [ ! -f "$opt" ]; then
+        printf 'pauseOnLostFocus:false\n' > "$opt"
+        return
+    fi
+    if grep -q '^pauseOnLostFocus:' "$opt"; then
+        sed -i 's/^pauseOnLostFocus:.*/pauseOnLostFocus:false/' "$opt"
+    else
+        printf 'pauseOnLostFocus:false\n' >> "$opt"
+    fi
+}
+ensure_options
+echo "[run-mc] options.txt: $(grep -h '^pauseOnLostFocus:' /mc/options.txt 2>/dev/null || echo '未设置')" \
+    | tee -a /tmp/mc.log
 
 # 按需模式下容器启动时先清掉标志：避免上次异常退出残留标志导致"开机即进服"
 if [ "$MC_ONDEMAND" = "true" ]; then
@@ -147,6 +175,34 @@ WATCHDOG_PID=$!
 echo "[run-mc] 断线自愈看门狗已启动 (pid=${WATCHDOG_PID})，目标 ${MC_SERVER_HOST}:${MC_SERVER_PORT}" \
     | tee -a /tmp/mc.log
 
+# ------------------------------------------------------------------
+# 显示输入焦点保持器（关键：否则直播画面会停在 MC 暂停菜单上）
+# ------------------------------------------------------------------
+# 容器内**没有窗口管理器**，X 的默认焦点策略是 PointerRoot —— 意味着 MC 窗口
+# 永远收不到 FocusIn 事件。由此产生两个后果：
+#   1) MC 认为窗口处于失焦状态 → 自动弹出 "Game menu"（暂停菜单），
+#      录像画面被菜单整个挡住（表现就是"一直停在暂停界面"）；
+#   2) 键盘事件送不到客户端（xdotool key 看似执行成功但客户端毫无反应）。
+# 解决方式：持续用 XSetInputFocus 把输入焦点钉在 MC 窗口上。
+# 必须在启动 java **之前**就开跑，这样客户端一建窗就拿到焦点，
+# 从根上避免弹出暂停菜单。
+display_keeper() {
+    local d="${DISPLAY:-:99}" wid cur
+    while true; do
+        sleep 2
+        wid=$(DISPLAY="$d" xdotool search --name "Minecraft" 2>/dev/null | tail -n1 || true)
+        [ -z "$wid" ] && continue
+        cur=$(DISPLAY="$d" xdotool getwindowfocus 2>/dev/null || echo 0)
+        if [ "$cur" != "$wid" ]; then
+            DISPLAY="$d" xdotool windowfocus "$wid" 2>/dev/null || true
+        fi
+    done
+}
+
+display_keeper &
+KEEPER_PID=$!
+echo "[run-mc] 显示焦点保持器已启动 (pid=${KEEPER_PID})" | tee -a /tmp/mc.log
+
 echo "[run-mc] 模式：$( [ "$MC_ONDEMAND" = "true" ] && echo '按需进服（等待 /mc/up 指令）' || echo '常驻进服' )，标志文件 ${WANT_FLAG}" \
     | tee -a /tmp/mc.log
 
@@ -201,6 +257,8 @@ while true; do
         --gameDir "/mc" \
         --assetsDir "/mc/assets" \
         --assetIndex "1.8" \
+        --width "$MC_WINDOW_W" \
+        --height "$MC_WINDOW_H" \
         --server "$MC_SERVER_HOST" \
         --port "$MC_SERVER_PORT" \
         2>&1 | tee -a /tmp/mc.log
