@@ -191,6 +191,60 @@ function resetHlsState(): void {
   hlsLoading.value = false
   hlsError.value = ''
   hlsRetryCount = 0
+  resetStallWatch()
+}
+
+/** 画面停滞自愈的观测状态 */
+let lastProgressTime = -1
+let lastProgressAt = Date.now()
+let stallRecoveryCount = 0
+/** 画面多久没推进就判定为"卡住" */
+const STALL_TIMEOUT_MS = 25_000
+/** 停滞自愈的有界次数：避免流真的不可用时无限重建 */
+const STALL_MAX_RECOVERY = 6
+
+function resetStallWatch(): void {
+  lastProgressTime = -1
+  lastProgressAt = Date.now()
+  stallRecoveryCount = 0
+}
+
+/**
+ * 画面停滞自愈。
+ * <p>场景：服务端 ffmpeg 进程退出、或 observer 掉线重连导致 playlist 不再更新。
+ * 此时 hls.js 既不一定抛致命错误、也不一定触发 buffered 事件，只是把最后一帧
+ * 一直挂在 &lt;video&gt; 上 —— 用户看到的就是"画面卡住不动"。
+ * 这里用 currentTime 是否推进来判定，必要时重建 HLS（服务端侧的看门狗会同步重建流）。
+ */
+function checkVideoStall(): void {
+  const video = videoRef.value
+  if (!video || !isRealtime.value) return
+  if (hlsError.value) return
+
+  const t = video.currentTime
+  if (t !== lastProgressTime) {
+    lastProgressTime = t
+    lastProgressAt = Date.now()
+    if (stallRecoveryCount > 0) stallRecoveryCount = 0
+    return
+  }
+  if (Date.now() - lastProgressAt < STALL_TIMEOUT_MS) return
+
+  lastProgressAt = Date.now()
+  // 先尝试恢复播放（video 为 muted，浏览器通常允许；被策略拦下时需用户点击播放）
+  if (video.paused) {
+    void video.play().catch(() => { /* noop */ })
+    return
+  }
+  if (stallRecoveryCount >= STALL_MAX_RECOVERY) return
+  stallRecoveryCount += 1
+  const url = hlsUrl.value
+  if (!url) return
+  observerMsg.value = {
+    level: 'warn',
+    text: `直播画面已停滞，正在重建直播连接（第 ${stallRecoveryCount}/${STALL_MAX_RECOVERY} 次）…`
+  }
+  setupHls(url)
 }
 
 /**
@@ -256,7 +310,7 @@ function setupHls(url: string): void {
       scheduleHlsRetry(url, reason)
     })
     hlsInstance.value = hls
-    // 定期读取 hls.js 实测延迟，更新对齐时钟 τ
+    // 定期读取 hls.js 实测延迟，更新对齐时钟 τ；同时做「画面停滞」自愈
     stopLatencyPoller()
     latencyPoller = setInterval(() => {
       const h = hlsInstance.value
@@ -266,6 +320,7 @@ function setupHls(url: string): void {
         videoLatencyMs.value = ms
         latencyReporter?.(ms)
       }
+      checkVideoStall()
     }, 2000)
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
     // Safari 原生 HLS

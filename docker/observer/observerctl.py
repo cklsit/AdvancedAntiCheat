@@ -280,6 +280,23 @@ def route_start():
             except Exception:
                 pass
 
+        # 清掉上一轮会话残留的切片与播放列表。
+        # 新一次录制会从 seg_00000 重新编号，若不清旧片段：
+        #   1) 目录里会同时留着新旧两套切片，难以判断当前画面是哪一段；
+        #   2) 前端/浏览器可能命中缓存中的旧 index.m3u8，配合已停止的流
+        #      会表现为"画面定格在上一段录像的最后一帧"。
+        for _old in list(out_dir.glob("seg_*.ts")):
+            try:
+                _old.unlink()
+            except OSError:
+                pass
+        _old_pl = out_dir / "index.m3u8"
+        if _old_pl.exists():
+            try:
+                _old_pl.unlink()
+            except OSError:
+                pass
+
         display = os.environ.get("DISPLAY", ":99")
         seg_template = str(out_dir / "seg_%05d.ts")
         playlist_path = out_dir / "index.m3u8"
@@ -506,6 +523,24 @@ def route_mc_down():
         })
     except Exception as e:
         return jsonify({"ok": False, "error": f"mc/down: {e.__class__.__name__}: {e}"}), 500
+
+
+@app.route("/stream/kill", methods=["POST"])
+def route_stream_kill():
+    """强制结束当前录制且**不做 mp4 合成**，用于清理残留/孤儿流。
+
+    场景：服务端重启后本插件不再认得容器里仍在运行的 ffmpeg，于是留下一个无人观看、
+    却在持续写盘的孤儿流（1280x720@30 约 5GB/天）。插件侧的看门狗会调用本接口清理。
+    与 /stop 的区别：/stop 会等待 concat 合成 mp4（最长 35s）并返回路径，这里只杀进程。
+    """
+    killed = False
+    if _ffmpeg_running():
+        try:
+            _kill_ffmpeg()
+            killed = True
+        except Exception as e:
+            return jsonify({"ok": False, "error": f"kill: {e.__class__.__name__}: {e}"}), 500
+    return jsonify({"ok": True, "killed": killed})
 
 
 @app.route("/stop", methods=["POST"])

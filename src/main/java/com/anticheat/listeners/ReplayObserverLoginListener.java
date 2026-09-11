@@ -131,6 +131,19 @@ public class ReplayObserverLoginListener implements Listener {
                 fm.stopFollow(name);
             }
         } catch (Throwable ignored) {}
+
+        // 关键：通知观察者池解除该 observer 的绑定。
+        // 否则 busyObservers 里会留下一个「已下线」的 observer 占位，导致该目标的
+        // 订阅者永远等不到新的 observer（acquire 会判定"已有绑定"直接复用），
+        // 表现为直播画面永久定格在最后一帧 —— 观察者即使随后自行重连也不会恢复。
+        try {
+            com.anticheat.managers.ObserverPoolManager pool = plugin.getObserverPoolManager();
+            if (pool != null) {
+                pool.onObserverOffline(name);
+            }
+        } catch (Throwable t) {
+            plugin.getLogger().warning("[Replay-Observer] 通知观察者池（下线）失败: " + t.getMessage());
+        }
     }
 
     /**

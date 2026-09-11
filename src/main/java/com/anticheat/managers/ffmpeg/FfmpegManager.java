@@ -286,6 +286,15 @@ public class FfmpegManager {
         return postAction(observerId, "/mc/down", "mcDown");
     }
 
+    /**
+     * 清理残留（无人观看却仍在运行的）直播流：只杀 ffmpeg，不做 mp4 合成。
+     * 服务端重启后插件不认识容器里遗留的 ffmpeg，需要靠调用方（ObserverPoolManager 的
+     * 孤儿流巡检）发现并清理，否则会一直录到磁盘满。
+     */
+    public ConnectResponse killOrphanStream(int observerId) {
+        return postAction(observerId, "/stream/kill", "killOrphanStream");
+    }
+
     /** 对 observerctl 发起一个无 body 的 POST 动作，统一处理错误与超时。 */
     private ConnectResponse postAction(int observerId, String path, String actionName) {
         String base = observerBaseUrls.get(observerId);

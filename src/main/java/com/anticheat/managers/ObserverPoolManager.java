@@ -58,6 +58,8 @@ public class ObserverPoolManager {
         public volatile String streamSessionId;
         /** startFollow 成功后的 wallClock（跟随开始的时间戳 ms） */
         public volatile long followStartTimeMs;
+        /** 最近一次「直播流中断自愈」的尝试时间（ms），用于冷却，避免反复重建 */
+        public volatile long lastRecoveryMs;
 
         Observer(int id, String name, String baseUrl) {
             this.id = id;
@@ -67,12 +69,26 @@ public class ObserverPoolManager {
             this.busyTarget = null;
             this.streamSessionId = null;
             this.followStartTimeMs = 0;
+            this.lastRecoveryMs = 0;
         }
     }
 
     // ======================= Manager 字段 =======================
 
     private static final long RETRY_DELAY_TICKS = 200L; // 10s
+
+    /** 直播流看门狗：首次巡检延迟（ticks，300=15s） */
+    private static final long WATCHDOG_INITIAL_DELAY_TICKS = 300L;
+    /** 直播流看门狗：巡检周期（ticks，300=15s） */
+    private static final long WATCHDOG_PERIOD_TICKS = 300L;
+    /** playlist 超过该时长无更新即视为「流已停止」（ms）。ffmpeg -hls_time 2 时正常每 2s 刷新 */
+    private static final long STREAM_STALL_MS = 20_000L;
+    /** 跟随启动后的宽限期（ms）：此期间内不判定流中断（冷启动/首片尚未落盘） */
+    private static final long STREAM_GRACE_MS = 90_000L;
+    /** 同一 observer 两次「流中断自愈」之间的最小间隔（ms），避免重建风暴 */
+    private static final long RECOVERY_COOLDOWN_MS = 60_000L;
+    /** 每 N 次巡检执行一次「孤儿流清理」（20 * 15s = 5 分钟） */
+    private static final int ORPHAN_CHECK_EVERY = 20;
 
     private final AdvancedAntiCheat plugin;
     private final Logger logger;
@@ -83,19 +99,32 @@ public class ObserverPoolManager {
     private final ConcurrentHashMap<UUID, Integer> subscribersPerTarget;
     /** key = targetUuid，value = 错误重试 scheduled task（cancel 用） */
     private final ConcurrentHashMap<UUID, BukkitTask> errorRetryMap;
+    /** 看门狗巡检计数器（用于按频率触发孤儿流清理） */
+    private int sweepTick = 0;
 
     public ObserverPoolManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.observers = new ArrayList<>();
-        // 池大小可配：replay.surveillance.maxConcurrent（默认 3，与历史行为一致）。
-        // 观察者是物理资源（docker 容器），上限受限于实际部署的 observer 容器数量。
-        int poolSize = Math.max(1, plugin.getConfig().getInt("replay.surveillance.maxConcurrent", 3));
-        for (int i = 1; i <= poolSize; i++) {
+        // 池大小 = 实际配置的 observer 实例数（replay.observer.<n>.url 非空者）。
+        // 观察者是物理资源（docker 容器），必须以"配置里真的有几个"为准：
+        // 若用 replay.surveillance.maxConcurrent（默认 3）当池大小，在只部署 1 个容器时
+        // 会凭空多出指向 18082/18083 的死地址 observer —— 一旦被选中，acquire 必然失败。
+        int maxConcurrent = Math.max(1, plugin.getConfig().getInt("replay.surveillance.maxConcurrent", 3));
+        final List<Integer> ids = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            String u = plugin.getConfig().getString("replay.observer." + i + ".url", null);
+            if (u != null && !u.trim().isEmpty()) ids.add(i);
+        }
+        if (ids.isEmpty()) {
+            logger.warning("[Replay-Pool] 未配置 replay.observer.<n>.url，按 surveillance.maxConcurrent="
+                    + maxConcurrent + " 生成默认地址");
+            for (int i = 1; i <= maxConcurrent; i++) ids.add(i);
+        }
+        for (int i : ids) {
             String name = plugin.getConfig().getString("replay.observer." + i + ".name", "ReplayObserver_" + i);
             String url = plugin.getConfig().getString("replay.observer." + i + ".url", "http://127.0.0.1:1808" + i);
-            int id = i;
-            observers.add(new Observer(id, name, url));
+            observers.add(new Observer(i, name, url));
         }
         this.busyObservers = new ConcurrentHashMap<>();
         this.subscribersPerTarget = new ConcurrentHashMap<>();
@@ -103,6 +132,21 @@ public class ObserverPoolManager {
         logger.info("[Replay-Pool] ObserverPoolManager 已初始化，池大小=" + observers.size());
         for (Observer o : observers) {
             logger.info("[Replay-Pool]   observer#" + o.id + " name=" + o.name + " url=" + o.baseUrl);
+        }
+
+        // 直播流看门狗：定期核对「有订阅者的目标」是否仍然绑定着「在线且流仍在推进」的 observer。
+        // 服务器与 observer 容器是两套独立生命周期的进程，任一侧重启都会让
+        // busyObservers 的绑定与实际状态脱节。若不巡检，会出现：
+        //   - observer 掉线（被踢/容器重建）后 busyObservers 仍留着绑定，
+        //     该目标的订阅者永远等不到新 observer（acquire 判定"已有绑定"直接复用）
+        //   - observer 掉线后又自行重连（跟随与 ffmpeg 均已丢失），却没人重新 acquire
+        //   - ffmpeg 进程死亡 → playlist 不再更新 → 前端画面永久定格在最后一帧
+        try {
+            Bukkit.getScheduler().runTaskTimer(plugin, this::sweepLiveStreams,
+                    WATCHDOG_INITIAL_DELAY_TICKS, WATCHDOG_PERIOD_TICKS);
+            logger.info("[Replay-Pool] 直播流看门狗已启动（每 " + (WATCHDOG_PERIOD_TICKS / 20) + "s 巡检一次）");
+        } catch (Throwable t) {
+            logger.warning("[Replay-Pool] 直播流看门狗启动失败: " + t.getMessage());
         }
     }
 
@@ -1104,6 +1148,188 @@ public class ObserverPoolManager {
             });
         }
         return !Files.exists(root);
+    }
+
+    // ======================= 观察者掉线 / 直播流自愈 =======================
+
+    /**
+     * 观察者账号下线时的池侧处理（由 ReplayObserverLoginListener 在 PlayerQuitEvent 调用）。
+     *
+     * 必须解除 busyObservers 绑定，否则会留下一个「已下线」的 observer 占着位置：
+     * <ul>
+     *   <li>该目标的订阅者永远等不到新的 observer —— acquire 命中"已有绑定"直接复用；</li>
+     *   <li>observer 复位后也无法被其它目标复用。</li>
+     * </ul>
+     * 若该目标仍有订阅者，则通过 reportObserverErrorInternal 安排重试（会给前端推
+     * observer_error，并在 10s 后重新 acquire，届时向容器下发 /mc/up 拉客户端回服）。
+     */
+    public synchronized void onObserverOffline(String observerName) {
+        if (observerName == null) return;
+
+        Observer obs = null;
+        for (Observer o : observers) {
+            if (observerName.equalsIgnoreCase(o.name)) {
+                obs = o;
+                break;
+            }
+        }
+        if (obs == null) return;
+
+        final UUID target = obs.busyTarget;
+        obs.busyTarget = null;
+        obs.streamSessionId = null;
+        obs.followStartTimeMs = 0L;
+        obs.status = "READY";
+        if (target != null) {
+            busyObservers.remove(target, obs);
+        }
+
+        int cnt = (target == null) ? 0 : subscriberCount(target);
+        logger.warning("[Replay-Pool] observer#" + obs.id + " (" + observerName + ") 已下线"
+                + (target != null ? "，解除 target=" + target + " 的绑定" : "（无绑定）")
+                + "，该目标订阅者=" + cnt);
+
+        if (target != null && cnt > 0) {
+            reportObserverErrorInternal(target, "观察者掉线，正在重新分配…");
+        }
+    }
+
+    /**
+     * 直播流看门狗：保证「有订阅者的目标」始终绑定着「在线且流正在推进」的 observer。
+     * 必须运行在主线程（会调用 Bukkit.getPlayerExact / acquire / reportObserverErrorInternal）。
+     */
+    private void sweepLiveStreams() {
+        try {
+            // 孤儿流巡检：每 ORPHAN_CHECK_EVERY 次巡检（默认 5 分钟）做一次
+            if (++sweepTick % ORPHAN_CHECK_EVERY == 0) {
+                reconcileOrphanStreams();
+            }
+            for (Map.Entry<UUID, Integer> e : new ArrayList<>(subscribersPerTarget.entrySet())) {
+                final UUID target = e.getKey();
+                final int cnt = (e.getValue() == null) ? 0 : e.getValue();
+                if (cnt <= 0) continue;
+
+                // 目标玩家已离线：订阅计数多半是「上次 WS 未正常关闭」的残留
+                // （服务端重启 / 网络中断时不会触发 onClose 的 decrement）。
+                // 若不清掉，看门狗会每 15s 为这个已离线的目标反复 acquire，
+                // 既刷日志又会占住 observer。
+                if (Bukkit.getPlayer(target) == null) {
+                    logger.info("[Replay-Pool][watchdog] target=" + target
+                            + " 玩家已离线，清理残留订阅计数（原计数=" + cnt + "）");
+                    subscribersPerTarget.remove(target);
+                    Observer bound = busyObservers.remove(target);
+                    if (bound != null) {
+                        bound.busyTarget = null;
+                        bound.streamSessionId = null;
+                        bound.followStartTimeMs = 0L;
+                        bound.status = "READY";
+                    }
+                    continue;
+                }
+
+                Observer obs = busyObservers.get(target);
+                if (obs == null) {
+                    logger.warning("[Replay-Pool][watchdog] target=" + target + " 有 " + cnt
+                            + " 个订阅者但无 observer 绑定，重新 acquire");
+                    acquire(target);
+                    continue;
+                }
+                if (Bukkit.getPlayerExact(obs.name) == null) {
+                    logger.warning("[Replay-Pool][watchdog] observer#" + obs.id + " (" + obs.name
+                            + ") 已不在服务器内，解除绑定并重新分配");
+                    onObserverOffline(obs.name);
+                    continue;
+                }
+                if (!isStreamStalled(obs, target)) continue;
+
+                long now = System.currentTimeMillis();
+                if (now - obs.lastRecoveryMs < RECOVERY_COOLDOWN_MS) {
+                    continue;   // 冷却中：上次自愈还在进行（acquire 的登录等待最长 150s）
+                }
+                obs.lastRecoveryMs = now;
+                logger.warning("[Replay-Pool][watchdog] observer#" + obs.id + " 针对 target=" + target
+                        + " 的直播流已超过 " + (STREAM_STALL_MS / 1000)
+                        + "s 无新切片（ffmpeg 可能已退出），重建跟随与流");
+                // 先解绑再 acquire：这样会重新下发跟随（摄像机绑定）并重启 ffmpeg。
+                // 若只重启 ffmpeg 而不重新跟随，画面会变成观察者自己的视角而非目标视角。
+                detachBinding(obs, target);
+                acquire(target);
+            }
+        } catch (Throwable t) {
+            logger.log(Level.WARNING, "[Replay-Pool][watchdog] 巡检异常: " + t.getMessage(), t);
+        }
+    }
+
+    /**
+     * 判断某 observer 针对 target 的 HLS 是否已停止推进。
+     * 宿主机布局：&lt;hlsRoot&gt;/&lt;observerId&gt;/&lt;uuid&gt;/index.m3u8
+     */
+    private boolean isStreamStalled(Observer obs, UUID target) {
+        try {
+            long start = obs.followStartTimeMs;
+            if (start <= 0 || System.currentTimeMillis() - start < STREAM_GRACE_MS) {
+                return false;   // 宽限期内不判定（冷启动 / 首片尚未落盘）
+            }
+            FfmpegManager fm = plugin.getFfmpegManager();
+            if (fm == null) return false;
+            File root = fm.getHlsRootDir();
+            if (root == null) return false;
+            File playlist = new File(new File(root, String.valueOf(obs.id)),
+                    target.toString() + File.separator + "index.m3u8");
+            if (!playlist.isFile()) return true;
+            return System.currentTimeMillis() - playlist.lastModified() > STREAM_STALL_MS;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 仅解除 target↔observer 绑定并复位 observer 状态（不停止流、不打包存档）。 */
+    private synchronized void detachBinding(Observer obs, UUID target) {
+        if (target != null) {
+            busyObservers.remove(target, obs);
+        }
+        obs.busyTarget = null;
+        obs.streamSessionId = null;
+        obs.followStartTimeMs = 0L;
+        obs.status = "READY";
+    }
+
+    /**
+     * 清理「本插件实例不认识的」残留直播流（孤儿流）。
+     *
+     * 服务端重启后容器里的 ffmpeg 照旧在录（它并不知道服务器换了一茬），于是留下一个
+     * 无人观看、却在持续写盘的孤儿流（1280x720@30 约 5GB/天）。本插件无法从内存里
+     * 恢复这段关系，只能主动查询 /status 并清理。
+     *
+     * 安全约束：只处理「状态为 READY 且不在 busyObservers 中」的 observer。
+     * release 期间 observer 仍为 BUSY，因此不会误杀正在合成 mp4 的流。
+     */
+    private void reconcileOrphanStreams() {
+        final List<Observer> candidates = new ArrayList<>();
+        for (Observer o : observers) {
+            if ("READY".equals(o.status) && !busyObservers.containsValue(o)) {
+                candidates.add(o);
+            }
+        }
+        if (candidates.isEmpty()) return;
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            FfmpegManager fm = plugin.getFfmpegManager();
+            if (fm == null) return;
+            for (Observer o : candidates) {
+                try {
+                    FfmpegManager.StatusResponse st = fm.status(o.id);
+                    if (st != null && st.success && st.ffmpegPid > 0) {
+                        FfmpegManager.ConnectResponse kr = fm.killOrphanStream(o.id);
+                        logger.warning("[Replay-Pool][orphan] observer#" + o.id
+                                + " 无任何观看绑定却仍在录制（ffmpeg pid=" + st.ffmpegPid
+                                + "），已清理残留流: " + (kr.success ? "ok" : kr.error));
+                    }
+                } catch (Throwable t) {
+                    logger.fine("[Replay-Pool][orphan] observer#" + o.id + " 巡检失败: " + t.getMessage());
+                }
+            }
+        });
     }
 
     /**
