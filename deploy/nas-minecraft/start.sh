@@ -25,11 +25,17 @@
 
 set -euo pipefail
 
+# DSM 的 screen 在 /opt/sbin（默认 PATH 里没有，sudo bash -c 下尤其找不到），
+# 这里前置补上，保证本脚本与 screen 会话内的子进程都能找到所需命令。
+export PATH="/opt/sbin:/usr/local/bin:/usr/bin:/bin:${PATH}"
+
 # ---------------------------- 可调参数 --------------------------------------
 MC_DIR="$(cd "$(dirname "$0")" && pwd)"   # 服务器根目录（= 本脚本所在目录）
 SESSION="minecraft"                        # screen 会话名，勿改（否则 screen -r minecraft 失效）
 JAR="FlamePaper.jar"
 JAVA_BIN="${JAVA_BIN:-/volume1/jonson/wjx/mcjava21/bin/java}"
+# screen 可执行文件：默认自动探测，也可用 SCREEN_BIN=/path/to/screen 覆盖
+SCREEN_BIN="${SCREEN_BIN:-}"
 
 # 自动模式：堆内存下限 / 上限（MB）
 AUTO_MIN_MB="${AUTO_MIN_MB:-1024}"
@@ -139,13 +145,22 @@ if [ ! -x "$JAVA_BIN" ]; then
     echo "  可用 JAVA_BIN=/path/to/java ./start.sh 覆盖"
     exit 1
 fi
-if ! command -v screen >/dev/null 2>&1; then
+if ! command -v screen >/dev/null 2>&1 && [ -z "$SCREEN_BIN" ]; then
+    for c in /opt/sbin/screen /usr/local/bin/screen /usr/bin/screen /bin/screen; do
+        if [ -x "$c" ]; then SCREEN_BIN="$c"; break; fi
+    done
+fi
+if [ -z "$SCREEN_BIN" ]; then
+    SCREEN_BIN="$(command -v screen 2>/dev/null || true)"
+fi
+if [ -z "$SCREEN_BIN" ]; then
     echo "✗ 未找到 screen 命令（DSM 上通常在 /opt/sbin/screen）"
+    echo "  可用 SCREEN_BIN=/path/to/screen ./start.sh 覆盖"
     exit 1
 fi
 
 # ---------------------------- 重复启动保护 ---------------------------------
-if screen -ls 2>/dev/null | grep -qE "[0-9]+\.${SESSION}\b"; then
+if "$SCREEN_BIN" -ls 2>/dev/null | grep -qE "[0-9]+\.${SESSION}\b"; then
     echo
     echo "⚠ 服务器已在运行（screen 会话：$SESSION）"
     echo "  进入控制台：screen -r $SESSION"
@@ -187,10 +202,10 @@ JVM_FLAGS=(
 # 用 screen 的后台模式创建会话，会话名固定为 minecraft，
 # 这样 `screen -r minecraft` 就能直接进入服务器控制台。
 # 注意：变量展开放在 outer shell（双引号），确保参数与路径都正确传入。
-screen -dmS "$SESSION" bash -c "cd \"$MC_DIR\" && exec \"$JAVA_BIN\" $(printf '%q ' "${JVM_FLAGS[@]}") -jar \"$JAR\" nogui"
+"$SCREEN_BIN" -dmS "$SESSION" bash -c "cd \"$MC_DIR\" && exec \"$JAVA_BIN\" $(printf '%q ' "${JVM_FLAGS[@]}") -jar \"$JAR\" nogui"
 
 sleep 3
-if screen -ls 2>/dev/null | grep -qE "[0-9]+\.${SESSION}\b"; then
+if "$SCREEN_BIN" -ls 2>/dev/null | grep -qE "[0-9]+\.${SESSION}\b"; then
     echo
     echo "✓ 已启动。控制台会话：$SESSION"
     echo "  进入控制台：screen -r $SESSION"
