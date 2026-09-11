@@ -38,6 +38,8 @@ export interface UseReplayWSReturn {
   playerName: Ref<string | null>
   /** 服务端能力位 */
   capabilities: Ref<ReplayHelloData['capabilities']>
+  /** 观察者就绪纪元：每次 observer_ready 自增，用于驱动 HLS 重建 */
+  videoReadyEpoch: Ref<number>
   connect: () => void
   close: () => void
   /** 由 VideoSurface 在 hls.js 测到 latency 时调用 */
@@ -105,6 +107,14 @@ export function useReplayWS(
   const playerName = ref<string | null>(null)
   const capabilities = ref<ReplayHelloData['capabilities']>(undefined)
   const degradation = ref<DegradationState>(makeDegradation('L0'))
+  /**
+   * 观察者就绪"纪元"：每次收到 observer_ready 自增，用来驱动 HLS 重建。
+   * <p>不能只依赖 hlsUrl 值变化——hello 帧在连接瞬间就会带上 hlsUrl
+   * （早于 observer 分配、ffmpeg 产出切片），后续 observer_ready 携带的
+   * hlsUrl 字符串与之相同，watch 不会触发，于是一次打空后画面会永久
+   * 卡在"直播流初始化中"。
+   */
+  const videoReadyEpoch = ref(0)
 
   // ★ 对齐时钟：视频延迟 τ + 服务端时钟偏移
   const clock: UseAlignmentClockReturn = useAlignmentClock()
@@ -235,8 +245,10 @@ export function useReplayWS(
         if (kind === 'observer_ready') {
           if (data?.hlsUrl) {
             hlsUrl.value = String(data.hlsUrl)
-            setObserverMsg('info', '观察者就绪，直播画面已连接')
           }
+          // 无论 hlsUrl 是否变化都递增：通知视图重建 HLS（此时切片已落盘）
+          videoReadyEpoch.value += 1
+          setObserverMsg('info', '观察者就绪，直播画面已连接')
         } else if (kind === 'observer_error') {
           setObserverMsg('error', data?.message ? String(data.message) : '观察者错误')
         } else if (kind === 'observer_offline' || kind === 'offline') {
@@ -351,6 +363,7 @@ export function useReplayWS(
     hlsUrl,
     observerMsg,
     degradation,
+    videoReadyEpoch,
     traceDurationMs,
     startTime,
     playerName,

@@ -198,6 +198,12 @@ public class FfmpegManager {
             boolean ok = body.contains("\"ok\":true") || body.contains("\"success\":true")
                     || body.trim().equalsIgnoreCase("ok");
             int pid = parseIntField(body, "ffmpeg_pid");
+            if (ok && body.contains("\"playlist_ready\":false")) {
+                // observer 未在等待窗口内产出首个切片：画面可能延迟若干秒才可用。
+                // 前端 hls.js 会自动重试，此处仅告警，便于运维定位慢启动。
+                logger.warning("[Replay] observer#" + observerId
+                        + " 未在超时内产出首个 HLS 切片，playlist 可能延迟可用: " + hlsUrl);
+            }
             return new StreamResponse(ok, pid, hlsUrl, ok ? null : "observer 返回未成功: " + truncate(body));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -554,20 +560,25 @@ public class FfmpegManager {
             if (files == null) return;
             for (File f : files) {
                 try {
-                    long last = Math.max(f.lastModified(), 0L);
-                    if (now - last < GC_TTL_MS) continue;
                     if (f.isDirectory()) {
                         // 仅清理 uuid 命名的会话目录。
                         // 必须做名字校验：docker-compose 会把各 observer 容器的 /hls
                         // 分别挂载到 <hlsRoot>/<observerId>/（1、2、3），这些目录是
                         // bind mount 的宿主机源目录。若被 GC 删除，容器重启时会因
                         // "Bind mount failed: ... does not exist" 直接启动失败。
-                        if (!isUuidName(f.getName())) {
+                        if (isUuidName(f.getName())) {
+                            if (isExpired(f, now)) {
+                                deleteRecursively(f.toPath());
+                                logger.info("[Replay][GC] 已删除过期 HLS 目录: " + f.getAbsolutePath());
+                            }
                             continue;
                         }
-                        deleteRecursively(f.toPath());
-                        logger.info("[Replay][GC] 已删除过期 HLS 目录: " + f.getAbsolutePath());
-                    } else if (f.isFile() && f.getName().toLowerCase().endsWith(".mp4")) {
+                        // 非 uuid 目录（observerId 挂载目录 / archive）：目录本身绝不能删，
+                        // 但里面的会话产物需要回收，否则每个 observer 子目录会无限堆积。
+                        gcInsideObserverDir(f, now);
+                        continue;
+                    }
+                    if (f.getName().toLowerCase().endsWith(".mp4") && isExpired(f, now)) {
                         if (f.delete()) {
                             logger.info("[Replay][GC] 已删除过期 mp4 文件: " + f.getAbsolutePath());
                         }
@@ -578,6 +589,37 @@ public class FfmpegManager {
             }
         } catch (Throwable t) {
             logger.warning("[Replay][GC] 扫描异常: " + t.getMessage());
+        }
+    }
+
+    private boolean isExpired(File f, long now) {
+        return now - Math.max(f.lastModified(), 0L) >= GC_TTL_MS;
+    }
+
+    /**
+     * 回收 observer 子目录（{@code hls/<observerId>/}）内部的过期产物。
+     * <p>只处理两类：uuid 命名的会话切片目录、以及录制中间产物 {@code <uuid>.mp4}。
+     * {@code archive/} 下的归档文件是取证资料，交由 config 的 retentionDays 策略处理，
+     * 这里绝不动；目录自身更不能删（是容器 bind mount 的源）。
+     */
+    private void gcInsideObserverDir(File dir, long now) {
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File c : children) {
+            try {
+                if (c.isDirectory()) {
+                    if (isUuidName(c.getName()) && isExpired(c, now)) {
+                        deleteRecursively(c.toPath());
+                        logger.info("[Replay][GC] 已删除过期 HLS 目录: " + c.getAbsolutePath());
+                    }
+                } else if (c.getName().toLowerCase().endsWith(".mp4") && isExpired(c, now)) {
+                    if (c.delete()) {
+                        logger.info("[Replay][GC] 已删除过期 mp4 文件: " + c.getAbsolutePath());
+                    }
+                }
+            } catch (Throwable t) {
+                logger.warning("[Replay][GC] 清理失败 " + c.getAbsolutePath() + ": " + t.getMessage());
+            }
         }
     }
 

@@ -154,6 +154,19 @@ public class WebServer {
             ctx.result(JsonMapper.toJson(ApiResp.notFound("接口不存在: " + path)));
             return;
         }
+        // 数据通道（HLS 切片 / WebSocket）绝不能回落到 SPA 首页。
+        // 否则文件尚未落盘时 hls.js 会拿到 index.html 却按 m3u8 解析，
+        // 触发 manifestParsingError 后卡在"直播流初始化中"且无法自愈。
+        if (path.startsWith("/hls/") || path.startsWith("/ws/")) {
+            notFoundPlain(ctx, path);
+            return;
+        }
+        // 静态资源请求（带扩展名，如 .js/.css/.png/.m3u8/.ts）同样不应回落：
+        // 前端拿到 HTML 却以为是脚本/媒体，只会制造难以排查的诡异故障。
+        if (looksLikeStaticAsset(path)) {
+            notFoundPlain(ctx, path);
+            return;
+        }
         // SPA fallback：返回 index.html（200）
         try (InputStream is = getClass().getResourceAsStream("/web/dist/index.html")) {
             if (is != null) {
@@ -170,5 +183,25 @@ public class WebServer {
             ctx.status(500);
             ctx.result("SPA fallback error: " + e.getMessage());
         }
+    }
+
+    /** 返回纯文本 404（不做 SPA 回落），保持 no-cache 以免错误响应被缓存。 */
+    private static void notFoundPlain(Context ctx, String path) {
+        ctx.status(404);
+        ctx.contentType("text/plain; charset=utf-8");
+        ctx.header("Cache-Control", "no-cache");
+        ctx.result("404 Not Found: " + path);
+    }
+
+    /**
+     * 判断路径是否像静态资源（最后一段含扩展名）。
+     * <p>SPA 路由（如 {@code /replay/watch}）没有扩展名，应当回落；
+     * {@code /assets/index-abc.js} 这类请求缺失时必须 404，不能吐出 HTML。
+     */
+    private static boolean looksLikeStaticAsset(String path) {
+        int slash = path.lastIndexOf('/');
+        String last = slash >= 0 ? path.substring(slash + 1) : path;
+        int dot = last.lastIndexOf('.');
+        return dot > 0 && dot < last.length() - 1;
     }
 }

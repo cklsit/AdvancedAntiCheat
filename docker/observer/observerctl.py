@@ -31,6 +31,11 @@ SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
 
 HLS_ROOT = Path("/hls")
 
+# /start 返回前等待首个切片 + playlist 落盘的最长秒数。
+# ffmpeg 使用 -hls_time 2，正常约 2s 产出首个切片；给足余量以覆盖
+# 容器冷启动 / CPU 抢占等抖动。等待期间若 ffmpeg 退出则立即报错。
+PLAYLIST_READY_TIMEOUT = 15.0
+
 app = Flask(__name__)
 
 
@@ -267,7 +272,8 @@ def route_start():
 
         display = os.environ.get("DISPLAY", ":99")
         seg_template = str(out_dir / "seg_%05d.ts")
-        playlist = str(out_dir / "index.m3u8")
+        playlist_path = out_dir / "index.m3u8"
+        playlist = str(playlist_path)
 
         cmd = [
             "ffmpeg", "-y",
@@ -294,12 +300,31 @@ def route_start():
             return jsonify({"ok": False,
                             "error": f"ffmpeg exited immediately code={proc.returncode}"}), 500
 
+        # 等待 playlist 真正就绪再返回。
+        # 若不等待，插件会在 playlist 尚未落盘时就推送 observer_ready，
+        # 前端立即请求 /hls/<uuid>/index.m3u8 得到 404（或 SPA 回落成 HTML），
+        # 表现为画面长期卡在"直播流初始化中"。
+        playlist_ready = False
+        deadline = time.time() + PLAYLIST_READY_TIMEOUT
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                return jsonify({"ok": False,
+                                "error": f"ffmpeg exited while waiting playlist, code={proc.returncode}"}), 500
+            try:
+                # 需要 playlist + 至少一个切片，避免只拿到 #EXTM3U 空表
+                if playlist_path.is_file() and any(out_dir.glob("seg_*.ts")):
+                    playlist_ready = True
+                    break
+            except OSError:
+                pass
+            time.sleep(0.25)
+
         FFMPEG_PROC = proc
         FFMPEG_PID = proc.pid
         CURRENT_UUID = uuid
 
         return jsonify({"ok": True, "ffmpeg_pid": proc.pid, "uuid": uuid,
-                        "playlist": playlist})
+                        "playlist": playlist, "playlist_ready": playlist_ready})
     except Exception as e:
         return jsonify({"ok": False, "error": f"start: {e.__class__.__name__}: {e}"}), 500
 

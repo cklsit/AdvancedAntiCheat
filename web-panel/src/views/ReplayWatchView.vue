@@ -51,6 +51,18 @@ const videoRef = ref<HTMLVideoElement | null>(null)
 const hlsInstance = ref<Hls | null>(null)
 const hlsLoading = ref(false)
 const hlsError = ref('')
+/** 连续失败次数：用于有界重试，避免一次打空后无限空转 */
+let hlsRetryCount = 0
+/** 重试定时器 */
+let hlsRetryTimer: ReturnType<typeof setTimeout> | null = null
+/** 单次重试间隔（ms） */
+const HLS_RETRY_DELAY_MS = 1500
+/**
+ * 最大连续重试次数。取值要覆盖 observer 冷启动链路：
+ * 分配容器 → MC 登录 → ffmpeg 启动 → -hls_time 2 产出首个切片，
+ * 实测约 6~10s，12 次 × 1.5s 留足余量。
+ */
+const HLS_MAX_RETRY = 12
 
 // ==================== 真实画面归档回放（Task 8.5） ====================
 const hasVideoArchive = ref(false)
@@ -155,14 +167,60 @@ const archiveCameraMode = computed<string | null>(() => {
   return mode
 })
 
-function setupHls(url: string): void {
-  const video = videoRef.value
-  if (!video) return
-  // 先销毁旧实例
+/** 把 hlsUrl 解析为绝对地址：错误提示里直接给出可排查的目标 */
+function absUrl(url: string): string {
+  try { return new URL(url, window.location.href).toString() } catch { return url }
+}
+
+/** 销毁 hls 实例 + 取消待执行的重试 + 停掉延迟轮询 */
+function destroyHls(): void {
+  stopLatencyPoller()
+  if (hlsRetryTimer) {
+    clearTimeout(hlsRetryTimer)
+    hlsRetryTimer = null
+  }
   if (hlsInstance.value) {
     try { hlsInstance.value.destroy() } catch { /* noop */ }
     hlsInstance.value = null
   }
+}
+
+/** 完整重置 HLS 状态（新会话开始 / 离开页面时调用） */
+function resetHlsState(): void {
+  destroyHls()
+  hlsLoading.value = false
+  hlsError.value = ''
+  hlsRetryCount = 0
+}
+
+/**
+ * 失败后安排一次有界重试。
+ * <p>为什么不直接销毁报错：observer 冷启动链路（分配容器 → MC 登录 → ffmpeg 启动
+ * → -hls_time 2 产出首个切片）需要数秒，而 WS 的 hello 帧在连接瞬间就会带上
+ * hlsUrl。若首个请求打空就放弃，画面会永久卡在"直播流初始化中"。
+ */
+function scheduleHlsRetry(url: string, reason: string): void {
+  hlsRetryCount += 1
+  destroyHls()
+  if (hlsRetryCount > HLS_MAX_RETRY) {
+    hlsLoading.value = false
+    hlsError.value = `HLS 播放列表加载失败（${reason}），已重试 ${HLS_MAX_RETRY} 次仍不可用。`
+      + `目标：${absUrl(url)}。可能原因：观察者未产出切片、观察者已被释放，`
+      + `或该地址返回的不是 m3u8（例如被 SPA 首页兜底）。`
+    return
+  }
+  // 重试期间保持 loading：HUD 叠层仍可用，不要假装已就绪
+  hlsLoading.value = true
+  hlsRetryTimer = setTimeout(() => {
+    hlsRetryTimer = null
+    setupHls(url)
+  }, HLS_RETRY_DELAY_MS)
+}
+
+function setupHls(url: string): void {
+  const video = videoRef.value
+  if (!video) return
+  destroyHls()
   hlsError.value = ''
   hlsLoading.value = true
 
@@ -177,34 +235,25 @@ function setupHls(url: string): void {
     hls.loadSource(url)
     hls.attachMedia(video)
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      hlsRetryCount = 0
       hlsLoading.value = false
+      hlsError.value = ''
       // 自动播放（muted 保证浏览器允许）
       void video.play().catch(() => { /* 忽略：用户没交互时失败，用户再点按钮即可 */ })
     })
     hls.on(Hls.Events.ERROR, (_e, data) => {
-      if (data.fatal) {
-        switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            // m3u8 连续拿不到（HLS 路由 404 / observer 没写盘）→ 停止无限重试，提示降级
-            if (data.details === 'manifestLoadError') {
-              hlsError.value = 'HLS 播放列表不可用（manifestLoadError）。观察者可能尚未产出切片、已被释放、或 HLS 路由配置异常。'
-              hlsLoading.value = false
-              try { hls.destroy() } catch {}
-              break
-            }
-            hlsError.value = 'HLS 网络错误，正在恢复…'
-            hls.startLoad()
-            break
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            hlsError.value = 'HLS 媒体错误，正在恢复…'
-            hls.recoverMediaError()
-            break
-          default:
-            hlsError.value = `HLS 致命错误：${data.type} ${data.details || ''}`
-            try { hls.destroy() } catch {}
-            break
-        }
+      if (!data.fatal) return
+      const reason = `${data.type}/${data.details || 'unknown'}`
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        // 媒体错误可原地恢复，不消耗重试次数
+        hlsError.value = 'HLS 媒体错误，正在恢复…'
+        try { hls.recoverMediaError() } catch { /* noop */ }
+        return
       }
+      // 其余致命错误统一走有界重试。
+      // 旧实现在"非 manifestLoadError"分支里只调 startLoad() 且不清 hlsLoading，
+      // 于是首个请求打空（比如 playlist 还没落盘）就会永久停在"直播流初始化中"。
+      scheduleHlsRetry(url, reason)
     })
     hlsInstance.value = hls
     // 定期读取 hls.js 实测延迟，更新对齐时钟 τ
@@ -362,18 +411,15 @@ function closeRealtimeWS(): void {
   stopWsDisconnectCheck()
   wsDisconnectedAt = null
   wsDisconnectedTooLong.value = false
-  stopLatencyPoller()
-  latencyReporter = null
   alignedHudFrame.value = null
   degradation.value = { code: 'L0', level: 'L0', label: '正常', evidenceValue: '完整' }
   if (wsReturn) {
     wsReturn.close()
     wsReturn = null
   }
-  if (hlsInstance.value) {
-    try { hlsInstance.value.destroy() } catch { /* noop */ }
-    hlsInstance.value = null
-  }
+  // HLS 实例 / 重试定时器 / loading 标记必须一并清干净，
+  // 否则下次进入直播页会沿用上一次的 hlsLoading=true，直接卡在初始化态
+  resetHlsState()
   // 清空实时 refs
   wsState.value = 'disconnected'
   latencyMs.value = 0
@@ -637,6 +683,8 @@ function onProgressPointerUp(e: PointerEvent): void {
 async function loadRealtime(): Promise<void> {
   loading.value = true
   loadError.value = ''
+  // 新会话从干净状态开始：清掉上一次遗留的 hls 实例 / 重试计数 / loading 标记
+  resetHlsState()
   try {
     // 清空历史数据
     session.value = null

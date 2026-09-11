@@ -923,17 +923,84 @@ public class ObserverPoolManager {
         // 清理中间产物：HLS 切片目录 + archive mp4（内容已完整打入 ZIP）
         // 失败仅记日志，不影响存档（FfmpegManager 的 24h GC 兜底）
         try {
-            File hlsSessionDir = new File(hostHlsRoot, sessionId);
-            if (hlsSessionDir.isDirectory() && deleteRecursively(hlsSessionDir.toPath())) {
+            // 切片目录同样落在 hls/<observerId>/<sessionId>/，需回退查找
+            File hlsSessionDir = resolveSessionDir(hostHlsRoot, sessionId);
+            if (hlsSessionDir != null && hlsSessionDir.isDirectory()
+                    && deleteRecursively(hlsSessionDir.toPath())) {
                 logger.info("[Replay-Pool][Zip] 已清理 HLS 切片目录: " + hlsSessionDir.getAbsolutePath());
             }
-            File archiveMp4 = new File(new File(hostHlsRoot, "archive"), mp4OutFilename);
-            if (archiveMp4.exists() && archiveMp4.delete()) {
-                logger.info("[Replay-Pool][Zip] 已清理中间 mp4: " + archiveMp4.getAbsolutePath());
+            if (hostMp4File.exists() && hostMp4File.delete()) {
+                logger.info("[Replay-Pool][Zip] 已清理中间 mp4: " + hostMp4File.getAbsolutePath());
+            }
+            // /stop 另有一份会话级中间产物 hls/<observerId>/<sessionId>.mp4，
+            // 内容已进 ZIP，同样清掉，否则每个 observer 子目录会长期残留数 MB
+            File sessionMp4 = resolveSessionMp4(hostHlsRoot, sessionId);
+            if (sessionMp4 != null && sessionMp4.isFile() && sessionMp4.delete()) {
+                logger.info("[Replay-Pool][Zip] 已清理会话级中间 mp4: " + sessionMp4.getAbsolutePath());
             }
         } catch (Throwable t) {
             logger.warning("[Replay-Pool][Zip] 清理中间文件失败（由 24h GC 兜底）: " + t.getMessage());
         }
+    }
+
+    /**
+     * 在 HLS 根目录下解析归档 mp4。兼容两种布局：
+     * <ul>
+     *   <li>{@code <root>/archive/<name>} —— 容器按 uuid 直挂 {@code /hls} 的旧布局</li>
+     *   <li>{@code <root>/<observerId>/archive/<name>} —— docker-compose 把容器 {@code /hls}
+     *       整体挂到 {@code hls/<observerId>} 时的当前布局（容器内路径 {@code /hls/archive/x}
+     *       落到宿主 {@code hls/<observerId>/archive/x}）</li>
+     * </ul>
+     * 多个 observer 子目录都命中时取最后修改时间最新的一个，避免拿到陈旧文件。
+     */
+    private static File resolveArchiveMp4(File hlsRoot, String fileName) {
+        if (hlsRoot == null) return null;
+        File direct = new File(new File(hlsRoot, "archive"), fileName);
+        if (direct.isFile()) return direct;
+        File[] subdirs = hlsRoot.listFiles(File::isDirectory);
+        if (subdirs == null || subdirs.length == 0) return direct;
+        File best = null;
+        for (File sub : subdirs) {
+            File candidate = new File(new File(sub, "archive"), fileName);
+            if (!candidate.isFile()) continue;
+            if (best == null || candidate.lastModified() > best.lastModified()) best = candidate;
+        }
+        return best != null ? best : direct;
+    }
+
+    /** 在 HLS 根目录（含各 observer 子目录）下定位某次录制的切片目录。 */
+    private static File resolveSessionDir(File hlsRoot, String sessionId) {
+        if (hlsRoot == null) return null;
+        File direct = new File(hlsRoot, sessionId);
+        if (direct.isDirectory()) return direct;
+        File[] subdirs = hlsRoot.listFiles(File::isDirectory);
+        if (subdirs == null || subdirs.length == 0) return direct;
+        File best = null;
+        for (File sub : subdirs) {
+            File candidate = new File(sub, sessionId);
+            if (!candidate.isDirectory()) continue;
+            if (best == null || candidate.lastModified() > best.lastModified()) best = candidate;
+        }
+        return best != null ? best : direct;
+    }
+
+    /**
+     * 定位 {@code /stop} 产出的会话级中间 mp4（{@code <sessionId>.mp4}）。
+     * 同样需要兼容 {@code hls/<observerId>/<sessionId>.mp4} 布局。
+     */
+    private static File resolveSessionMp4(File hlsRoot, String sessionId) {
+        if (hlsRoot == null) return null;
+        File direct = new File(hlsRoot, sessionId + ".mp4");
+        if (direct.isFile()) return direct;
+        File[] subdirs = hlsRoot.listFiles(File::isDirectory);
+        if (subdirs == null || subdirs.length == 0) return direct;
+        File best = null;
+        for (File sub : subdirs) {
+            File candidate = new File(sub, sessionId + ".mp4");
+            if (!candidate.isFile()) continue;
+            if (best == null || candidate.lastModified() > best.lastModified()) best = candidate;
+        }
+        return best != null ? best : direct;
     }
 
     /** 递归删除目录（打包完成后清理 HLS 中间产物用）。 */
