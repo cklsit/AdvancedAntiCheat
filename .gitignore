@@ -18,6 +18,10 @@ buildNumber.properties
 
 # Test server folders (do not commit)
 test/
+
+# Python 编译产物（observerctl.py 等）
+__pycache__/
+*.pyc
 测试/
 
 # Release pipeline scripts (local use only)
