@@ -11,12 +11,14 @@ observerctl.py  –  观察者客户端 HTTP 控制 API
   POST /mc/down             离线：终止 MC 客户端（容器与 observerctl 仍常驻）
 """
 
+import functools
 import os
 import re
 import shlex
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -45,6 +47,27 @@ MC_WANT_FLAG = Path(os.environ.get("MC_ONDEMAND_FLAG", "/tmp/mc_wanted"))
 PLAYLIST_READY_TIMEOUT = 15.0
 
 app = Flask(__name__)
+
+# 串行化「ffmpeg 生命周期」操作（start / stop / stream-kill / mc-down）。
+#
+# 为什么必须串行：FFMPEG_PID / FFMPEG_PROC / CURRENT_UUID 是**进程级单例**，
+# 而 Flask 默认多线程处理请求。若两个 /start 并发进入：
+#   1) 两者都读到"当前没有 ffmpeg 在跑"，于是**各自拉起一个 ffmpeg**；
+#   2) 两个 ffmpeg 用同一个 -hls_segment_filename 与同一个 index.m3u8，
+#      互相覆盖切片与播放列表 —— 前端表现为**画面持续闪烁**（同一时刻
+#      可能读到 A 的切片头 + B 的列表，或列表时长反复跳变）；
+#   3) 全局变量只记住后一个进程，先启动的那个从此失控（杀不掉、看不到）。
+# 加锁后：后到的 /start 会先杀掉前者再启动，任意时刻最多一个 ffmpeg。
+_FFMPEG_LOCK = threading.Lock()
+
+
+def _serialized(fn):
+    """把请求处理体放进 _FFMPEG_LOCK，串行执行。"""
+    @functools.wraps(fn)
+    def _wrapper(*args, **kwargs):
+        with _FFMPEG_LOCK:
+            return fn(*args, **kwargs)
+    return _wrapper
 
 
 # ---------- 工具函数 ----------
@@ -259,6 +282,7 @@ def route_status():
 
 
 @app.route("/start", methods=["POST"])
+@_serialized
 def route_start():
     global FFMPEG_PID, FFMPEG_PROC, CURRENT_UUID
 
@@ -272,6 +296,26 @@ def route_start():
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             return jsonify({"ok": False, "error": f"mkdir failed: {e}"}), 500
+
+        # 幂等：已经在为同一个 uuid 录制时直接复用，**不要杀掉重建**。
+        # 插件侧的 acquire 可能因"重试任务 + 看门狗"并发到达，同一目标被启动两次；
+        # 重复 /start 若每次都重建 ffmpeg，会中断画面，并且（在无锁实现下）
+        # 留下两个进程并发写同一目录 —— 前端表现为画面持续闪烁。
+        if _ffmpeg_running() and CURRENT_UUID == uuid:
+            pl = out_dir / "index.m3u8"
+            _ready = False
+            try:
+                _ready = pl.is_file() and "seg_" in pl.read_text(errors="ignore")
+            except OSError:
+                _ready = False
+            return jsonify({
+                "ok": True,
+                "ffmpeg_pid": FFMPEG_PID,
+                "uuid": uuid,
+                "playlist": str(pl),
+                "playlist_ready": _ready,
+                "reused": True,
+            })
 
         # 清理上一次没正常结束的 ffmpeg
         if _ffmpeg_running():
@@ -493,6 +537,7 @@ def route_mc_up():
 
 
 @app.route("/mc/down", methods=["POST"])
+@_serialized
 def route_mc_down():
     """要求 MC 客户端退出服务器（离线）。
 
@@ -526,6 +571,7 @@ def route_mc_down():
 
 
 @app.route("/stream/kill", methods=["POST"])
+@_serialized
 def route_stream_kill():
     """强制结束当前录制且**不做 mp4 合成**，用于清理残留/孤儿流。
 
@@ -544,6 +590,7 @@ def route_stream_kill():
 
 
 @app.route("/stop", methods=["POST"])
+@_serialized
 def route_stop():
     global FFMPEG_PID, FFMPEG_PROC, CURRENT_UUID
     try:

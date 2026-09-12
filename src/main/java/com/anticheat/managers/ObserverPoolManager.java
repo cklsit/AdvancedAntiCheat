@@ -60,6 +60,12 @@ public class ObserverPoolManager {
         public volatile long followStartTimeMs;
         /** 最近一次「直播流中断自愈」的尝试时间（ms），用于冷却，避免反复重建 */
         public volatile long lastRecoveryMs;
+        /**
+         * 当前 acquire 流程的开始时间（ms）；0 = 无进行中的 acquire。
+         * 用于让看门狗区分「客户端冷启动中」与「observer 真的掉线」——
+         * 前者玩家本来就不在服务器内，若误判会解绑并触发重复 acquire。
+         */
+        public volatile long acquireStartedMs;
 
         Observer(int id, String name, String baseUrl) {
             this.id = id;
@@ -70,6 +76,7 @@ public class ObserverPoolManager {
             this.streamSessionId = null;
             this.followStartTimeMs = 0;
             this.lastRecoveryMs = 0;
+            this.acquireStartedMs = 0;
         }
     }
 
@@ -173,8 +180,11 @@ public class ObserverPoolManager {
      */
     public void decrementSubscriber(UUID targetUuid) {
         if (targetUuid == null) return;
+        // 已经归零过：忽略重复的关闭事件，避免重复触发 release（日志噪音）
+        Integer prev = subscribersPerTarget.get(targetUuid);
+        if (prev == null) return;
         Integer n = subscribersPerTarget.compute(targetUuid, (k, v) -> (v != null && v > 1) ? v - 1 : null);
-        if (n == null || n == 0) {
+        if (n == null) {
             logger.info("[Replay-Pool] 目标订阅者归零，触发 release: " + targetUuid);
             release(targetUuid);
         }
@@ -311,6 +321,7 @@ public class ObserverPoolManager {
         // 4. 标记为 BUSY 并记录
         picked.status = "BUSY";
         picked.busyTarget = targetUuid;
+        picked.acquireStartedMs = System.currentTimeMillis();
         busyObservers.put(targetUuid, picked);
         final Observer obs = picked;
         // 有新观看请求：取消该 observer 的空闲退服计划（否则可能刚拉起就被判空闲下线）
@@ -401,6 +412,8 @@ public class ObserverPoolManager {
                         ? sr.hlsUrl
                         : plugin.getFfmpegManager().hlsUrl(targetUuid);
                 pushObserverEvent(targetUuid, "observer_ready", "画面就绪", hlsUrl);
+                // acquire 结束：此后看门狗恢复对「是否在服务器内」的判定
+                obs.acquireStartedMs = 0L;
 
             } catch (Throwable t) {
                 logger.log(Level.SEVERE, "[Replay-Pool] acquire 异步流程异常 observer#"
@@ -716,6 +729,7 @@ public class ObserverPoolManager {
         obs.busyTarget = null;
         obs.streamSessionId = null;
         obs.followStartTimeMs = 0;
+        obs.acquireStartedMs = 0L;
         obs.status = "READY";
         logger.info("[Replay-Pool] rollback 完成：observer#" + obs.id + " 已归还 READY");
     }
@@ -1179,6 +1193,7 @@ public class ObserverPoolManager {
         obs.busyTarget = null;
         obs.streamSessionId = null;
         obs.followStartTimeMs = 0L;
+        obs.acquireStartedMs = 0L;
         obs.status = "READY";
         if (target != null) {
             busyObservers.remove(target, obs);
@@ -1234,6 +1249,16 @@ public class ObserverPoolManager {
                     acquire(target);
                     continue;
                 }
+                // acquire 进行中：客户端正在冷启动（JVM + 软件渲染 + 连服需数十秒），
+                // 此期间玩家本来就不在服务器内 —— 这不是掉线。
+                // 若不排除，看门狗会解绑并触发第二次 acquire，最终两个 ffmpeg
+                // 并发写同一个 HLS 目录（切片与 index.m3u8 互相覆盖）→ 前端画面持续闪烁。
+                long acqAge = (obs.acquireStartedMs > 0)
+                        ? (System.currentTimeMillis() - obs.acquireStartedMs)
+                        : Long.MAX_VALUE;
+                if (acqAge < acquireGraceMs()) {
+                    continue;
+                }
                 if (Bukkit.getPlayerExact(obs.name) == null) {
                     logger.warning("[Replay-Pool][watchdog] observer#" + obs.id + " (" + obs.name
                             + ") 已不在服务器内，解除绑定并重新分配");
@@ -1258,6 +1283,16 @@ public class ObserverPoolManager {
         } catch (Throwable t) {
             logger.log(Level.WARNING, "[Replay-Pool][watchdog] 巡检异常: " + t.getMessage(), t);
         }
+    }
+
+    /**
+     * acquire 进行中的宽限期（ms）：覆盖客户端冷启动并登录的耗时。
+     * 取「配置的登录超时 + 30s 余量」，避免看门狗把"正在进服"误判成"已掉线"。
+     */
+    private long acquireGraceMs() {
+        int sec = Math.max(30, plugin.getConfig()
+                .getInt("replay.observer.loginTimeoutSeconds", 150));
+        return (sec + 30) * 1000L;
     }
 
     /**
@@ -1291,6 +1326,7 @@ public class ObserverPoolManager {
         obs.busyTarget = null;
         obs.streamSessionId = null;
         obs.followStartTimeMs = 0L;
+        obs.acquireStartedMs = 0L;
         obs.status = "READY";
     }
 
