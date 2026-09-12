@@ -91,3 +91,12 @@ docker/observer/jdk8/
 # Frontend transient artifacts
 web-panel/vite.config.ts.timestamp-*.mjs
 web-panel/dist.bak/
+
+# 内部文档：不随远程仓库发布（本地保留，远程仓库只保留根 README.md 与子目录 README）
+/CODE_WIKI.md
+/spec.md
+/tasks.md
+/check_list.md
+/重构设计_违规回放.md
+/重构说明_全项检测.md
+/仓库分析报告.md
