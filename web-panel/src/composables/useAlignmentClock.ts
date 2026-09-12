@@ -61,12 +61,32 @@ export function useAlignmentClock(
   /** 按 w 升序的环形缓冲。不做整数组重建，避免 20Hz 下的 GC 压力 */
   let buffer: BufferedFrame[] = []
   let timer: ReturnType<typeof setInterval> | null = null
+  /** 最近一帧（用于稀疏字段的前向填充） */
+  let lastFrame: HudFrame | null = null
 
   function serverNow(): number {
     return Date.now() + clockOffsetMs.value
   }
 
   function push(frame: HudFrame): void {
+    // 稀疏字段前向填充（与归档路径 archiveHudFrame 的「稀疏字段回溯」等价）：
+    // 服务端为省开销，hotbar / finv（完整 36 格背包）每 ~20 帧（约 1s）才采样一次，
+    // 其余帧**不带**这两个字段。若直接渲染，快捷栏物品与完整背包面板会
+    // 「亮 50ms → 灭 950ms」地闪烁。这里用最近一次采样值补齐缺失字段，
+    // 使缓冲内任意被选中的帧都携带完整 HUD。
+    // 注意语义：字段「缺失」= 本帧未采样；「显式空数组」= 采样了且就是空的，
+    // 后者不能被旧值覆盖，否则玩家清空背包后叠层会一直显示旧物品。
+    const prev = lastFrame
+    if (prev) {
+      if (!Array.isArray(frame.hotbar) && Array.isArray(prev.hotbar)) {
+        frame.hotbar = prev.hotbar
+      }
+      if (frame.finv == null && prev.finv != null) {
+        frame.finv = prev.finv
+      }
+    }
+    lastFrame = frame
+
     const w = typeof frame.w === 'number' ? frame.w : Date.now()
     const buf = buffer
 
@@ -136,6 +156,7 @@ export function useAlignmentClock(
 
   function reset(): void {
     buffer = []
+    lastFrame = null
     alignedFrame.value = null
     videoLatencyMs.value = defaultLatencyMs
   }
