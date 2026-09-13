@@ -46,6 +46,7 @@ public final class WebRouter {
         ConfigHandler config = new ConfigHandler(plugin, auditManager);
         DebugOnlineHandler debugOnline = new DebugOnlineHandler(plugin);
         ReplayHandler replay = new ReplayHandler(plugin, auditManager);
+        AILabHandler aiLab = new AILabHandler(plugin, auditManager);
 
         meta.register(app);  // 先注册，因为不需要鉴权（AuthFilter 白名单放行）
         debugOnline.register(app);  // 调试端点，白名单放行
@@ -58,6 +59,7 @@ public final class WebRouter {
         notif.register(app);
         config.register(app);
         replay.register(app);
+        aiLab.register(app);
 
         // ===== 调试：ObserverPoolManager 状态快照（需要鉴权，因为在 /api/* 下走 AuthFilter） =====
         app.get("/api/replay/observer-status", ctx -> {

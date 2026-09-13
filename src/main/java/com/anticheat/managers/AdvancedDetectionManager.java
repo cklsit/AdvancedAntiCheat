@@ -296,9 +296,46 @@ public class AdvancedDetectionManager {
         double combatProb = combatModule.getProbability();
         double behaviorProb = behaviorEngine.getAnomalyScore(player);
 
+        // AI 实验室自适应灵敏度作用于规则模块（误报多的模块自动降权）
+        com.anticheat.ai.AILabManager aiLab = plugin.getAILabManager();
+        if (aiLab != null && aiLab.isRunning()) {
+            movementProb *= aiLab.getThresholdController().getSensitivity("movement");
+            combatProb *= aiLab.getThresholdController().getSensitivity("combat");
+            behaviorProb *= aiLab.getThresholdController().getSensitivity("behavior");
+            movementProb = Math.min(1.0, movementProb);
+            combatProb = Math.min(1.0, combatProb);
+            behaviorProb = Math.min(1.0, behaviorProb);
+        }
+
         fusionEngine.addPlayerProbability(uuid, "movement", movementProb);
         fusionEngine.addPlayerProbability(uuid, "combat", combatProb);
         fusionEngine.addPlayerProbability(uuid, "behavior", behaviorProb);
+
+        // AI 三路评分注入融合链路（缺项返回 -1 时跳过）
+        if (aiLab != null && aiLab.isRunning()) {
+            double personal = aiLab.getPersonalAnomaly(uuid);
+            if (personal >= 0) {
+                fusionEngine.addPlayerProbability(uuid, "aiPersonal",
+                        personal * aiLab.getThresholdController().getSensitivity("aiPersonal"));
+            }
+            double global = aiLab.getGlobalAnomaly(uuid);
+            if (global >= 0) {
+                fusionEngine.addPlayerProbability(uuid, "aiGlobal",
+                        global * aiLab.getThresholdController().getSensitivity("aiGlobal"));
+            }
+            double supervised = aiLab.getSupervisedProbability(uuid);
+            if (supervised >= 0) {
+                fusionEngine.addPlayerProbability(uuid, "aiSupervised",
+                        supervised * aiLab.getThresholdController().getSensitivity("aiSupervised"));
+            }
+            // 静默观察名单（融合分 0.5~0.9，不触发动作，仅记录）
+            if (aiLab.isWatchlisted(uuid)) {
+                List<String> detections = playerDetections.computeIfAbsent(uuid, k -> new CopyOnWriteArrayList<>());
+                if (!detections.contains("AI_WATCH")) {
+                    detections.add("AI_WATCH");
+                }
+            }
+        }
 
         double rcp = rcpComputer.computeRCP(uuid);
         playerRCP.put(uuid, rcp);

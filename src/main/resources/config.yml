@@ -335,6 +335,53 @@ behavior:
   anti-recon:
     enabled: true
 
+# ============ AI 实验室（双模驱动 / 持续学习 / 人机协同闭环） ============
+# 双模驱动：规则引擎（高精度）+ AI 异常检测（广覆盖）并行，评分经 RCP 融合。
+# 持续学习：每玩家在线 K-Means 个人基线 + 全局孤立森林（未知作弊）+ 监督逻辑回归（标签闭环）。
+# 轻量级：全部模型在异步线程运算，主线程仅做 O(1) 快照；每玩家内存 < 5KB。
+# 可插拔：ailab.enabled=false 即整段关闭，退化为纯规则模式，无任何额外开销。
+ailab:
+  enabled: true
+  # 特征采样：每 20 tick（1 秒）主线程快照 + 异步特征计算
+  features:
+    dims: 48                # 特征维度（当前版本固定 48）
+  baseline:
+    # 玩家个人行为基线（Online K-Means，K=3 中心）
+    enabled: true
+    warmup-samples: 300     # warmup 样本数（1Hz 采样 → 300 ≈ 5 分钟），期间不产出个人异常分
+  forest:
+    # 全局孤立森林（无监督，识别未知作弊）
+    enabled: true
+    trees: 100              # 树数量
+    sample-size: 256        # 每棵树子采样
+    height-limit: 8         # 树高限制
+    history-capacity: 2000  # 特征历史库容量（最近 24h 建模窗口）
+  cluster:
+    # 新作弊集群发现：高分 + 特征靠近 → 集群 + 特征指纹
+    enabled: true
+    score-threshold: 0.75   # 全局异常分入选线
+    cosine-threshold: 0.85  # 特征余弦相似度归并线
+    ttl-minutes: 120        # 集群过期时间
+  adaptive:
+    # PID 自适应阈值调节器（误报率闭环，目标 < 0.5%）
+    window-size: 50         # 反馈滑动窗口
+  supervised:
+    # 监督分类器（逻辑回归）+ 标签回流训练
+    enabled: true
+    auto-train: true        # 标签达标后自动训练
+    min-labels: 100         # 首次训练所需最少标签数
+    min-new-labels: 20      # 距上次训练新增标签触发线
+    max-labels: 20000       # 标签存储上限
+  fusion:
+    # AI 融合分权重（个人/全局/监督，缺项自动重归一）
+    personal-weight: 0.35
+    global-weight: 0.35
+    supervised-weight: 0.30
+  decision:
+    # AI 融合分决策线
+    watch-threshold: 0.50   # ≥ 此值：静默标记（管理员面板可见）
+    alert-threshold: 0.90   # ≥ 此值：注入 RCP 高置信链路（由决策中心分级处置）
+
 # Web 管理面板配置
 # 插件启动时自动启动内嵌 HTTP+WS 服务器，访问 http://<server-ip>:<port>/ 即打开面板
 # 演示账号：明文密码 = 用户名（admin/admin、moderator/moderator、reviewer/reviewer、observer/observer）
@@ -494,3 +541,16 @@ replay:
     # 需要同时看多个玩家时，按同样格式追加 2:、3: 即可（端口建议 18082、18083）。
     1:
       url: http://127.0.0.1:18081
+
+# ==============================================================
+# 游戏内管理界面（/ac config）
+# ==============================================================
+# 六层菜单：主菜单 → 在线玩家列表 → 玩家详情 → 封禁时长
+#                       └→ 封禁名单 → 封禁详情（解封）
+# 需求权限：anticheat.admin / anticheat.config
+gui:
+  enabled: true                      # 关闭后 /ac config 会提示已禁用
+  title-prefix: "§8AAC"              # 所有菜单标题前缀
+  filler-material: "BARRIER"         # 边框/空位填充物（1.8 与 1.21 均存在；可换 STAINED_GLASS_PANE/GLASS 等）
+  ban-reason: "管理员通过管理界面封禁"   # GUI 封禁时写入的原因
+  kick-reason: "§c你已被管理员移出服务器" # GUI「踢出服务器」的踢出提示

@@ -1,18 +1,23 @@
 package com.anticheat.commands;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.gui.ConfigGUI;
 import com.anticheat.gui.ProfileGUI;
 import com.anticheat.managers.ReportManager;
+import com.anticheat.utils.VersionUtil;
 import com.anticheat.web.util.PasswordHasher;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
-import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-public class AntiCheatCommand implements CommandExecutor {
+public class AntiCheatCommand implements TabExecutor {
 
     private final AdvancedAntiCheat plugin;
 
@@ -49,6 +54,8 @@ public class AntiCheatCommand implements CommandExecutor {
             showHelp(sender);
         } else if (subCommand.equals("profile")) {
             handleProfile(sender, args);
+        } else if (subCommand.equals("config")) {
+            handleConfig(sender);
         } else if (subCommand.equals("genpwd")) {
             handleGenpwd(sender, args);
         } else if (subCommand.equals("replay")) {
@@ -58,6 +65,69 @@ public class AntiCheatCommand implements CommandExecutor {
         }
 
         return true;
+    }
+
+    // ================================================================
+    // Tab 补全
+    // ================================================================
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!sender.hasPermission("anticheat.admin")) {
+            return Collections.emptyList();
+        }
+        if (args.length == 1) {
+            return filterPrefix(Arrays.asList(
+                    "reload", "stats", "reports", "profile", "config", "genpwd", "replay", "help"), args[0]);
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("profile")) {
+            List<String> names = new ArrayList<>();
+            for (Player online : VersionUtil.safeGetOnlinePlayers()) {
+                if (online != null) {
+                    names.add(online.getName());
+                }
+            }
+            return filterPrefix(names, args[1]);
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("replay")) {
+            return filterPrefix(Arrays.asList("status", "setup", "disable", "enable", "down", "docker"), args[1]);
+        }
+        return Collections.emptyList();
+    }
+
+    private List<String> filterPrefix(List<String> options, String prefix) {
+        String lower = prefix == null ? "" : prefix.toLowerCase();
+        List<String> matched = new ArrayList<>();
+        for (String option : options) {
+            if (option.toLowerCase().startsWith(lower)) {
+                matched.add(option);
+            }
+        }
+        return matched;
+    }
+
+    // ================================================================
+    // /ac config —— 六层游戏内管理界面
+    // ================================================================
+    private void handleConfig(CommandSender sender) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("§c只有玩家可以使用该界面，控制台请使用 /ac stats 或 Web 面板。");
+            return;
+        }
+        if (!sender.hasPermission("anticheat.config")) {
+            sender.sendMessage("§c你没有权限打开管理界面（anticheat.config）。");
+            return;
+        }
+        if (!plugin.getConfig().getBoolean("gui.enabled", true)) {
+            sender.sendMessage("§c管理界面已在 config.yml 中关闭（gui.enabled: false）。");
+            return;
+        }
+        Player viewer = (Player) sender;
+        try {
+            new ConfigGUI(plugin).openMain(viewer);
+        } catch (Throwable t) {
+            viewer.sendMessage("§c打开管理界面失败，请查看控制台日志。");
+            plugin.getLogger().warning("[GUI] 打开 /ac config 失败: " + t);
+        }
     }
 
     // ================================================================
@@ -134,6 +204,7 @@ public class AntiCheatCommand implements CommandExecutor {
         sender.sendMessage(" §a" + pad("/ac stats", 34) + "§8» §7查看检测统计信息");
         sender.sendMessage(" §a" + pad("/ac reports", 34) + "§8» §7查看待处理举报列表");
         sender.sendMessage(" §a" + pad("/ac profile <玩家>", 34) + "§8» §7查看玩家行为档案");
+        sender.sendMessage(" §a" + pad("/ac config", 34) + "§8» §7打开游戏内管理界面（玩家/封禁/白名单）");
         sender.sendMessage(" §a" + pad("/ac genpwd <密码>", 34) + "§8» §7生成 Web 面板密码哈希");
         sender.sendMessage(" §a" + pad("/ac replay <status|setup|...>", 34) + "§8» §7违规回放观察者部署管理");
         sender.sendMessage(" §a" + pad("/ac help", 34) + "§8» §7显示此帮助信息");

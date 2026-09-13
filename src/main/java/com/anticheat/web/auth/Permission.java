@@ -32,6 +32,10 @@ public final class Permission {
     public static final String NOTIFICATIONS_READ = "notifications:read";
     public static final String NOTIFICATIONS_ALL = "notifications:*";
 
+    public static final String AILAB_READ = "ailab:read";
+    public static final String AILAB_MANAGE = "ailab:manage";
+    public static final String AILAB_ALL = "ailab:*";
+
     private Permission() {
     }
 

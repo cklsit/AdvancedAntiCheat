@@ -50,6 +50,11 @@ public class CheckClientManager {
         frozenLocations.put(targetUUID, target.getLocation().clone());
         originalGameModes.put(targetUUID, target.getGameMode());
 
+        // 先施加限制再登记"被查端"标记：
+        // PlayerCheckListener 会取消被查端玩家的 PlayerGameModeChangeEvent / PlayerTeleportEvent，
+        // 若先登记再切模式，切冒险模式这一步会被自己取消掉（冻结形同虚设）。
+        applyRestrictions(target);
+
         CheckInfo info = new CheckInfo(
             targetUUID,
             target.getName(),
@@ -61,7 +66,6 @@ public class CheckClientManager {
         );
         checkingPlayers.put(targetUUID, info);
 
-        applyRestrictions(target);
         applyBlindnessEffect(target);
         showTitle(target);
         showChatMessage(target, admin.getName(), qqNumber);
@@ -78,12 +82,11 @@ public class CheckClientManager {
             return;
         }
 
+        // 先摘除"被查端"标记再解除限制：否则 PlayerCheckListener 会取消下面的
+        // setGameMode / teleport，玩家查端结束后会卡在冒险模式且位置不还原。
+        checkingPlayers.remove(playerUUID);
         removeRestrictions(player);
         chatCompat.sendMessage(player, "§a玩家已被解除检查状态!");
-
-        checkingPlayers.remove(playerUUID);
-        frozenLocations.remove(playerUUID);
-        originalGameModes.remove(playerUUID);
 
         saveCheckData();
     }
@@ -95,6 +98,7 @@ public class CheckClientManager {
             return;
         }
 
+        checkingPlayers.remove(playerUUID);
         removeRestrictions(player);
 
         String ip = player.getAddress().getAddress().getHostAddress();
@@ -108,10 +112,6 @@ public class CheckClientManager {
         );
 
         plugin.getLogger().info("玩家 " + playerName + " (IP: " + ip + ") 因客户端检查未通过被永久封禁");
-
-        checkingPlayers.remove(playerUUID);
-        frozenLocations.remove(playerUUID);
-        originalGameModes.remove(playerUUID);
 
         saveCheckData();
     }
@@ -135,8 +135,8 @@ public class CheckClientManager {
     public void forceUnfreeze(Player player) {
         UUID playerUUID = player.getUniqueId();
         if (checkingPlayers.containsKey(playerUUID)) {
-            removeRestrictions(player);
             checkingPlayers.remove(playerUUID);
+            removeRestrictions(player);
             frozenLocations.remove(playerUUID);
             originalGameModes.remove(playerUUID);
             saveCheckData();
@@ -270,8 +270,8 @@ public class CheckClientManager {
     public void onPlayerQuit(Player player) {
         UUID playerUUID = player.getUniqueId();
         if (checkingPlayers.containsKey(playerUUID)) {
-            removeRestrictions(player);
             checkingPlayers.remove(playerUUID);
+            removeRestrictions(player);
             frozenLocations.remove(playerUUID);
             originalGameModes.remove(playerUUID);
             saveCheckData();

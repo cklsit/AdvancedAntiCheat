@@ -140,8 +140,9 @@ public class CaptchaWorld {
     }
 
     public void preparePlayer(Player player) {
-        player.getInventory().clear();
-        player.getEnderChest().clear();
+        // 注意：背包/末影箱的清空**不在这里**。
+        // 清空与还原必须成对出现，统一由 CaptchaManager.snapshotAndClearInventory / restoreInventory 负责，
+        // 否则就会出现"清空后没人还原 → 查端结束背包全空"的数据丢失事故（2026-09-13）。
         player.setHealth(20);
         player.setFoodLevel(20);
         player.setSaturation(5);

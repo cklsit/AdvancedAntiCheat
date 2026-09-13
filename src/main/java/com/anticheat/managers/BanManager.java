@@ -7,15 +7,18 @@ import org.bukkit.entity.Player;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class BanManager {
 
     private final AdvancedAntiCheat plugin;
     private DatabaseManager databaseManager;
-    private final Map<UUID, BanInfo> bans = new HashMap<>();
+    /** 允许异步封禁线程与主线程并发读写，避免管理 GUI 遍历时出现 ConcurrentModificationException */
+    private final Map<UUID, BanInfo> bans = new ConcurrentHashMap<>();
     private final File bansFile;
 
     public BanManager(AdvancedAntiCheat plugin) {
@@ -171,6 +174,33 @@ public class BanManager {
             }
         }
         return allBans;
+    }
+
+    /**
+     * 供管理 GUI 使用的封禁快照：UUID → BanInfo，内存记录优先，再合并数据库中尚未同步的记录。
+     * 返回值已复制为独立 Map，调用方遍历不会影响内部状态。
+     */
+    public Map<UUID, BanInfo> getBanEntries() {
+        Map<UUID, BanInfo> snapshot = new LinkedHashMap<>();
+        for (Map.Entry<UUID, BanInfo> entry : bans.entrySet()) {
+            if (entry.getKey() != null && entry.getValue() != null) {
+                snapshot.put(entry.getKey(), entry.getValue());
+            }
+        }
+        if (databaseManager != null) {
+            try {
+                for (BanRecord record : databaseManager.getAllBans()) {
+                    if (record == null || record.playerUUID == null || snapshot.containsKey(record.playerUUID)) {
+                        continue;
+                    }
+                    snapshot.put(record.playerUUID,
+                            new BanInfo(record.playerName, record.expiryTime, record.reason));
+                }
+            } catch (Throwable t) {
+                plugin.getLogger().warning("[Ban] 合并数据库封禁记录失败: " + t.getMessage());
+            }
+        }
+        return snapshot;
     }
 
     private void kickPlayer(Player player, String duration, String reason) {

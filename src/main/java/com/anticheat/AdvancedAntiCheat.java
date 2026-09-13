@@ -36,8 +36,14 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private CaptchaManager captchaManager;
     private BountyManager bountyManager;
     private ProfileManager profileManager;
+    /** 可信白名单：名单内玩家挂载 anticheat.bypass 附件，全局豁免反作弊封禁 */
+    private WhitelistManager whitelistManager;
     private com.anticheat.listeners.ProfileGUIListener profileGUIListener;
+    /** /ac config 多级管理界面 */
+    private com.anticheat.listeners.ConfigGUIListener configGUIListener;
     private AdvancedDetectionManager advancedDetectionManager;
+    /** AI 实验室：特征工程 + 个人基线 + 孤立森林 + 集群发现 + 自适应阈值 + 监督闭环 */
+    private com.anticheat.ai.AILabManager aiLabManager;
 
     // 违规回放
     private ReplayRecorder replayRecorder;
@@ -95,6 +101,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
             // AuditManager 当前无 close 钩子，预留扩展位
         }
         banManager.saveBans();
+        if (whitelistManager != null) {
+            whitelistManager.save();
+        }
         reportManager.saveReports();
         checkClientManager.saveCheckData();
         if (behaviorTracker != null) {
@@ -105,6 +114,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         }
         if (profileManager != null) {
             profileManager.shutdown();
+        }
+        if (aiLabManager != null) {
+            aiLabManager.shutdown();
         }
         if (advancedDetectionManager != null) {
             advancedDetectionManager.shutdown();
@@ -150,9 +162,20 @@ public class AdvancedAntiCheat extends JavaPlugin {
         captchaManager = new CaptchaManager(this);
         bountyManager = new BountyManager(this);
         profileManager = new ProfileManager(this);
+        whitelistManager = new WhitelistManager(this);
 
         advancedDetectionManager = new AdvancedDetectionManager(this);
         advancedDetectionManager.initialize(this);
+
+        // AI 实验室（依赖 ProfileManager / AdvancedDetectionManager 就绪）
+        try {
+            aiLabManager = new com.anticheat.ai.AILabManager(this);
+            aiLabManager.initialize();
+            getServer().getPluginManager().registerEvents(aiLabManager.lifecycleListener(), this);
+        } catch (Throwable t) {
+            getLogger().warning("[AILab] AI 实验室初始化失败，本次运行退化为纯规则模式: " + t.getMessage());
+            aiLabManager = null;
+        }
 
         try {
             replayRecorder = new ReplayRecorder(this);
@@ -282,6 +305,14 @@ public class AdvancedAntiCheat extends JavaPlugin {
         profileGUIListener = new com.anticheat.listeners.ProfileGUIListener(this);
         getServer().getPluginManager().registerEvents(profileGUIListener, this);
 
+        // 白名单：自身即监听器（登录挂载 bypass 权限 / 退服清理权限附件）
+        if (whitelistManager != null) {
+            getServer().getPluginManager().registerEvents(whitelistManager, this);
+        }
+        // /ac config 六层管理界面点击分发
+        configGUIListener = new com.anticheat.listeners.ConfigGUIListener(this);
+        getServer().getPluginManager().registerEvents(configGUIListener, this);
+
         if (VersionUtil.isHighVersion()) {
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
             getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", new BungeeCordMessageListener(this));
@@ -293,8 +324,11 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getCommand("goto").setExecutor(new GotoCommand(this));
         getCommand("ban").setExecutor(new BanCommand(this));
         getCommand("unban").setExecutor(new UnbanCommand(this));
-        getCommand("anticheat").setExecutor(new AntiCheatCommand(this));
-        getCommand("ac").setExecutor(new AntiCheatCommand(this));
+        AntiCheatCommand antiCheatCommand = new AntiCheatCommand(this);
+        getCommand("anticheat").setExecutor(antiCheatCommand);
+        getCommand("ac").setExecutor(antiCheatCommand);
+        getCommand("anticheat").setTabCompleter(antiCheatCommand);
+        getCommand("ac").setTabCompleter(antiCheatCommand);
         getCommand("checkclient").setExecutor(new CheckClientCommand(this));
         getCommand("checkdone").setExecutor(new CheckDoneCommand(this));
         getCommand("captcha").setExecutor(new CaptchaCommand(this));
@@ -358,8 +392,20 @@ public class AdvancedAntiCheat extends JavaPlugin {
         return profileGUIListener;
     }
 
+    public WhitelistManager getWhitelistManager() {
+        return whitelistManager;
+    }
+
+    public com.anticheat.listeners.ConfigGUIListener getConfigGUIListener() {
+        return configGUIListener;
+    }
+
     public AdvancedDetectionManager getAdvancedDetectionManager() {
         return advancedDetectionManager;
+    }
+
+    public com.anticheat.ai.AILabManager getAILabManager() {
+        return aiLabManager;
     }
 
     public AuditManager getAuditManager() {

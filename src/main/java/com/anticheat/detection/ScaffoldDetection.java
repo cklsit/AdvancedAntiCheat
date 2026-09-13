@@ -53,7 +53,12 @@ public class ScaffoldDetection extends Detection {
 
     private boolean isPlaceableBlock(Block block) {
         Material type = block.getType();
-        return type == Material.AIR || type == Material.CAVE_AIR || type == Material.VOID_AIR;
+        if (type == null) return false;
+        if (type == Material.AIR) return true;
+        // CAVE_AIR / VOID_AIR 是 1.13+ 的枚举常量；1.8 直接引用 Material.CAVE_AIR 会抛 NoSuchFieldError。
+        // 用 name() 比较（枚举名在两侧都存在）以避免跨版本符号引用。
+        String name = type.name();
+        return "CAVE_AIR".equals(name) || "VOID_AIR".equals(name);
     }
 
     private void analyzeScaffold(Player player, ScaffoldData data) {

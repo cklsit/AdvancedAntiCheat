@@ -30,11 +30,11 @@ commands:
     permission: anticheat.unban
   anticheat:
     description: 反作弊插件主指令
-    usage: /anticheat <reload|stats|help>
+    usage: /anticheat <reload|stats|profile|config|help>
     permission: anticheat.admin
   ac:
     description: 反作弊插件快捷指令
-    usage: /ac <reload|stats|help>
+    usage: /ac <reload|stats|profile|config|replay|help>
     permission: anticheat.admin
   checkclient:
     description: 对玩家进行客户端检查
@@ -100,4 +100,10 @@ permissions:
     default: false
   anticheat.replay.control:
     description: 控制观察者跟随/解绑
+    default: op
+  anticheat.config:
+    description: 允许使用 /ac config 游戏内管理界面
+    default: op
+  anticheat.whitelist:
+    description: 允许通过管理界面增删可信白名单
     default: op

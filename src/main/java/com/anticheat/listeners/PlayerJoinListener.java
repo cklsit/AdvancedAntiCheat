@@ -22,6 +22,14 @@ public class PlayerJoinListener implements Listener {
 
         clearCheckClientEffects(player);
 
+        // 查端/验证码的背包是"清空 + 快照"成对操作：若玩家在查端过程中退出或服务器重启，
+        // 快照会落盘保留，这里登录时补还，保证物品不丢。
+        try {
+            if (plugin.getCaptchaManager() != null) {
+                plugin.getCaptchaManager().onPlayerJoin(player);
+            }
+        } catch (Throwable ignored) {}
+
         // 启动持续录制 session（防异常：被 ban 玩家不会走完 join 流程，但 session 是幂等 startSession 防重入）
         try { plugin.getReplayRecorder().startSession(player); } catch (Throwable ignored) {}
 

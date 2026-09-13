@@ -50,6 +50,13 @@ public class ConfigManager {
         config.addDefault("web.session-timeout-minutes", 120);
         config.addDefault("web.cors.enabled", false);
 
+        // /ac config 游戏内管理界面
+        config.addDefault("gui.enabled", true);
+        config.addDefault("gui.title-prefix", "§8AAC");
+        config.addDefault("gui.filler-material", "BARRIER");
+        config.addDefault("gui.ban-reason", "管理员通过管理界面封禁");
+        config.addDefault("gui.kick-reason", "§c你已被管理员移出服务器");
+
         config.options().copyDefaults(true);
         plugin.saveConfig();
     }
