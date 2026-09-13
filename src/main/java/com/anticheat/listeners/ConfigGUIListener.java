@@ -217,14 +217,9 @@ public class ConfigGUIListener implements Listener {
         Player target = Bukkit.getPlayer(uuid);
 
         switch (slot) {
-            case ConfigGUI.DETAIL_INVESTIGATE:
-                if (requirePermission(viewer, "anticheat.captcha")) {
-                    startCaptcha(viewer, target, name, false);
-                }
-                break;
             case ConfigGUI.DETAIL_CAPTCHA:
                 if (requirePermission(viewer, "anticheat.captcha")) {
-                    startCaptcha(viewer, target, name, true);
+                    startCaptcha(viewer, target, name);
                 }
                 break;
             case ConfigGUI.DETAIL_TELEPORT:
@@ -323,9 +318,9 @@ public class ConfigGUIListener implements Listener {
     // 动作
     // ================================================================
 
-    private void startCaptcha(Player viewer, Player target, String name, boolean forceRestart) {
+    private void startCaptcha(Player viewer, Player target, String name) {
         if (target == null || !target.isOnline()) {
-            viewer.sendMessage(PREFIX + "§c玩家 §e" + name + " §c已离线，无法发起查证。");
+            viewer.sendMessage(PREFIX + "§c玩家 §e" + name + " §c已离线，无法发送验证码。");
             return;
         }
         CaptchaManager captchaManager = plugin.getCaptchaManager();
@@ -333,20 +328,16 @@ public class ConfigGUIListener implements Listener {
             viewer.sendMessage(PREFIX + "§c验证码模块未启用。");
             return;
         }
-        if (!forceRestart && captchaManager.isInCaptcha(target)) {
-            viewer.sendMessage(PREFIX + "§e玩家 §f" + name + " §e正在查证中，如需重开请使用「发送验证码测试」。");
-            return;
-        }
-        if (forceRestart && captchaManager.isInCaptcha(target)) {
+        // 已在验证流程中 → 先清理旧会话，实现「强制重开」
+        if (captchaManager.isInCaptcha(target)) {
             captchaManager.removeSession(target.getUniqueId());
         }
         try {
             captchaManager.startCaptcha(target, CaptchaManager.Initiator.ADMIN);
-            viewer.sendMessage(PREFIX + (forceRestart ? "§a已强制重开验证码测试：§f" : "§a已向 §f")
-                    + name + " §a发起查证。");
+            viewer.sendMessage(PREFIX + "§a已向 §f" + name + " §a发送验证码测试。");
             viewer.closeInventory();
         } catch (Throwable t) {
-            viewer.sendMessage(PREFIX + "§c发起查证失败：" + t.getMessage());
+            viewer.sendMessage(PREFIX + "§c发送验证码失败：" + t.getMessage());
         }
     }
 

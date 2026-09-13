@@ -77,7 +77,6 @@ public class ConfigGUI {
     public static final int DETAIL_HEAD = 4;
     public static final int DETAIL_LAST_LOGIN = 19;
     public static final int DETAIL_RISK = 21;
-    public static final int DETAIL_INVESTIGATE = 23;
     public static final int DETAIL_CAPTCHA = 25;
     public static final int DETAIL_TELEPORT = 28;
     public static final int DETAIL_BAN = 30;
@@ -297,16 +296,13 @@ public class ConfigGUI {
                         "§7由反作弊自动检测",
                         "§7等级：§f" + riskLevelText(risk))));
 
-        // 查证 / 验证码测试
-        inv.setItem(DETAIL_INVESTIGATE, item(compat("SPYGLASS", "EYE_OF_ENDER", Material.PAPER), 1,
-                "§b立即向该玩家发起查证（可点击）",
-                Arrays.asList("§7强制该玩家完成一次人机查证",
-                        isOnline ? "§7目标在线，点击后立即下发" : "§c目标离线，仅在线玩家可查证")));
+        // 验证码测试（原先的「立即发起查证」已删除：它与验证码走的是同一个 CaptchaManager 流程，
+        // 区别仅在于是否强制重开会话，保留两个入口只会造成误导）
         inv.setItem(DETAIL_CAPTCHA, item(Material.NAME_TAG, 1,
                 "§b立即向该玩家发送验证码测试（可点击）",
                 Arrays.asList("§7无视冷却，强制重开验证码会话",
                         "§7用于验证该玩家的操作能力",
-                        isOnline ? "§7目标在线，点击后立即下发" : "§c目标离线，仅在线玩家可查证")));
+                        isOnline ? "§7目标在线，点击后立即下发" : "§c目标离线，仅在线玩家可发送")));
 
         // 传送 / 封禁 / 白名单
         inv.setItem(DETAIL_TELEPORT, item(Material.ENDER_PEARL, 1,
