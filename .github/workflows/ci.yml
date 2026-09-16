@@ -1,0 +1,524 @@
+name: CI
+
+# 每次提交后自动跑「双版本、带功能断言」的完整测试：
+#   1. 单元 + 契约测试（Paper / Spigot 两套 API 各跑一遍）
+#   2. 前端 typecheck + build
+#   3. 打包（产出真实插件 jar）
+#   4. 双版本兼容审计（按 1.21 编译、按 1.8.8 的字节码确定性判定）
+#   5. 真机 E2E · Paper 1.8.8（起真服 + 装插件 + 控制台/Web/AI 断言）
+#   6. 真机 E2E · Paper 1.21.11（同上）
+#   7. 变更 → 功能门禁（本次改动落到哪个功能面，该功能面是否有断言；缺断言直接红）
+#
+# 设计要点：只有「能定位到具体功能」的测试才算数——所以门禁会把 git diff 映射到
+# tools/ci/feature_map.json 里的功能面，再要求对应的单测真实跑过、对应的接口/命令
+# 被 E2E 断言真实覆盖。新增接口或命令却没有配断言，CI 会失败。
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**']
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '手动触发原因'
+        required: false
+        default: 'Manual CI run'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '21'
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+  # 后端测试用 python 脚本；E2E 与审计报告统一落在 .ci-e2e / .ci-tools
+  REPORT_DIR: .ci-tools
+
+jobs:
+  # ------------------------------------------------------------------ 1) 单元 + 契约测试
+  unit-tests:
+    name: 单元/契约测试 · ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: paper
+            label: Paper 1.21.11 API
+          - profile: spigot
+            label: Spigot 1.8.8 API
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Configure Maven mirror
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'EOF'
+          <settings>
+            <mirrors>
+              <mirror>
+                <id>aliyunmaven</id>
+                <mirrorOf>central</mirrorOf>
+                <url>https://maven.aliyun.com/repository/public</url>
+              </mirror>
+            </mirrors>
+          </settings>
+          EOF
+
+      - name: Cache Maven repository
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}-${{ matrix.profile }}
+          restore-keys: |
+            m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}-
+            m2-${{ runner.os }}-
+
+      - name: Run unit + contract tests (${{ matrix.label }})
+        run: mvn -B -ntp -P${{ matrix.profile }} test -DskipFrontend=true
+
+      - name: Print test summary
+        if: always()
+        run: |
+          echo "=== surefire 结果（${{ matrix.label }}）==="
+          for f in target/surefire-reports/*.txt; do
+            [ -f "$f" ] && head -4 "$f"
+          done
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: surefire-${{ matrix.profile }}
+          path: target/surefire-reports/**
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------ 2) 前端
+  frontend:
+    name: 前端 · typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web-panel/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web-panel
+        run: npm ci
+
+      - name: Typecheck (vue-tsc)
+        working-directory: web-panel
+        run: npm run typecheck
+
+      - name: Build (vite)
+        working-directory: web-panel
+        run: npm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v5
+        with:
+          name: web-panel-dist
+          path: web-panel/dist/**
+          retention-days: 7
+
+  # ------------------------------------------------------------------ 3) 打包
+  package:
+    name: 打包插件 jar（含前端资源）
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Configure Maven mirror
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'EOF'
+          <settings>
+            <mirrors>
+              <mirror>
+                <id>aliyunmaven</id>
+                <mirrorOf>central</mirrorOf>
+                <url>https://maven.aliyun.com/repository/public</url>
+              </mirror>
+            </mirrors>
+          </settings>
+          EOF
+
+      - name: Cache Maven repository
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}-paper
+          restore-keys: |
+            m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}-
+            m2-${{ runner.os }}-
+
+      - name: Cache frontend toolchain (node + node_modules)
+        uses: actions/cache@v5
+        with:
+          path: |
+            target/node
+            web-panel/node_modules
+          key: frontend-${{ runner.os }}-${{ hashFiles('web-panel/package-lock.json') }}
+          restore-keys: |
+            frontend-${{ runner.os }}-
+
+      - name: Package (frontend + java + shade)
+        run: mvn -B -ntp clean package -DskipTests -Ppaper
+
+      - name: Verify artifact
+        run: |
+          set -e
+          JAR=$(ls target/AdvancedAntiCheat-*.jar | grep -v shaded | head -1)
+          echo "产物: $JAR ($(du -h "$JAR" | cut -f1))"
+          # jar 里必须真的有 plugin.yml 与前端 dist，否则「打包成功」毫无意义
+          unzip -l "$JAR" | grep -q 'plugin.yml'
+          unzip -l "$JAR" | grep -q 'web/' || echo "::warning::jar 内未发现前端资源目录"
+
+      - name: Upload plugin jar
+        uses: actions/upload-artifact@v5
+        with:
+          name: plugin-jar
+          path: target/AdvancedAntiCheat-*.jar
+          retention-days: 14
+
+  # ------------------------------------------------------------------ 4) 双版本兼容审计
+  compat-audit:
+    name: 双版本兼容审计（1.21 编译 · 1.8.8 运行）
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: maven
+
+      - name: Configure Maven mirror
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<'EOF'
+          <settings>
+            <mirrors>
+              <mirror>
+                <id>aliyunmaven</id>
+                <mirrorOf>central</mirrorOf>
+                <url>https://maven.aliyun.com/repository/public</url>
+              </mirror>
+            </mirrors>
+          </settings>
+          EOF
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download plugin jar
+        uses: actions/download-artifact@v5
+        with:
+          name: plugin-jar
+          path: target
+
+      - name: Fetch spigot-api 1.8.8 (审计基准字节码)
+        run: |
+          set -e
+          mkdir -p $REPORT_DIR/api
+          # 双保险：先按 pom 的 provided 依赖整体拷，取不到再按坐标单独拷
+          mvn -B -ntp -Pspigot -DskipFrontend=true dependency:copy-dependencies \
+            -DincludeScope=provided -DoutputDirectory=$REPORT_DIR/api || true
+          if ! ls $REPORT_DIR/api/spigot-api-1.8.8*.jar >/dev/null 2>&1; then
+            mvn -B -ntp dependency:copy \
+              -Dartifact=org.spigotmc:spigot-api:1.8.8-R0.1-SNAPSHOT \
+              -DoutputDirectory=$REPORT_DIR/api
+          fi
+          ls -la $REPORT_DIR/api/
+
+      - name: Run dual-version audit
+        run: |
+          set -o pipefail
+          JAR=$(ls target/AdvancedAntiCheat-*.jar | grep -v shaded | head -1)
+          API=$(ls $REPORT_DIR/api/spigot-api-1.8.8*.jar | head -1)
+          mkdir -p $REPORT_DIR
+          python tools/audit_dual_version.py \
+            --jar "$JAR" --api "$API" \
+            --src src/main/java \
+            --json $REPORT_DIR/audit.json
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: audit-report
+          path: ${{ env.REPORT_DIR }}/audit.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------ 5/6) 真机 E2E（双版本）
+  e2e:
+    name: 真机 E2E · Paper ${{ matrix.version }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: '1.8.8'
+            mc_port: 25599
+            web_port: 18088
+            label: 1.8.8
+          - version: '1.21.11'
+            mc_port: 25611
+            web_port: 18188
+            label: 1.21.11
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download plugin jar
+        uses: actions/download-artifact@v5
+        with:
+          name: plugin-jar
+          path: target
+
+      - name: Cache Paper server jar
+        uses: actions/cache@v5
+        with:
+          path: .ci-e2e/${{ matrix.version }}/cache
+          key: paper-${{ matrix.version }}-${{ runner.os }}
+          restore-keys: |
+            paper-${{ matrix.version }}-
+
+      - name: Run E2E on real Paper ${{ matrix.version }}
+        run: |
+          set -o pipefail
+          JAR=$(ls target/AdvancedAntiCheat-*.jar | grep -v shaded | head -1)
+          python tools/ci/server_e2e.py \
+            --version ${{ matrix.version }} \
+            --plugin "$JAR" \
+            --workdir .ci-e2e/${{ matrix.version }} \
+            --java "$JAVA_HOME/bin/java" \
+            --mc-port ${{ matrix.mc_port }} \
+            --web-port ${{ matrix.web_port }} \
+            --heap 1500M \
+            --report .ci-e2e/report-${{ matrix.version }}.json \
+            --keep
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-report-${{ matrix.version }}
+          path: |
+            .ci-e2e/report-${{ matrix.version }}.json
+            .ci-e2e/${{ matrix.version }}/console.log
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------ 7) 变更 → 功能 门禁
+  change-gate:
+    name: 变更 → 功能 门禁
+    needs: [unit-tests, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download unit test results
+        uses: actions/download-artifact@v5
+        continue-on-error: true
+        with:
+          pattern: surefire-*
+          path: target/surefire-reports
+          merge-multiple: true
+
+      - name: Download E2E reports
+        uses: actions/download-artifact@v5
+        continue-on-error: true
+        with:
+          pattern: e2e-report-*
+          path: .ci-e2e
+
+      - name: Resolve diff base
+        id: base
+        run: |
+          set -e
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE=$(git rev-parse --verify -q HEAD~1 || echo "")
+          fi
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "无法确定对比基线（首次提交 / 强制推送），跳过门禁"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=$BASE" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run change gate
+        if: steps.base.outputs.skip != 'true'
+        run: |
+          set -o pipefail
+          mkdir -p $REPORT_DIR
+          python tools/ci/change_gate.py \
+            --base "${{ steps.base.outputs.base }}" \
+            --head HEAD \
+            --surefire target/surefire-reports \
+            --e2e .ci-e2e/report-1.8.8.json \
+            --e2e .ci-e2e/report-1.21.11.json \
+            --report $REPORT_DIR/change-gate.json
+
+      - name: Upload change gate report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: change-gate-report
+          path: ${{ env.REPORT_DIR }}/change-gate.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------ 质量门 + 汇总
+  quality-gate:
+    name: 质量门 + CI 汇总
+    needs: [unit-tests, frontend, package, compat-audit, e2e, change-gate]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download all reports
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          path: _artifacts
+
+      - name: Collect report files
+        run: |
+          mkdir -p target/surefire-reports $REPORT_DIR .ci-e2e
+          cp -r _artifacts/surefire-paper/* target/surefire-reports/ 2>/dev/null || true
+          cp -r _artifacts/surefire-spigot/* target/surefire-reports/ 2>/dev/null || true
+          cp -r _artifacts/audit-report/* $REPORT_DIR/ 2>/dev/null || true
+          cp -r _artifacts/change-gate-report/* $REPORT_DIR/ 2>/dev/null || true
+          cp -r _artifacts/e2e-report-1.8.8/* .ci-e2e/ 2>/dev/null || true
+          cp -r _artifacts/e2e-report-1.21.11/* .ci-e2e/ 2>/dev/null || true
+          ls -R _artifacts | head -40
+
+      - name: Render CI summary
+        run: |
+          python tools/ci/summarize.py \
+            --surefire target/surefire-reports \
+            --e2e .ci-e2e/report-1.8.8.json \
+            --e2e .ci-e2e/report-1.21.11.json \
+            --audit $REPORT_DIR/audit.json \
+            --gate $REPORT_DIR/change-gate.json \
+            --out ci-summary.md
+          cat ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload CI summary
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: ci-summary
+          path: ci-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Decide overall result
+        run: |
+          echo "各阶段结果："
+          echo "  unit-tests   = ${{ needs.unit-tests.result }}"
+          echo "  frontend     = ${{ needs.frontend.result }}"
+          echo "  package      = ${{ needs.package.result }}"
+          echo "  compat-audit = ${{ needs.compat-audit.result }}"
+          echo "  e2e          = ${{ needs.e2e.result }}"
+          echo "  change-gate  = ${{ needs.change-gate.result }}"
+          failed=0
+          for r in \
+            "${{ needs.unit-tests.result }}" \
+            "${{ needs.frontend.result }}" \
+            "${{ needs.package.result }}" \
+            "${{ needs.compat-audit.result }}" \
+            "${{ needs.e2e.result }}" \
+            "${{ needs.change-gate.result }}"; do
+            if [ "$r" != "success" ]; then
+              failed=1
+            fi
+          done
+          if [ "$failed" = "1" ]; then
+            echo "::error::CI 未全部通过——详见上方各阶段日志与 CI 汇总"
+            exit 1
+          fi
+          echo "全部阶段通过。"
