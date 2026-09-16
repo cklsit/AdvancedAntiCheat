@@ -3,6 +3,7 @@ package com.anticheat.captcha;
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.captcha.tasks.CaptchaTask;
 import com.anticheat.captcha.tasks.TypeA_DirectInteraction;
+import com.anticheat.captcha.tasks.TypeB_MotionMimicry;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
@@ -244,21 +245,34 @@ public class CaptchaManager {
         }
     }
 
+    /**
+     * 从已启用的检测项里随机抽 1 项作为本次验证码任务。
+     *
+     * <p>检测项池由 {@code captcha.tasks.*.enabled} 控制：
+     * <ul>
+     *   <li>{@code direct-interaction}：定向交互（注视指定颜色的羊后潜行）</li>
+     *   <li>{@code motion-mimicry}：动作模仿（盔甲架演示随机动作序列，玩家重复，DTW 判定）</li>
+     * </ul>
+     * 池为空时回退到定向交互 —— 验证码必须能启动，否则玩家会被超时逻辑白白踢掉/封禁。
+     */
     private List<CaptchaTask> generateTasks() {
+        List<Class<? extends CaptchaTask>> pool = new ArrayList<>();
+        if (plugin.getConfig().getBoolean("captcha.tasks.direct-interaction.enabled", true)) {
+            pool.add(TypeA_DirectInteraction.class);
+        }
+        if (plugin.getConfig().getBoolean("captcha.tasks.motion-mimicry.enabled", true)) {
+            pool.add(TypeB_MotionMimicry.class);
+        }
+        if (pool.isEmpty()) {
+            pool.add(TypeA_DirectInteraction.class);
+        }
+
         List<CaptchaTask> tasks = new ArrayList<>();
-        int taskCount = random.nextInt(2) + 1;
-
-        List<Class<? extends CaptchaTask>> taskTypes = new ArrayList<>(Arrays.asList(
-                TypeA_DirectInteraction.class
-        ));
-
-        for (int i = 0; i < taskCount && i < taskTypes.size(); i++) {
-            try {
-                CaptchaTask task = taskTypes.get(i).getConstructor(AdvancedAntiCheat.class).newInstance(plugin);
-                tasks.add(task);
-            } catch (Exception e) {
-                plugin.getLogger().severe("创建验证码任务失败: " + e.getMessage());
-            }
+        Class<? extends CaptchaTask> type = pool.get(random.nextInt(pool.size()));
+        try {
+            tasks.add(type.getConstructor(AdvancedAntiCheat.class).newInstance(plugin));
+        } catch (Exception e) {
+            plugin.getLogger().severe("创建验证码任务失败: " + e.getMessage());
         }
 
         return tasks;

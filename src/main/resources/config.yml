@@ -1,7 +1,15 @@
-# 通知节流：同类反作弊提示对同一玩家的最小重复发送间隔（毫秒）
-# 用于防止聊天栏刷屏；不影响实际处罚动作（封禁/验证码/监控仍会立即执行）
+# 玩家提示节流：控制 DecisionActionCenter 向玩家发送聊天提示的频率。
+# 重要：节流只影响"聊天栏文字"，不影响实际处罚动作（封禁/验证码/监控一律照常立即执行）。
 notify:
-  throttleMs: 2000
+  # 绝对下限（毫秒）：任何提示对同一玩家的最小间隔，优先级最高。
+  throttleMs: 5000
+  # 以下为"同一档位持续存在时的重复提示间隔"（秒）；档位升高（升级）时会立即提示，不受此限制。
+  # 设为 0 表示该档位只提示一次，之后不再重复（推荐：监控/正常 档位设为 0 可彻底消除刷屏）。
+  normalRepeatSecs: 0
+  monitorRepeatSecs: 0
+  captchaRepeatSecs: 60
+  tempBanRepeatSecs: 300
+  banRepeatSecs: 600
 
 detection:
   # 各检测项通用字段：
@@ -328,12 +336,19 @@ fingerprint:
 # 说明：个人行为基线 / 动态贝叶斯融合由 ProfileManager + fusion 融合中心承载；
 # 全局异常（孤立森林）/ 操作生物特征 / 反侦察 为独立检测模块，阈值见各模块常量。
 behavior:
+  # 行为检测总开关（伪「站桩/挂机比」与界面交互异常检查）。
+  # 关闭后 BehaviorListener 不再做这两项抽样判定（其他行为分析子模块不受影响）。
+  enabled: true
   global-anomaly:
     enabled: true
   keystroke:
     enabled: true
   anti-recon:
     enabled: true
+  # 行为异常控制台日志的复报间隔（秒）。
+  # BehaviorAnalysisEngine 由 100ms 检测循环驱动，同一异常若不节流会每秒刷约 10 行 INFO 日志。
+  # 0 = 每个玩家只输出一次（最安静）；-1 以外的负数同样按"只输出一次"处理。
+  anomalyLogCooldownSecs: 60
 
 # ============ AI 实验室（双模驱动 / 持续学习 / 人机协同闭环） ============
 # 双模驱动：规则引擎（高精度）+ AI 异常检测（广覆盖）并行，评分经 RCP 融合。
@@ -554,3 +569,32 @@ gui:
   filler-material: "BARRIER"         # 边框/空位填充物（1.8 与 1.21 均存在；可换 STAINED_GLASS_PANE/GLASS 等）
   ban-reason: "管理员通过管理界面封禁"   # GUI 封禁时写入的原因
   kick-reason: "§c你已被管理员移出服务器" # GUI「踢出服务器」的踢出提示
+
+# ==============================================================
+# 验证码（/captcha）
+# ==============================================================
+# /captcha 每次只随机抽 1 个检测项（在下面 tasks 里 enabled=true 的项中等概率抽取）。
+captcha:
+  time-limit: 45                     # 整场验证码总时限（秒）
+  new-player-enabled: false          # 是否对首次进入服务器的新玩家自动发起验证码
+  tasks:
+    # 检测项一：定向交互 —— 5 只不同颜色的羊，注视指定颜色的那只后按下潜行
+    direct-interaction:
+      enabled: true
+    # 检测项二：动作模仿 —— 随机动作序列直接打在聊天框，玩家照做，DTW 对齐判定
+    motion-mimicry:
+      enabled: true
+      min-actions: 3                 # 题目最短动作数
+      max-actions: 4                 # 题目最长动作数
+      max-attempts: 2                # 总计挑战次数（1 = 不给重试；注意与 time-limit 的预算关系）
+      max-distance: 0.17             # DTW 归一化距离阈值，越小越严格（实测 0.14~0.18 分离度最好）
+      duration-weight: 0.25          # 动作时长占比差异在代价值里的权重（免疫整体快慢）
+      missing-penalty: 1.0           # 漏做一个模板动作的代价（强作弊信号 → 严判）
+      extra-penalty: 0.5             # 玩家多做一个动作的代价（多为误触 → 容忍，避免误杀真人）
+      turn-commit-degrees: 45        # 累计转身超过该角度才算一次"转向"动作
+      turn-rate-threshold: 1.0       # 单 tick 偏航超过该角度视为"正在转身"
+      min-action-ms: 250             # 短于该时长的动作忽略（过滤手抖 / 误触）
+      min-move-blocks: 0.6           # 行走 / 疾跑算作一个动作的最短位移
+      window-multiplier: 2.2         # 采集窗口 = 题目总时长 × 该系数 + 2.5 秒
+      window-min-ms: 6000            # 采集窗口下限（毫秒）
+      window-max-ms: 14000           # 采集窗口上限（毫秒）

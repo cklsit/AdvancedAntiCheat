@@ -17,7 +17,9 @@ public final class FeatureVector {
                     + (values == null ? "null" : values.length));
         }
         this.timestamp = timestamp;
-        this.values = values;
+        // 防御性拷贝：类文档承诺的是「不可变、可跨线程传递」，
+        // 直接持有外部数组会破坏该语义（采样缓冲被复用时旧向量会被就地改写）。
+        this.values = Arrays.copyOf(values, values.length);
     }
 
     /** 零向量（未知特征占位）。 */

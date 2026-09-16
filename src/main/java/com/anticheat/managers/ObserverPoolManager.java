@@ -689,7 +689,12 @@ public class ObserverPoolManager {
         // 并清理所有 observer 占用状态。
         for (Observer o : observers) {
             final Observer obs = o;
-            busyObservers.remove(obs.busyTarget);
+            // 空闲观察者的 busyTarget 为 null；ConcurrentHashMap 不接受 null 键，
+            // 直接 remove 会抛 NPE 并中断 onDisable 的后续清理（曾导致关服必报错）。
+            if (obs.busyTarget != null) {
+                busyObservers.remove(obs.busyTarget);
+                subscribersPerTarget.remove(obs.busyTarget);
+            }
             Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 try {
                     plugin.getFfmpegManager().mcDown(obs.id);

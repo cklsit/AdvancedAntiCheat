@@ -1,5 +1,7 @@
 package com.anticheat.detection.fusion;
 
+import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.managers.ConfigManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -13,12 +15,16 @@ public class DecisionActionCenter {
     // ==================== 玩家通知节流（防止聊天刷屏） ====================
     // notifyType -> (playerUUID -> lastSentEpochMs). 小容量 LRU + 线程安全。
     private static final Map<String, Map<UUID, Long>> NOTIFY_LAST_SENT = new ConcurrentHashMap<>();
-    // 每种通知类型默认冷却（毫秒）。可后续接入 ConfigManager notify.throttleMs / detection.*.warningCooldownSecs。
-    private static final long DEFAULT_COOLDOWN_NORMAL_MS = 5000L;
-    private static final long DEFAULT_COOLDOWN_MONITOR_MS = 2500L;   // 增加监控：2.5s
-    private static final long DEFAULT_COOLDOWN_CAPTCHA_MS = 5000L;   // 验证码提示：5s
-    private static final long DEFAULT_COOLDOWN_TEMP_BAN_MS = 30000L; // 临时封禁：30s
-    private static final long DEFAULT_COOLDOWN_PERM_BAN_MS = 60000L; // 永久封禁：60s
+    // 每种通知类型默认重复间隔（毫秒）。实际值优先读 config.yml 的 notify.*（秒）。
+    // 语义：玩家"持续处于同一档位"时，同一句提示最多多久重复一次；级别升高（升级）时立即提示。
+    // 0 表示"只提示一次，之后不再重复"——这是 NORMAL / MONITOR 的默认行为（这两档提示纯噪声）。
+    private static final long DEFAULT_COOLDOWN_NORMAL_MS = 0L;
+    private static final long DEFAULT_COOLDOWN_MONITOR_MS = 0L;
+    private static final long DEFAULT_COOLDOWN_CAPTCHA_MS = 60_000L;    // 验证码提示：1min
+    private static final long DEFAULT_COOLDOWN_TEMP_BAN_MS = 300_000L;  // 临时封禁：5min
+    private static final long DEFAULT_COOLDOWN_PERM_BAN_MS = 600_000L;  // 永久封禁：10min
+    // 兜底节流下限（毫秒）：任何情况下同类型消息的绝对最小间隔，读 notify.throttleMs。
+    private static final long DEFAULT_THROTTLE_FLOOR_MS = 5000L;
     private static final int NOTIFY_LRU_CAP = 5000;
 
     /**
@@ -98,15 +104,77 @@ public class DecisionActionCenter {
     private final Map<UUID, Long> actionTimestamps;
     private final Map<UUID, Integer> consecutiveActions;
     private final Map<UUID, Double> historicalRCP;
+    /** 上次向该玩家发出提示时所处的动作档位，用于"级别升级才立即再提示"。 */
+    private final Map<UUID, ActionLevel> lastNotifiedLevel;
+
+    private final AdvancedAntiCheat plugin;
 
     private static final int MAX_CONSECUTIVE_CAPTCHA = 3;
     private static final long ACTION_COOLDOWN_MS = 60000;
     
     public DecisionActionCenter() {
+        this(null);
+    }
+
+    public DecisionActionCenter(AdvancedAntiCheat plugin) {
+        this.plugin = plugin;
         this.currentActions = new ConcurrentHashMap<>();
         this.actionTimestamps = new ConcurrentHashMap<>();
         this.consecutiveActions = new ConcurrentHashMap<>();
         this.historicalRCP = new ConcurrentHashMap<>();
+        this.lastNotifiedLevel = new ConcurrentHashMap<>();
+    }
+
+    // ==================== 通知门控（防刷屏的核心） ====================
+
+    /** 读 config.yml 的 notify.throttleMs 作为所有提示的绝对最小间隔。 */
+    private long throttleFloorMs() {
+        ConfigManager cm = plugin != null ? plugin.getConfigManager() : null;
+        if (cm == null) {
+            return DEFAULT_THROTTLE_FLOOR_MS;
+        }
+        long v = cm.getGlobalNotifyThrottleMs(DEFAULT_THROTTLE_FLOOR_MS);
+        return v < 0 ? DEFAULT_THROTTLE_FLOOR_MS : Math.max(1000L, v);
+    }
+
+    /** 某档位的重复提示间隔。config 里配 0/负数表示"只提示一次，之后不再重复"。 */
+    private long repeatIntervalMs(ActionLevel level) {
+        ConfigManager cm = plugin != null ? plugin.getConfigManager() : null;
+        String key;
+        long def;
+        switch (level) {
+            case NORMAL:   key = "normalRepeatSecs";   def = DEFAULT_COOLDOWN_NORMAL_MS;   break;
+            case MONITOR:  key = "monitorRepeatSecs";  def = DEFAULT_COOLDOWN_MONITOR_MS;  break;
+            case CAPTCHA:  key = "captchaRepeatSecs";  def = DEFAULT_COOLDOWN_CAPTCHA_MS;  break;
+            case TEMP_BAN: key = "tempBanRepeatSecs";  def = DEFAULT_COOLDOWN_TEMP_BAN_MS; break;
+            default:       key = "banRepeatSecs";      def = DEFAULT_COOLDOWN_PERM_BAN_MS; break;
+        }
+        if (cm == null) {
+            return def <= 0L ? Long.MAX_VALUE : def;
+        }
+        return cm.getNotifyRepeatMs(key, def);
+    }
+
+    /**
+     * 是否允许发提示。规则：
+     * <ul>
+     *   <li>档位比上次提示更严重（升级 / 首次）→ 过兜底节流即可立即提示；</li>
+     *   <li>档位未变（持续处于同一档）→ 必须等够该档位的重复间隔。</li>
+     * </ul>
+     * 注意：本方法只决定"要不要发聊天消息"，绝不影响实际处罚动作。
+     */
+    private boolean shouldNotify(Player player, ActionLevel level) {
+        UUID uuid = player.getUniqueId();
+        ActionLevel last = lastNotifiedLevel.get(uuid);
+        boolean escalated = (last == null) || level.getSeverity() > last.getSeverity();
+        long interval = escalated
+                ? throttleFloorMs()
+                : Math.max(throttleFloorMs(), repeatIntervalMs(level));
+        if (!shouldSendNotify(level.name(), uuid, interval)) {
+            return false;
+        }
+        lastNotifiedLevel.put(uuid, level);
+        return true;
     }
     
     public ActionLevel decide(UUID playerUUID, double rcp) {
@@ -177,45 +245,43 @@ public class DecisionActionCenter {
     }
     
     private void handleNormalAction(Player player) {
-        if (!shouldSendNotify("NORMAL", player.getUniqueId(), DEFAULT_COOLDOWN_NORMAL_MS)) return;
+        if (!shouldNotify(player, ActionLevel.NORMAL)) return;
         player.sendMessage("§a[AntiCheat] §f您的行为正常，继续保持良好游戏体验！");
     }
 
     private void handleMonitorAction(Player player) {
-        if (!shouldSendNotify("MONITOR", player.getUniqueId(), DEFAULT_COOLDOWN_MONITOR_MS)) {
-            // 即使跳过消息，仍然需要开启监控（逻辑不丢）
-            startEnhancedMonitoring(player);
-            return;
-        }
-        player.sendMessage("§e[AntiCheat] §f我们注意到您的一些异常行为，将增加对您的监控。");
+        // 提示是否发送与监控是否开启解耦：即使冷却中跳过消息，监控逻辑也照常执行
+        boolean notify = shouldNotify(player, ActionLevel.MONITOR);
         startEnhancedMonitoring(player);
+        if (notify) {
+            player.sendMessage("§e[AntiCheat] §f我们注意到您的一些异常行为，将增加对您的监控。");
+        }
     }
 
     private void handleCaptchaAction(Player player) {
-        boolean inCooldown = !shouldSendNotify("CAPTCHA", player.getUniqueId(), DEFAULT_COOLDOWN_CAPTCHA_MS);
         // 即使聊天提示跳过，仍然要启动验证码（否则可以通过快速违规来回避验证码）
+        boolean notify = shouldNotify(player, ActionLevel.CAPTCHA);
         initiateCaptcha(player);
-        if (inCooldown) return;
-        player.sendMessage("§6[AntiCheat] §f为了确认您的身份，请完成验证码测试。");
+        if (notify) {
+            player.sendMessage("§6[AntiCheat] §f为了确认您的身份，请完成验证码测试。");
+        }
     }
 
     private void handleTempBanAction(Player player) {
-        if (!shouldSendNotify("TEMP_BAN", player.getUniqueId(), DEFAULT_COOLDOWN_TEMP_BAN_MS)) {
-            // 封禁动作即便消息冷却也要执行（防止重复刷屏但不阻止封禁）
-            applyTempBan(player);
-            return;
-        }
-        player.sendMessage("§c[AntiCheat] §f检测到严重的作弊行为，您将被临时封禁。");
+        // 封禁动作即便消息冷却也要执行（防止重复刷屏但不阻止封禁）
+        boolean notify = shouldNotify(player, ActionLevel.TEMP_BAN);
         applyTempBan(player);
+        if (notify) {
+            player.sendMessage("§c[AntiCheat] §f检测到严重的作弊行为，您将被临时封禁。");
+        }
     }
 
     private void handlePermBanAction(Player player) {
-        if (!shouldSendNotify("PERM_BAN", player.getUniqueId(), DEFAULT_COOLDOWN_PERM_BAN_MS)) {
-            applyPermBan(player);
-            return;
-        }
-        player.sendMessage("§4[AntiCheat] §f检测到持续或严重的作弊行为，您将被永久封禁。");
+        boolean notify = shouldNotify(player, ActionLevel.PERM_BAN);
         applyPermBan(player);
+        if (notify) {
+            player.sendMessage("§4[AntiCheat] §f检测到持续或严重的作弊行为，您将被永久封禁。");
+        }
     }
     
     private void startEnhancedMonitoring(Player player) {
@@ -272,6 +338,8 @@ public class DecisionActionCenter {
         currentActions.remove(playerUUID);
         consecutiveActions.remove(playerUUID);
         historicalRCP.remove(playerUUID);
+        actionTimestamps.remove(playerUUID);
+        lastNotifiedLevel.remove(playerUUID);
     }
     
     private void logAction(UUID playerUUID, ActionLevel level, String message) {

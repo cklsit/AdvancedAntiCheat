@@ -1,0 +1,154 @@
+{
+  "_comment": "改动路径 → 功能面 → 必须通过的测试/必须被断言的接口。规则自上而下匹配，首条命中即生效。",
+  "_maintain": "新增功能时：加一条规则 + 在 tests 里指名测试类 + 在 endpoints/commands 里列出接口。change_gate.py 会强制它们真实存在且通过。",
+  "rules": [
+    {
+      "id": "ai-core",
+      "paths": ["src/main/java/com/anticheat/ai/**"],
+      "feature": "AI 实验室（特征 / 基线 / 孤立森林 / 监督模型 / 集群 / 自适应阈值）",
+      "tests": [
+        "com.anticheat.ai.AiMathTest",
+        "com.anticheat.ai.FeatureDictionaryTest",
+        "com.anticheat.ai.baseline.OnlineKMeansTest",
+        "com.anticheat.ai.forest.IsolationForestTest",
+        "com.anticheat.ai.supervised.LogisticModelTest",
+        "com.anticheat.ai.cluster.ClusterDetectorTest"
+      ],
+      "endpoints": [
+        "/api/ailab/overview",
+        "/api/ailab/features",
+        "/api/ailab/settings",
+        "/api/ailab/thresholds",
+        "/api/ailab/models",
+        "/api/ailab/clusters",
+        "/api/ailab/labels",
+        "/api/ailab/simulate"
+      ],
+      "gate": "block"
+    },
+    {
+      "id": "captcha",
+      "paths": ["src/main/java/com/anticheat/captcha/**"],
+      "feature": "验证码（出题 / 输入分段 / DTW 判定）",
+      "tests": ["com.anticheat.captcha.dtw.DtwMatcherTest"],
+      "gate": "block"
+    },
+    {
+      "id": "web-panel",
+      "paths": ["src/main/java/com/anticheat/web/**"],
+      "feature": "内嵌 Web 面板（鉴权 / 全部 REST 路由 / WS）",
+      "tests": ["com.anticheat.contract.WebApiContractTest"],
+      "endpoints": [
+        "/api/meta",
+        "/api/auth/me",
+        "/api/dashboard/stats",
+        "/api/players",
+        "/api/cases",
+        "/api/replays",
+        "/api/notifications",
+        "/api/audit",
+        "/api/config/modules",
+        "/api/config/replay"
+      ],
+      "commands": ["/ac reload"],
+      "gate": "block"
+    },
+    {
+      "id": "replay",
+      "paths": ["src/main/java/com/anticheat/managers/replay/**"],
+      "feature": "违规回放（录制 / 观察者 / HLS / 打包归档）",
+      "tests": ["com.anticheat.contract.WebApiContractTest"],
+      "endpoints": [
+        "/api/replays",
+        "/api/replays/archives",
+        "/api/replays/clock",
+        "/api/replays/players",
+        "/api/replay/clock",
+        "/api/replay/observer-status"
+      ],
+      "commands": ["/ac replay status"],
+      "gate": "block"
+    },
+    {
+      "id": "detection",
+      "paths": ["src/main/java/com/anticheat/detection/**"],
+      "feature": "检测模块（移动 / 战斗 / 背包 / 世界 / 玩家）",
+      "tests": ["com.anticheat.contract.WebApiContractTest"],
+      "notes": "跨版本陷阱由 tools/audit_dual_version.py 第 1/2/3/5 项兜底；真机加载由 E2E startup 断言兜底",
+      "gate": "block"
+    },
+    {
+      "id": "listeners",
+      "paths": ["src/main/java/com/anticheat/listeners/**"],
+      "feature": "事件监听层（含配置开关联动）",
+      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "notes": "新增 @EventHandler 事件类型必须过审计第 5 项（1.8 不存在的事件会导致整类静默失效）",
+      "gate": "block"
+    },
+    {
+      "id": "gui",
+      "paths": ["src/main/java/com/anticheat/gui/**"],
+      "feature": "游戏内菜单（槽位规范 / 跨版本材质 / InventoryHolder）",
+      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "gate": "block"
+    },
+    {
+      "id": "utils",
+      "paths": ["src/main/java/com/anticheat/utils/**"],
+      "feature": "工具层（版本适配 / 序列化 / 命令注册）",
+      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "gate": "block"
+    },
+    {
+      "id": "commands",
+      "paths": ["src/main/java/com/anticheat/commands/**"],
+      "feature": "指令体系",
+      "tests": ["com.anticheat.contract.PluginYmlContractTest"],
+      "commands": ["/ac help", "/ac stats", "/ac reports", "/ac reload"],
+      "gate": "block"
+    },
+    {
+      "id": "managers",
+      "paths": ["src/main/java/com/anticheat/managers/**"],
+      "feature": "管理器层（举报 / 画像 / 封禁 / 白名单 / 审计 / 通知）",
+      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "endpoints": ["/api/cases", "/api/notifications", "/api/audit", "/api/players"],
+      "gate": "block"
+    },
+    {
+      "id": "config-yml",
+      "paths": ["src/main/resources/config.yml"],
+      "feature": "配置项（键名 / 结构 / 材质枚举）",
+      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "gate": "block"
+    },
+    {
+      "id": "plugin-yml",
+      "paths": ["plugin.yml"],
+      "feature": "插件描述符（命令 / 权限注册）",
+      "tests": ["com.anticheat.contract.PluginYmlContractTest"],
+      "gate": "block"
+    },
+    {
+      "id": "frontend",
+      "paths": ["web-panel/src/**"],
+      "feature": "前端面板（接口调用必须与后端路由一致）",
+      "tests": ["com.anticheat.contract.WebApiContractTest"],
+      "gate": "block"
+    },
+    {
+      "id": "build",
+      "paths": ["pom.xml", ".github/workflows/**", "tools/**"],
+      "feature": "构建与 CI 基础设施",
+      "tests": [],
+      "gate": "warn"
+    },
+    {
+      "id": "docs",
+      "paths": ["**/*.md", "docs/**"],
+      "feature": "文档",
+      "tests": [],
+      "gate": "skip"
+    }
+  ]
+}

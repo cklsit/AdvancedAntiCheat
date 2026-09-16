@@ -13,6 +13,8 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.inventory.InventoryType;
+// 1.9+ 事件：只允许出现在 SwapHandListener（独立类）里。
+// import 本身不会让外层类在 1.8 上加载失败——只有方法签名/字节码引用才会。
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -54,7 +56,52 @@ public class InventoryDetectionModule implements Listener {
     public InventoryDetectionModule(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        registerSwapHandListener();
         startCleanupTask();
+    }
+
+    /**
+     * 条件注册副手切换监听器。
+     *
+     * <p>PlayerSwapHandItemsEvent 是 1.9+ 才有的事件。它必须放在<b>独立的类</b>里注册：
+     * Bukkit 的 registerEvents 以「类」为单位解析全部 @EventHandler，
+     * 只要类中出现 1.8 不存在的事件类型，整个类的处理器都会被丢弃并打出
+     * "has failed to register events for class …"——在 1.8 上表现为
+     * 整个背包检测静默失效（不报错、不提示，最坏的一类故障）。
+     *
+     * <p>本模式由 tools/audit_dual_version.py 的第 5 项检查，见 SwapHandListener 上的标注。
+     */
+    private void registerSwapHandListener() {
+        try {
+            Class.forName("org.bukkit.event.player.PlayerSwapHandItemsEvent");
+        } catch (Throwable absent) {
+            return; // 1.8.x：没有该事件，跳过副手检测
+        }
+        try {
+            plugin.getServer().getPluginManager().registerEvents(new SwapHandListener(this), plugin);
+        } catch (Throwable t) {
+            plugin.getLogger().warning("[Inventory] 副手切换监听器注册失败（已跳过，不影响其余背包检测）：" + t);
+        }
+    }
+
+    /**
+     * 仅承载 1.9+ 副手切换事件的监听器（独立类，1.8 上不会被加载）。
+     */
+    public static final class SwapHandListener implements Listener {
+        // dual-version-guard: safe-conditional ——
+        // 本类在 registerSwapHandListener() 里先探测事件是否存在再注册，
+        // 因此 1.8 上永远不会被注册，也不会连带丢失其它监听器的注册。
+
+        private final InventoryDetectionModule module;
+
+        public SwapHandListener(InventoryDetectionModule module) {
+            this.module = module;
+        }
+
+        @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+        public void onSwapHandItemsSwap(PlayerSwapHandItemsEvent event) {
+            module.handleSwapHandItems(event.getPlayer());
+        }
     }
 
     private void startCleanupTask() {
@@ -164,9 +211,16 @@ public class InventoryDetectionModule implements Listener {
 
     // ---------------- 副手切换精度 / 自动图腾 / 自动盔甲 ----------------
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onSwapHandItems(PlayerSwapHandItemsEvent event) {
-        Player player = event.getPlayer();
+    /**
+     * 副手切换判定入口。
+     *
+     * <p>触发源（1.9+ 的 {@code PlayerSwapHandItemsEvent}）在 {@link SwapHandListener} 里，
+     * 该类只在本服务端存在该事件时才会被注册。<b>不要</b>把带 1.9+ 事件参数的方法搬回本类：
+     * Bukkit 注册监听器是按「类」为单位整体处理的，一旦类里出现 1.8 不存在的事件类型，
+     * {@code registerEvents} 会抛错并<b>丢弃该类的全部处理器</b>，
+     * 结果就是背包点击 / 容器开关 / 受伤时间戳等 1.8 本可用的检测一起静默失效。
+     */
+    void handleSwapHandItems(Player player) {
         if (isExempt(player)) return;
         checkOffhandSwap(player);
     }

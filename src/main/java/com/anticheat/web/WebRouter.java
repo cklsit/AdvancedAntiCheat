@@ -72,7 +72,12 @@ public final class WebRouter {
                 resp.put("enabled", true);
                 resp.put("snapshot", opm.statusSnapshot());
             }
-            ctx.json(ApiResp.ok(resp));
+            // 必须走 JsonMapper（Gson），不能用 ctx.json(...)：
+            // ctx.json 交给 Javalin 的 JSON mapper，而项目没有打包 Jackson，
+            // 会直接 500「It looks like you don't have an object mapper configured」。
+            ctx.contentType("application/json; charset=utf-8");
+            ctx.status(200);
+            ctx.result(com.anticheat.web.util.JsonMapper.toJson(ApiResp.ok(resp)));
         });
 
         plugin.getLogger().info("[Web] REST 路由注册完成");

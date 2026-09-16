@@ -307,6 +307,20 @@ public class ConfigManager {
         return config.getLong("notify.throttleMs", defMs);
     }
 
+    /**
+     * 获取指定通知类别的"重复提示间隔"（毫秒），键位于 notify.&lt;key&gt;（单位：秒）。
+     * 配置为 0 或负数时返回 Long.MAX_VALUE，表示同一档位只提示一次、之后不再重复（仍会正常处罚）。
+     * defMs &lt;= 0 表示默认"只提示一次"，只有配置里显式写正数才允许重复。
+     */
+    public long getNotifyRepeatMs(String key, long defMs) {
+        int defSecs = defMs <= 0L ? 0 : (int) Math.max(1L, defMs / 1000L);
+        int secs = config.getInt("notify." + key, defSecs);
+        if (secs <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return secs * 1000L;
+    }
+
     /** 设置指定检测项字段（Web 面板热更新用），值类型由调用方保证合法。 */
     public void setDetectionField(String id, String field, Object value) {
         config.set("detection." + id + "." + field, value);

@@ -17,7 +17,9 @@ buildNumber.properties
 .classpath
 
 # Test server folders (do not commit)
-test/
+# 注意：必须锚定根目录，否则会连 src/test/（单测源码）一起忽略，
+# CI 上 mvn test 会跑 0 个用例且「全绿」——最隐蔽的一类假通过。
+/test/
 
 # Python 编译产物（observerctl.py 等）
 __pycache__/
@@ -30,6 +32,11 @@ Release-Pipeline.bat
 
 # Build reports directory
 build-reports/
+
+# CI 本地复现产物（真机 E2E 工作目录 / 审计与门禁报告 / 汇总）
+.ci-e2e/
+.ci-tools/
+ci-summary.md
 
 # IDE files
 .idea/
@@ -87,6 +94,11 @@ docker/observer/jdk8/
 
 # Workspace-local agent memory
 .workbuddy/
+
+# Agent 会话附件 / 本地技能包导出（不属于项目）
+.loomy-attachments/
+anticheat-nas-deploy/
+anticheat-nas-deploy.zip
 
 # Frontend transient artifacts
 web-panel/vite.config.ts.timestamp-*.mjs

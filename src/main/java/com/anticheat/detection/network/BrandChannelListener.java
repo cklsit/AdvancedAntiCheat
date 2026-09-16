@@ -1,6 +1,7 @@
 package com.anticheat.detection.network;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.utils.VersionUtil;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 import org.jetbrains.annotations.NotNull;
@@ -32,9 +33,38 @@ public class BrandChannelListener implements PluginMessageListener {
         registerChannels();
     }
 
+    /**
+     * 注册品牌通道。
+     *
+     * <p><b>跨版本铁律</b>：通道名格式由服务端版本决定，且注册失败绝不能拖垮 onEnable。</p>
+     *
+     * <ul>
+     *   <li>1.12 及以前：只认 {@code MC|Brand}；</li>
+     *   <li>1.13 及以后：只认 {@code namespace:key} 形式，传 {@code MC|Brand} 会直接抛
+     *       {@code IllegalArgumentException: Channel must contain : separator}
+     *       —— 该异常从 {@code registerIncomingPluginChannel} 抛出，若向上冒泡会让
+     *       {@code onEnable} 整体失败、插件被禁用（E2E 在 1.21.11 上抓到过：
+     *       表现为所有 /ac 命令都回 "plugin is disabled"）。</li>
+     * </ul>
+     *
+     * <p>所以这里按大版本选通道名，并对每个通道单独 try/catch(Throwable)：
+     * 品牌通道只影响「客户端品牌采集」这一项附加能力，它失败没有任何理由让整个反作弊停摆。</p>
+     */
     private void registerChannels() {
-        plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL_LEGACY, this);
-        plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL_MODERN, this);
+        String channel = VersionUtil.getMajorVersion() >= 13 ? CHANNEL_MODERN : CHANNEL_LEGACY;
+        try {
+            plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, channel, this);
+            return;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("[Brand] 品牌通道 " + channel + " 注册失败（已跳过客户端品牌采集）：" + t);
+        }
+        // 兜底：万一版本判定与实际实现不一致，再试另一个名字；两次都失败也只是少一项能力
+        String fallback = CHANNEL_LEGACY.equals(channel) ? CHANNEL_MODERN : CHANNEL_LEGACY;
+        try {
+            plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, fallback, this);
+        } catch (Throwable ignored) {
+            // 两条通道都注册不上：品牌采集不可用，其余检测照常
+        }
     }
 
     @Override

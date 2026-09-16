@@ -158,16 +158,20 @@ public final class AiMath {
 
         public void merge(double mean, double std, long count) {
             if (count <= 0) return;
+            // std 的语义与 getStd() 对齐 = 样本标准差（分母 n-1），
+            // 因此并入的平方和是 std²·(n-1) 而不是 std²·n。
+            // （此前用 std²·n，会让合并后的方差系统性偏大 sqrt(n/(n-1)) 倍。）
+            double m2Incoming = std * std * Math.max(count - 1, 0);
             if (this.count == 0) {
                 this.mean = mean;
-                this.m2 = std * std * count;
+                this.m2 = m2Incoming;
                 this.count = count;
                 return;
             }
             long n = this.count + count;
             double delta = mean - this.mean;
             this.mean += delta * count / n;
-            this.m2 += std * std * count + delta * delta * count * this.count / n;
+            this.m2 += m2Incoming + delta * delta * count * this.count / n;
             this.count = n;
         }
     }

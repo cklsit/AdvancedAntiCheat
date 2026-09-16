@@ -332,6 +332,26 @@ public class VersionUtil {
     }
 
     /**
+     * 设置实体是否受重力影响（验证码里盔甲架做"跳跃"动画时用：关掉重力才能手动抬升）。
+     *
+     * <p>1.8 上 {@code setGravity(boolean)} 声明在 {@link org.bukkit.entity.ArmorStand}，
+     * 1.9+ 挪到了 {@code Entity}。按 1.21 编译时生成的方法引用在老版本上可能不存在，
+     * 因此统一走 {@code getClass().getMethod(...)} 反射（Craft 实现类两个版本都有该方法）。
+     *
+     * @return 是否成功设置
+     */
+    public static boolean callSetGravity(Entity entity, boolean gravity) {
+        if (entity == null) return false;
+        try {
+            Method m = entity.getClass().getMethod("setGravity", boolean.class);
+            m.invoke(entity, gravity);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
      * 设置实体默认可见性（蜜罐幽灵实体用）。
      * 优先 1.19.4+ 的 LivingEntity.setVisibleByDefault(boolean)；
      * 1.8 无此方法，降级为 LivingEntity.setInvisible(boolean)（语义近似：让诱饵实体对正常玩家不可见）；

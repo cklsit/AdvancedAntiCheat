@@ -1,0 +1,17 @@
+# 前端 ↔ 后端接口契约「已知漂移」白名单
+#
+# 格式：每行一条，`METHOD /api/path`，方法大写。
+#   METHOD   = GET | POST | PUT | DELETE | PATCH
+#   /api/... = 归一化后的路径（路径参数统一写成 {}，例：POST /api/notifications/{}/read）
+#
+# 规则（由 src/test/java/com/anticheat/contract/WebApiContractTest.java 强制）：
+#   1. 这里登记 = 承认"前端在调一个后端没有的接口"，运行期会 404；
+#   2. 该文件只允许缩小，不允许扩大 —— 往这里加新条目等于把 404 合法化，请先修后端；
+#   3. 一旦后端补上了对应路由，或前端不再调用该接口，
+#      WebApiContractTest.allowlistHasNoStaleEntries 会失败，要求你删掉这一行。
+#
+# 当前待修项（后端 NotificationHandler 只实现了 GET /api/notifications 与
+# POST /api/notifications/markAllRead）：
+POST /api/notifications/{}/read
+POST /api/notifications/read-all
+DELETE /api/notifications

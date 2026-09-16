@@ -80,6 +80,8 @@ public class AdvancedDetectionManager {
     private static final int ASYNC_POOL_SIZE = 4;
     private static final long RCP_COMPUTE_INTERVAL_MS = 1000;
     private static final long TEAM_ANALYSIS_INTERVAL_MS = 60000;
+    /** 单玩家"当前生效检测标签"上限，防止无限增长。 */
+    private static final int MAX_PLAYER_DETECTION_TAGS = 32;
 
     private BukkitTask periodicCheckTask;
     private BukkitTask rcpComputeTask;
@@ -188,7 +190,7 @@ public class AdvancedDetectionManager {
         this.fusionEngine = new ProbabilityFusionEngine();
         this.learningSystem = new AdaptiveLearningSystem();
         this.rcpComputer = new RCPComputer(fusionEngine, learningSystem);
-        this.decisionCenter = new DecisionActionCenter();
+        this.decisionCenter = new DecisionActionCenter(plugin);
 
         plugin.getLogger().info("[AdvancedDetectionManager] 融合中心初始化完成");
     }
@@ -358,7 +360,16 @@ public class AdvancedDetectionManager {
     }
 
     private void recordDetection(UUID uuid, String detectionType) {
-        playerDetections.computeIfAbsent(uuid, k -> new CopyOnWriteArrayList<>()).add(detectionType);
+        // 去重 + 上限：此前每次检测（100ms/次）都无条件 add，CopyOnWriteArrayList 会以 O(n) 复制膨胀，
+        // 既是内存泄漏也是持续 GC 压力来源。这里改为"当前生效的检测标签集合"语义。
+        if (detectionType == null) {
+            return;
+        }
+        List<String> detections = playerDetections.computeIfAbsent(uuid, k -> new CopyOnWriteArrayList<>());
+        if (detections.contains(detectionType) || detections.size() >= MAX_PLAYER_DETECTION_TAGS) {
+            return;
+        }
+        detections.add(detectionType);
     }
 
     public double getRCP(UUID playerUUID) {

@@ -3,6 +3,7 @@ package com.anticheat.listeners;
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.captcha.tasks.TypeA_DirectInteraction;
+import com.anticheat.captcha.tasks.TypeB_MotionMimicry;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -93,6 +94,12 @@ public class CaptchaListener implements Listener {
         player.setFlySpeed(0.2f);
         player.setAllowFlight(false);
         player.setFlying(false);
+
+        // 动作模仿任务需要玩家的姿态变化（转向 / 起跳 / 位移 / 冲刺状态）来还原动作序列
+        CaptchaManager.CaptchaSession session = plugin.getCaptchaManager().getSession(player);
+        if (session != null && session.getCurrentTask() instanceof TypeB_MotionMimicry) {
+            ((TypeB_MotionMimicry) session.getCurrentTask()).onPlayerMove(event);
+        }
     }
 
     @EventHandler(priority = EventPriority.LOW)
@@ -108,6 +115,8 @@ public class CaptchaListener implements Listener {
             Object currentTask = session.getCurrentTask();
             if (currentTask instanceof TypeA_DirectInteraction) {
                 ((TypeA_DirectInteraction) currentTask).onPlayerSneak(event);
+            } else if (currentTask instanceof TypeB_MotionMimicry) {
+                ((TypeB_MotionMimicry) currentTask).onPlayerToggleSneak(event);
             }
         }
     }

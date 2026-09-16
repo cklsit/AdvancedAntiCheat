@@ -49,7 +49,7 @@ public class BehaviorListener implements Listener {
 
         if (event.getPlayer().hasPermission("anticheat.bypass")) return;
 
-        if (plugin.getConfig().getBoolean("behavior-detection.enabled", true)) {
+        if (plugin.getConfig().getBoolean("behavior.enabled", true)) {
             plugin.getBehaviorTracker().checkWalkStayRatio(event.getPlayer().getUniqueId());
             plugin.getBehaviorTracker().checkInterfaceActions(event.getPlayer().getUniqueId());
         }

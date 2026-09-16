@@ -22,6 +22,10 @@
         <api.groupId>io.papermc.paper</api.groupId>
         <api.artifactId>paper-api</api.artifactId>
         <skipFrontend>false</skipFrontend>
+        <!-- 测试相关版本（仅 test scope，不进入 shade 产物） -->
+        <junit.version>5.10.2</junit.version>
+        <surefire.version>3.2.5</surefire.version>
+        <snakeyaml.version>2.2</snakeyaml.version>
     </properties>
 
     <repositories>
@@ -124,6 +128,21 @@
             <artifactId>bcrypt</artifactId>
             <version>0.10.2</version>
         </dependency>
+
+        <!-- ============ 测试依赖（test scope：不参与编译产物与 shade） ============ -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- 契约测试用：直接解析 config.yml / plugin.yml 校验配置项与命令注册 -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeyaml.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <profiles>
@@ -158,6 +177,22 @@
                     <source>${maven.compiler.source}</source>
                     <target>${maven.compiler.target}</target>
                     <encoding>${project.build.sourceEncoding}</encoding>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                    </includes>
+                    <excludes>
+                        <!-- *IT.java 留给 CI 里的真机端到端测试，不在此处跑 -->
+                        <exclude>**/*IT.java</exclude>
+                    </excludes>
+                    <argLine>-Dfile.encoding=UTF-8 -Xmx2g</argLine>
+                    <trimStackTrace>false</trimStackTrace>
                 </configuration>
             </plugin>
             <plugin>
