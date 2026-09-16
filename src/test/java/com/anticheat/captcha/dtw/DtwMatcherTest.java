@@ -20,6 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 玩家照做 → 通过；漏做/做错 → 拒绝；手抖多做一个 → 容忍。
  * 生产阈值（captcha.tasks.motion-mimicry.max-distance = 0.17）写进断言，
  * 因此一旦有人改坏罚分或归一化方式，这里会立刻红。
+ *
+ * <p><b>时长不参与判定</b>（2026-09-16）：生产配置 `duration-weight = 0`，
+ * 判据只看"做了哪些动作 + 顺序对不对"。玩家做得快/慢、中间停顿多久都不影响通过，
+ * 对应的契约由 {@link #onlyActionsMatterNotDuration()} 锁住。
  */
 class DtwMatcherTest {
 
@@ -100,6 +104,81 @@ class DtwMatcherTest {
         // 模板 [跳,左转,右转]，玩家 [跳,左转,跳]（最后一步做错）
         double d = dist(new int[]{0, 1, 2}, new int[]{0, 1, 0});
         assertTrue(d > PROD_MAX_DISTANCE, "做错动作必须判不通过，实际 " + d);
+    }
+
+    // ================================================================
+    // 2026-09-16 调整：**时长完全不参与判定**（duration-weight = 0）
+    // 判据只剩"做了哪些动作 + 顺序对不对"，玩家做得快/慢、中间停顿多久都不影响通过。
+    // 下面这组测试把这条契约与生产动作代价表一起锁住。
+    // ================================================================
+
+    private static final int JUMP = 0;
+    private static final int TURN_LEFT = 1;
+    private static final int TURN_RIGHT = 2;
+    private static final int SPRINT = 3;
+    private static final int WALK = 4;
+    private static final int SNEAK = 5;
+
+    /** 复刻 TypeB_MotionMimicry#actionCost 的代价表。 */
+    private static double prodActionCost(int a, int b) {
+        if (a == b) {
+            return 0.0;
+        }
+        if ((a == SPRINT && b == WALK) || (a == WALK && b == SPRINT)) {
+            return 0.30;   // 同向位移只差速度 → 软惩罚
+        }
+        if ((a == TURN_LEFT && b == TURN_RIGHT) || (a == TURN_RIGHT && b == TURN_LEFT)) {
+            return 0.75;   // 同为转身但方向反了
+        }
+        return 1.0;
+    }
+
+    /** 用生产代价表跑一遍 DTW。 */
+    private static double prodDist(int[] template, int[] observed) {
+        DtwMatcher.Cost c = (i, j) -> i >= template.length || j >= observed.length
+                ? 1.0
+                : prodActionCost(template[i], observed[j]);
+        return DtwMatcher.distance(template.length, observed.length, c, MISSING_PENALTY, EXTRA_PENALTY);
+    }
+
+    @Test
+    @DisplayName("只要动作做对就通过：时长不参与判定，任何节奏都是 0")
+    void onlyActionsMatterNotDuration() {
+        // duration-weight = 0 后，代价函数只由"动作是否相同"决定。
+        // 玩家把 4 个动作做得极快或极慢，传入的代价函数都一模一样 → 距离恒为 0。
+        int[] tpl = {JUMP, TURN_LEFT, SPRINT, SNEAK};
+        assertEquals(0.0, prodDist(tpl, tpl.clone()), 1e-9);
+        // 用同一代价函数重复评估（模拟不同节奏的多次提交）结果必须完全一致
+        for (int round = 0; round < 50; round++) {
+            assertEquals(0.0, prodDist(tpl, tpl.clone()), 1e-9);
+        }
+    }
+
+    @Test
+    @DisplayName("疾跑做成行走：软惩罚，必须容忍")
+    void sprintDoneAsWalkStillPasses() {
+        int[] tpl = {JUMP, TURN_LEFT, SPRINT, SNEAK};
+        int[] obs = {JUMP, TURN_LEFT, WALK, SNEAK};
+        double d = prodDist(tpl, obs);
+        assertEquals(0.075, d, 1e-9);
+        assertTrue(d <= PROD_MAX_DISTANCE, "不会冲刺的玩家不能被误杀，实际 " + d);
+    }
+
+    @Test
+    @DisplayName("转向方向做反：必须拒绝")
+    void flippedTurnIsRejected() {
+        int[] tpl = {TURN_LEFT, JUMP, SNEAK};
+        int[] obs = {TURN_RIGHT, JUMP, SNEAK};
+        double d = prodDist(tpl, obs);
+        assertTrue(d > PROD_MAX_DISTANCE, "转身方向反了必须判不通过，实际 " + d);
+    }
+
+    @Test
+    @DisplayName("动作做错 + 少做：生产代价表下都必须拒绝")
+    void wrongOrMissingWithProdTable() {
+        int[] tpl = {TURN_RIGHT, JUMP, SPRINT, SNEAK};
+        assertTrue(prodDist(tpl, new int[]{TURN_RIGHT, JUMP, SNEAK, SNEAK}) > PROD_MAX_DISTANCE);
+        assertTrue(prodDist(tpl, new int[]{TURN_RIGHT, JUMP, SPRINT}) > PROD_MAX_DISTANCE);
     }
 
     @Test

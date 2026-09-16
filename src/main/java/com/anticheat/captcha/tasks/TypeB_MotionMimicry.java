@@ -66,13 +66,13 @@ public class TypeB_MotionMimicry extends CaptchaTask {
     private int maxActions = 4;
     private int maxAttempts = 2;
     private double maxDistance = 0.17;
-    private double durationWeight = 0.25;
+    private double durationWeight = 0.0;
     private double missingPenalty = 1.0;
     private double extraPenalty = 0.5;
-    private double turnCommitDegrees = 45.0;
+    private double turnCommitDegrees = 30.0;
     private double turnRateThreshold = 1.0;
-    private long minActionMs = 250L;
-    private double minMoveBlocks = 0.6;
+    private long minActionMs = 150L;
+    private double minMoveBlocks = 0.5;
     private double windowMultiplier = 2.2;
     private long windowMinMs = 6000L;
     private long windowMaxMs = 14000L;
@@ -215,9 +215,9 @@ public class TypeB_MotionMimicry extends CaptchaTask {
         sendInstruction(player, "请按以下顺序依次完成动作（共 " + state.template.size() + " 个）:");
         for (int i = 0; i < state.template.size(); i++) {
             Step step = state.template.get(i);
-            player.sendMessage("  §e" + (i + 1) + ". §f" + step.type.label()
-                    + "§8（约 " + String.format("%.1f", step.durationMs / 1000.0d) + " 秒）");
+            player.sendMessage("  §e" + (i + 1) + ". §f" + step.type.label());
         }
+        player.sendMessage("§7只需做出这些动作即可，§a动作做多久、中间停顿多久都不影响判定§7。");
     }
 
     // ================================================================
@@ -514,33 +514,44 @@ public class TypeB_MotionMimicry extends CaptchaTask {
             return 1d;
         }
 
-        long templateTotal = 0L;
-        for (Step step : template) {
-            templateTotal += step.durationMs;
-        }
-        long observedTotal = 0L;
-        for (Input input : observed) {
-            observedTotal += input.durationMs();
-        }
-        if (templateTotal <= 0L || observedTotal <= 0L) {
-            return 1d;
-        }
-
-        final double[] templateShare = new double[template.size()];
-        for (int i = 0; i < template.size(); i++) {
-            templateShare[i] = (double) template.get(i).durationMs / templateTotal;
-        }
-        final double[] observedShare = new double[observed.size()];
-        for (int j = 0; j < observed.size(); j++) {
-            observedShare[j] = (double) observed.get(j).durationMs() / observedTotal;
+        // 时长只作为可选加权项。默认 durationWeight = 0：**只看做了哪些动作、顺序对不对**，
+        // 不要求每个动作的持续时间与题目一致（玩家做得快/慢、停顿长短都不影响判定）。
+        final boolean useDuration = durationWeight > 0.0d;
+        final double[] templateShare;
+        final double[] observedShare;
+        if (useDuration) {
+            long templateTotal = 0L;
+            for (Step step : template) {
+                templateTotal += step.durationMs;
+            }
+            long observedTotal = 0L;
+            for (Input input : observed) {
+                observedTotal += input.durationMs();
+            }
+            if (templateTotal <= 0L || observedTotal <= 0L) {
+                return 1d;
+            }
+            templateShare = new double[template.size()];
+            for (int i = 0; i < template.size(); i++) {
+                templateShare[i] = (double) template.get(i).durationMs / templateTotal;
+            }
+            observedShare = new double[observed.size()];
+            for (int j = 0; j < observed.size(); j++) {
+                observedShare[j] = (double) observed.get(j).durationMs() / observedTotal;
+            }
+        } else {
+            templateShare = null;
+            observedShare = null;
         }
 
         return DtwMatcher.distance(template.size(), observed.size(), new DtwMatcher.Cost() {
             @Override
             public double cost(int i, int j) {
                 double c = actionCost(template.get(i).type, observed.get(j).type);
-                // 时长占比按各自序列归一化后比较 → 天然免疫"整体做得比题目慢/快"
-                c += durationWeight * Math.abs(templateShare[i] - observedShare[j]);
+                if (useDuration) {
+                    // 时长占比按各自序列归一化后比较 → 免疫"整体做得比题目慢/快"
+                    c += durationWeight * Math.abs(templateShare[i] - observedShare[j]);
+                }
                 return Math.min(1d, c);
             }
         }, missingPenalty, extraPenalty);
@@ -626,13 +637,13 @@ public class TypeB_MotionMimicry extends CaptchaTask {
             maxActions = plugin.getConfig().getInt(base + "max-actions", 4);
             maxAttempts = Math.max(1, plugin.getConfig().getInt(base + "max-attempts", 2));
             maxDistance = plugin.getConfig().getDouble(base + "max-distance", 0.17);
-            durationWeight = plugin.getConfig().getDouble(base + "duration-weight", 0.25);
+            durationWeight = Math.max(0.0d, plugin.getConfig().getDouble(base + "duration-weight", 0.0));
             missingPenalty = plugin.getConfig().getDouble(base + "missing-penalty", 1.0);
             extraPenalty = plugin.getConfig().getDouble(base + "extra-penalty", 0.5);
-            turnCommitDegrees = plugin.getConfig().getDouble(base + "turn-commit-degrees", 45.0);
+            turnCommitDegrees = plugin.getConfig().getDouble(base + "turn-commit-degrees", 30.0);
             turnRateThreshold = plugin.getConfig().getDouble(base + "turn-rate-threshold", 1.0);
-            minActionMs = plugin.getConfig().getLong(base + "min-action-ms", 250L);
-            minMoveBlocks = plugin.getConfig().getDouble(base + "min-move-blocks", 0.6);
+            minActionMs = plugin.getConfig().getLong(base + "min-action-ms", 150L);
+            minMoveBlocks = plugin.getConfig().getDouble(base + "min-move-blocks", 0.5);
             windowMultiplier = plugin.getConfig().getDouble(base + "window-multiplier", 2.2);
             windowMinMs = plugin.getConfig().getLong(base + "window-min-ms", 6000L);
             windowMaxMs = plugin.getConfig().getLong(base + "window-max-ms", 14000L);

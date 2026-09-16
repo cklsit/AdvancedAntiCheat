@@ -588,13 +588,14 @@ captcha:
       max-actions: 4                 # 题目最长动作数
       max-attempts: 2                # 总计挑战次数（1 = 不给重试；注意与 time-limit 的预算关系）
       max-distance: 0.17             # DTW 归一化距离阈值，越小越严格（实测 0.14~0.18 分离度最好）
-      duration-weight: 0.25          # 动作时长占比差异在代价值里的权重（免疫整体快慢）
+      duration-weight: 0.0           # 动作时长占比在代价里的权重。0 = 只看"做了哪些动作、顺序对不对"，
+                                     #  人类做得快/慢、停顿长短都不影响判定（推荐保持 0）
       missing-penalty: 1.0           # 漏做一个模板动作的代价（强作弊信号 → 严判）
       extra-penalty: 0.5             # 玩家多做一个动作的代价（多为误触 → 容忍，避免误杀真人）
-      turn-commit-degrees: 45        # 累计转身超过该角度才算一次"转向"动作
+      turn-commit-degrees: 30        # 累计转身超过该角度才算一次"转向"动作（放宽，别让玩家转不够就被判"漏做"）
       turn-rate-threshold: 1.0       # 单 tick 偏航超过该角度视为"正在转身"
-      min-action-ms: 250             # 短于该时长的动作忽略（过滤手抖 / 误触）
-      min-move-blocks: 0.6           # 行走 / 疾跑算作一个动作的最短位移
-      window-multiplier: 2.2         # 采集窗口 = 题目总时长 × 该系数 + 2.5 秒
+      min-action-ms: 150             # 短于该时长的动作忽略（只用于滤手抖 / 误触，不是"要求做满多久"）
+      min-move-blocks: 0.5           # 行走 / 疾跑算作一个动作的最短位移
+      window-multiplier: 2.2         # 采集窗口 = 动作数对应的时间预算 × 该系数 + 2.5 秒
       window-min-ms: 6000            # 采集窗口下限（毫秒）
       window-max-ms: 14000           # 采集窗口上限（毫秒）
