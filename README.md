@@ -24,9 +24,10 @@
 
 ![AdvancedAntiCheat 高层运行时架构](docs/architecture/anticheat-runtime-architecture.png)
 
-> 上图由 [archify](https://github.com/tt-a1i/archify) 从仓库真实代码生成，规格文件与交互版见 [`docs/architecture/`](docs/architecture/)：
-> [`anticheat-runtime-architecture.html`](docs/architecture/anticheat-runtime-architecture.html)（可缩放 / 搜索 / 主题切换）·
-> [`anticheat-runtime-architecture.json`](docs/architecture/anticheat-runtime-architecture.json)（16 处源码引用）·
+> 上图由 [archify](https://github.com/tt-a1i/archify) 从仓库真实代码生成，锚定提交 `4b3bb47`，含 16 处源码引用。
+> 完整产物在 [`docs/architecture/`](docs/architecture/)：
+> [交互版 HTML](docs/architecture/anticheat-runtime-architecture.html)（下载后本地打开，支持缩放 / 搜索 / 主题切换 / 导出）·
+> [JSON 规格](docs/architecture/anticheat-runtime-architecture.json)（可复现渲染）·
 > [深色版 PNG](docs/architecture/anticheat-runtime-architecture-dark.png)
 
 **主链路（唯一一条运行时路径）**
