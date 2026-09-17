@@ -29,6 +29,49 @@
 > [交互版 HTML](docs/architecture/anticheat-runtime-architecture.html)（下载后本地打开，支持缩放 / 搜索 / 主题切换 / 导出）·
 > [JSON 规格](docs/architecture/anticheat-runtime-architecture.json)（可复现渲染）·
 > [深色版 PNG](docs/architecture/anticheat-runtime-architecture-dark.png)
+>
+> GitHub 的 Markdown 清洗器只放行 `img / table / details` 等少量标签，`script`、`style`、`iframe`、`svg`、`picture` 均会被剔除，
+> 因此交互版 HTML **无法直接嵌进 README**。下面折叠区是用 GitHub 原生 Mermaid 渲染的等价版本，可在页面内直接放大查看。
+
+<details>
+<summary>📐 原生渲染版架构图（GitHub 直接绘制 · 可点击放大 · 随深浅主题切换）</summary>
+
+```mermaid
+flowchart LR
+  P["玩家客户端<br/>原版 / 外挂客户端"]:::untrusted
+
+  subgraph SRV["Minecraft 服务端进程 · 单 JAR 插件"]
+    direction LR
+    E["事件采集层<br/>Listener ×12 · 节流 20/50ms"]
+    B["行为画像<br/>BehaviorTracker → PlayerProfile"]
+    M["检测模块群<br/>8 类模块 · 每 100ms 异步"]
+    F["概率融合与 RCP<br/>贝叶斯网络 · 每 1s 重算"]
+    G["融合决策中心<br/>五档 ActionLevel"]
+    S["违规处置<br/>ViolationManager → BanManager"]
+    E -->|行为事件| B
+    B -->|特征快照| M
+    M -->|模块概率| F
+    F -->|RCP 0–1.0| G
+    G -->|档位升级| S
+  end
+
+  P -->|移动 / 攻击 / 背包数据包| E
+
+  W["管理面板<br/>Vue3 SPA · Javalin :8080"]:::auth
+  W -->|管理指令 Bearer + RBAC| G
+
+  E -->|分配观察者槽位 FIFO ≤3| O["观察者容器<br/>ffmpeg · HLS"]:::external
+  M <-.->|数据包事件| L["ProtocolLib<br/>协议级校验"]:::soft
+  S -->|封禁落盘| DB[("外部数据库<br/>sqlite / mysql / redis")]:::external
+  S -.->|跨服封禁同步| PR["代理服<br/>BungeeCord / Velocity"]:::soft
+
+  classDef untrusted fill:#ffe6e6,stroke:#d64545,stroke-width:2px,color:#4a1010
+  classDef auth fill:#e6f0ff,stroke:#2f6fd0,stroke-width:2px,color:#0d2440
+  classDef external fill:#f1ecff,stroke:#7a5cd6,stroke-width:1.5px,color:#241247
+  classDef soft fill:#f5f5f5,stroke:#8a8a8a,stroke-width:1px,stroke-dasharray:4 3,color:#2b2b2b
+```
+
+</details>
 
 **主链路（唯一一条运行时路径）**
 
