@@ -1,0 +1,476 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "AdvancedAntiCheat 高层运行时架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1290,
+      620
+    ],
+    "repository": {
+      "url": "https://github.com/cklsit/AdvancedAntiCheat",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "4b3bb479840c7b920d3860422eec86cdad75b549"
+    },
+    "views": [
+      {
+        "id": "main-path",
+        "label": "主链路",
+        "focus": [
+          "player",
+          "ingest",
+          "profile",
+          "modules",
+          "fusion",
+          "decision",
+          "sanction"
+        ],
+        "note": "玩家数据包 → 采集 → 画像 → 检测 → 融合 → 决策 → 处置。"
+      },
+      {
+        "id": "trust-boundaries",
+        "label": "信任边界",
+        "focus": [
+          "player",
+          "ingest",
+          "panel",
+          "decision",
+          "sanction",
+          "observer"
+        ],
+        "note": "两处入站边界：不可信的玩家输入、需认证的管理指令。"
+      },
+      {
+        "id": "side-branches",
+        "label": "外部依赖旁路",
+        "focus": [
+          "ingest",
+          "observer",
+          "modules",
+          "protocollib",
+          "sanction",
+          "db",
+          "proxy"
+        ],
+        "note": "回放取证、协议校验、持久化、跨服同步四条旁路。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "player",
+      "type": "external",
+      "label": "玩家客户端",
+      "sublabel": "原版 / 外挂",
+      "tag": "不可信",
+      "pos": [
+        50,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ]
+    },
+    {
+      "id": "ingest",
+      "type": "backend",
+      "label": "事件采集层",
+      "sublabel": "Listener ×12",
+      "pos": [
+        226,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/managers/DetectionCoordinator.java",
+          "line": 1,
+          "label": "事件节流入口"
+        },
+        {
+          "path": "src/main/java/com/anticheat/listeners/PlayerMoveListener.java",
+          "line": 1,
+          "label": "移动事件"
+        }
+      ]
+    },
+    {
+      "id": "profile",
+      "type": "backend",
+      "label": "行为画像",
+      "sublabel": "BehaviorTracker",
+      "pos": [
+        402,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/profiles/BehaviorTracker.java",
+          "line": 1,
+          "label": "画像采集"
+        }
+      ]
+    },
+    {
+      "id": "modules",
+      "type": "backend",
+      "label": "检测模块群",
+      "sublabel": "8 类模块",
+      "pos": [
+        578,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/managers/AdvancedDetectionManager.java",
+          "line": 79,
+          "label": "CHECK_INTERVAL_MS=100"
+        }
+      ]
+    },
+    {
+      "id": "fusion",
+      "type": "backend",
+      "label": "概率融合",
+      "sublabel": "贝叶斯网络",
+      "pos": [
+        754,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/detection/fusion/ProbabilityFusionEngine.java",
+          "line": 1,
+          "label": "贝叶斯融合"
+        },
+        {
+          "path": "src/main/java/com/anticheat/detection/fusion/RCPComputer.java",
+          "line": 1,
+          "label": "RCP 计算"
+        }
+      ]
+    },
+    {
+      "id": "decision",
+      "type": "security",
+      "label": "融合决策中心",
+      "sublabel": "五档 ActionLevel",
+      "pos": [
+        930,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/detection/fusion/DecisionActionCenter.java",
+          "line": 55,
+          "label": "ActionLevel 枚举"
+        }
+      ]
+    },
+    {
+      "id": "sanction",
+      "type": "backend",
+      "label": "违规处置",
+      "sublabel": "BanManager",
+      "pos": [
+        1106,
+        286
+      ],
+      "size": [
+        120,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/detection/ViolationManager.java",
+          "line": 268,
+          "label": "触发封禁"
+        },
+        {
+          "path": "src/main/java/com/anticheat/managers/BanManager.java",
+          "line": 71,
+          "label": "banPlayer"
+        }
+      ]
+    },
+    {
+      "id": "panel",
+      "type": "frontend",
+      "label": "管理面板",
+      "sublabel": "Javalin :8080",
+      "tag": "Bearer + RBAC",
+      "pos": [
+        930,
+        104
+      ],
+      "size": [
+        120,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/web/WebServer.java",
+          "line": 1,
+          "label": "Javalin 服务"
+        },
+        {
+          "path": "src/main/java/com/anticheat/web/auth/AuthFilter.java",
+          "line": 30,
+          "label": "Bearer 校验"
+        }
+      ]
+    },
+    {
+      "id": "proxy",
+      "type": "external",
+      "label": "代理服",
+      "sublabel": "BungeeCord",
+      "tag": "软依赖",
+      "pos": [
+        1106,
+        104
+      ],
+      "size": [
+        120,
+        68
+      ],
+      "sources": [
+        {
+          "path": "plugin.yml",
+          "line": 10,
+          "label": "softdepend"
+        },
+        {
+          "path": "src/main/java/com/anticheat/listeners/BungeeCordMessageListener.java",
+          "line": 1,
+          "label": "插件消息通道"
+        }
+      ]
+    },
+    {
+      "id": "observer",
+      "type": "external",
+      "label": "观察者容器",
+      "sublabel": "ffmpeg · HLS",
+      "tag": "无鉴权",
+      "pos": [
+        226,
+        480
+      ],
+      "size": [
+        120,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/managers/ffmpeg/FfmpegManager.java",
+          "line": 1,
+          "label": "HTTP observerctl"
+        }
+      ]
+    },
+    {
+      "id": "protocollib",
+      "type": "external",
+      "label": "ProtocolLib",
+      "sublabel": "协议级校验",
+      "tag": "软依赖",
+      "pos": [
+        578,
+        480
+      ],
+      "size": [
+        120,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/integration/ProtocolLibHook.java",
+          "line": 1,
+          "label": "软依赖探测"
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "外部数据库",
+      "sublabel": "sqlite / mysql",
+      "pos": [
+        1106,
+        480
+      ],
+      "size": [
+        120,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/main/java/com/anticheat/managers/DatabaseManager.java",
+          "line": 42,
+          "label": "database.type 分支"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Minecraft 服务端进程 · 单 JAR 插件",
+      "wraps": [
+        "ingest",
+        "profile",
+        "modules",
+        "fusion",
+        "decision",
+        "sanction"
+      ],
+      "pad": 16
+    },
+    {
+      "kind": "security-group",
+      "label": "不可信输入",
+      "wraps": [
+        "player"
+      ],
+      "pad": 8
+    },
+    {
+      "kind": "security-group",
+      "label": "认证边界",
+      "wraps": [
+        "panel"
+      ],
+      "pad": 12
+    }
+  ],
+  "connections": [
+    {
+      "id": "player-to-ingest",
+      "from": "player",
+      "to": "ingest",
+      "label": "数据包",
+      "variant": "emphasis",
+      "labelDy": 66
+    },
+    {
+      "id": "ingest-to-profile",
+      "from": "ingest",
+      "to": "profile",
+      "label": "行为事件"
+    },
+    {
+      "id": "profile-to-modules",
+      "from": "profile",
+      "to": "modules",
+      "label": "特征快照"
+    },
+    {
+      "id": "modules-to-fusion",
+      "from": "modules",
+      "to": "fusion",
+      "label": "模块概率"
+    },
+    {
+      "id": "fusion-to-decision",
+      "from": "fusion",
+      "to": "decision",
+      "label": "RCP 分数"
+    },
+    {
+      "id": "decision-to-sanction",
+      "from": "decision",
+      "to": "sanction",
+      "label": "档位升级"
+    },
+    {
+      "id": "panel-to-decision",
+      "from": "panel",
+      "to": "decision",
+      "label": "管理指令",
+      "variant": "security",
+      "labelDy": 80
+    },
+    {
+      "id": "ingest-to-observer",
+      "from": "ingest",
+      "to": "observer",
+      "label": "分配观察者槽位",
+      "variant": "dashed",
+      "labelDy": 80
+    },
+    {
+      "id": "protocollib-to-modules",
+      "from": "protocollib",
+      "to": "modules",
+      "label": "数据包事件",
+      "variant": "dashed"
+    },
+    {
+      "id": "sanction-to-db",
+      "from": "sanction",
+      "to": "db",
+      "label": "封禁落盘",
+      "labelDy": 80
+    },
+    {
+      "id": "sanction-to-proxy",
+      "from": "sanction",
+      "to": "proxy",
+      "label": "跨服封禁同步",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "主链路实现要点",
+      "items": [
+        "Listener ×12 采集 + 事件节流 20/50ms；AdvancedDetectionManager 每 100ms 异步全项检查，RCP 每 1s 重算",
+        "五档 ActionLevel：NORMAL 0.5 / MONITOR 0.75 / CAPTCHA 0.95 / TEMP_BAN 0.995 / PERM_BAN",
+        "决策中心 CAPTCHA / TEMP_BAN / PERM_BAN 动作仍是空桩（Integration point），真实封禁只来自规则链 ViolationManager → BanManager"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "信任边界与薄弱点",
+      "items": [
+        "玩家输入全部不可信：移动/攻击包节流 + ProtocolValidator 校验；白名单靠 anticheat.bypass 附件全局豁免",
+        "/api/* 除 login|register|meta|debug 外统一过 AuthFilter（Bearer token）+ bcrypt cost=10 + RBAC 权限点",
+        "observerctl 端口 18081–18083 无鉴权；举报 reason 无长度与字符校验即广播落盘"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "外部依赖与旁路",
+      "items": [
+        "数据库 database.type 五选一：sqlite（默认）/ mysql / h2 / redis / mongodb，凭据在 config.yml",
+        "代理 BungeeCord / Velocity 软依赖（只实现 BungeeCord 消息通道）；ProtocolLib 5.3.0 未装则协议层降级",
+        "面板 Javalin :8080（REST /api/*、WS /ws、/ws/replay/{uuid}，BukkitBridge 回主线程）；观察者容器走 HTTP observerctl 产 HLS"
+      ]
+    }
+  ]
+}

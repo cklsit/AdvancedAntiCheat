@@ -1,35 +1,91 @@
 # AdvancedAntiCheat
 
+[![CI](https://github.com/cklsit/AdvancedAntiCheat/actions/workflows/ci.yml/badge.svg)](https://github.com/cklsit/AdvancedAntiCheat/actions/workflows/ci.yml)
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Support](https://img.shields.io/badge/support-1.8.x%20--%201.21.x-orange)
+![Support](https://img.shields.io/badge/support-1.8.8%20--%201.21.11-orange)
 ![Java](https://img.shields.io/badge/Java-21-red?logo=openjdk)
 
-适用于 **Minecraft 1.8.x – 1.21.x** 服务端（Paper / Purpur / Spigot / FlamePaper）的高级反作弊插件。
+适用于 **Minecraft 1.8.8 – 1.21.11** 服务端（Paper / Purpur / Spigot / FlamePaper）的高级反作弊插件：**一套源码编译，双版本运行**。
 
 不只是阈值检测——AAC 构建了「**多层检测引擎 → 玩家画像 → 贝叶斯概率融合 → 五级智能处置 → Web 可视化取证**」的完整反作弊闭环：
 
 - 🧠 **RCP 实时作弊概率**：多模块概率经贝叶斯网络融合，自适应学习调整权重，输出 NORMAL → MONITOR → CAPTCHA → TEMP_BAN → PERM_BAN 五级处置
 - 🕵️ **八大类 40+ 检测项**：移动 / 战斗 / 挖掘建筑 / 背包物品 / 网络协议 / 客户端指纹 / 蜜罐陷阱 / 行为分析全项覆盖
 - 👤 **玩家画像系统**：瞄准分析、挖矿模式、背包状态机、击键动力学、身份指纹、社交关联图谱与风险历史
-- 🔐 **三套人工介入机制**：查端（客户端核实）、验证码（专用世界任务）、漏洞赏金（白盒自测沙箱）
+- 🔐 **三套人工介入机制**：查端（客户端核实）、验证码（专用世界任务 + 动作模仿 DTW 判定）、漏洞赏金（白盒自测沙箱）
 - 🌐 **跨服务器同步封禁**：SQLite / H2 / MySQL / MongoDB / Redis，配合 BungeeCord / Velocity 全服生效
-- 🖥️ **内嵌 Web 管理面板**：Vue 3 SPA + REST + WebSocket，总览 / 玩家 / 案件 / 配置 / 审计 / AI 实验室 / 联盟图谱 / 实时地图
+- 🖥️ **内嵌 Web 管理面板**：Vue 3 SPA + REST + WebSocket，总览 / 玩家 / 案件 / 配置 / 审计 / AI 实验室 / 联盟图谱 / 实时地图 / 违规回放
 - 🎬 **违规实时回放取证**：Docker 观察者客户端跟随 suspect，ffmpeg 抓屏 LL-HLS 直播 + 20Hz 遥测合成 HUD 叠层，一键归档取证包
+
+---
+
+## 🏗️ 架构总览
+
+![AdvancedAntiCheat 高层运行时架构](docs/architecture/anticheat-runtime-architecture.png)
+
+> 上图由 [archify](https://github.com/tt-a1i/archify) 从仓库真实代码生成，规格文件与交互版见 [`docs/architecture/`](docs/architecture/)：
+> [`anticheat-runtime-architecture.html`](docs/architecture/anticheat-runtime-architecture.html)（可缩放 / 搜索 / 主题切换）·
+> [`anticheat-runtime-architecture.json`](docs/architecture/anticheat-runtime-architecture.json)（16 处源码引用）·
+> [深色版 PNG](docs/architecture/anticheat-runtime-architecture-dark.png)
+
+**主链路（唯一一条运行时路径）**
+
+```
+玩家数据包 → 事件采集层 → 行为画像 → 检测模块群 → 概率融合(RCP) → 融合决策中心 → 违规处置
+```
+
+| 阶段 | 关键实现 | 要点 |
+|------|---------|------|
+| 事件采集层 | `listeners/` 下 14 个 Listener + `DetectionCoordinator` | 移动/攻击事件节流 20/50ms，避免高频事件打满主线程 |
+| 行为画像 | `BehaviorTracker` → `PlayerProfile` | 五大行为特征 + 瞄准/挖矿/背包/指纹/关联图，风险历史每小时衰减 |
+| 检测模块群 | `AdvancedDetectionManager` + 8 类专项模块 | 每 **100ms** 异步跑全项检查（10Hz），TPS/CPU 超阈值自动降级 |
+| 概率融合 | `ProbabilityFusionEngine` + `BayesianNetwork` + `RCPComputer` | 各模块概率融合成 RCP（0–1.0），每 1s 重算，叠加先验/延迟/趋势 |
+| 融合决策中心 | `DecisionActionCenter` | `ActionLevel` 五档：0.5 / 0.75 / 0.95 / 0.995 分级，提示按档位升级 + 同档冷却防刷屏 |
+| 违规处置 | `ViolationManager` → `BanManager` | 违规计数达阈值即封禁，落盘后跨服同步 |
+
+**外部依赖与信任边界**
+
+| 类型 | 对象 | 现状 |
+|------|------|------|
+| 🔴 信任边界 | 玩家客户端（全部输入不可信） | 事件节流 + `ProtocolValidator` 结构校验；白名单挂 `anticheat.bypass` 附件全局豁免 |
+| 🔴 信任边界 | 管理面板 `/api/*` | `AuthFilter` 校验 Bearer token，bcrypt(cost=10) + RBAC 权限点；`BukkitBridge.callSyncMethod` 回主线程（5s 超时） |
+| 🟠 外部系统 | 外部数据库 | `database.type` 五选一：sqlite（默认）/ mysql / h2 / redis / mongodb |
+| 🟠 外部系统 | 代理服 | 软依赖 BungeeCord / Velocity，实现跨服封禁同步与 `/goto` |
+| 🟠 外部系统 | 观察者容器 | 插件通过 HTTP 调 `observerctl`（默认 `:18081–18083`）启动 HLS 录制 |
+| 🟠 外部系统 | ProtocolLib | 软依赖，未安装时协议层检测自动降级 |
+
+---
 
 ## 📋 前置依赖
 
-插件启动时自动检测服务器版本，在 1.8.x 与 1.19+ API 之间选择兼容模式运行：
+插件启动时自动探测服务器版本，在 1.8.x 与 1.19+ API 之间选择兼容模式运行：
 
-| 服务器类型 | 最低版本 | 推荐版本 |
-|-----------|---------|---------|
-| Paper/Purpur | 1.19+ | 1.21.11+ |
-| Spigot/Paper | 1.8.x | 1.8.8 / 1.21.11 |
+| 服务器类型 | 最低版本 | 推荐 / CI 验证版本 |
+|-----------|---------|------------------|
+| Paper / Purpur | 1.19+ | 1.21.11 |
+| Spigot / FlamePaper | 1.8.x | 1.8.8 |
 
 | 软依赖 | 说明 |
 |--------|------|
 | BungeeCord / Velocity | 跨服务器消息通道，用于跨服封禁同步与 `/goto` |
 | ProtocolLib | 协议级检测（非法数据包结构、微时序、假方块）；未安装时相关检测自动降级，插件照常运行 |
+| Docker（可选） | 仅违规回放子系统需要；不可用时可 `/ac replay disable` 关闭 |
+
+---
+
+## 🚀 安装方法
+
+1. 下载最新版插件 JAR（[Releases](https://github.com/cklsit/AdvancedAntiCheat/releases)，Nightly 每日 21:00（北京时间）自动发布）
+2. 将 JAR 放入服务端 `plugins` 目录
+3. 启动服务器，插件自动生成配置：
+   - `plugins/AdvancedAntiCheat/config.yml` — 主配置（检测项 / 数据库 / Web 面板 / 回放）
+   - `plugins/AdvancedAntiCheat/checkclient.yml` — 查端文案
+   - `plugins/AdvancedAntiCheat/messages.yml` — 玩家侧全部消息
+4. 改完执行 `/ac reload`（**不要用 Bukkit `/reload`**，会踢下线且观察者不自动重连）
+5. （可选）启用违规回放：宿主机装 Docker，插件首次启动自动部署观察者集群，或 `/ac replay setup`
+
+---
 
 ## ✨ 功能特性
 
@@ -42,7 +98,7 @@
 | Fly | 飞行检测（支持创造模式排除） |
 | Speed | 移动速度异常 |
 | KillAura | 杀戮光环 |
-| Reach | 攻击距离异常（NORMAL/MAX/ABSOLUTE 三级校验） |
+| Reach | 攻击距离异常（NORMAL / MAX / ABSOLUTE 三级校验） |
 | ESP | 透视 / 实体追踪 |
 | FastBreak | 破坏方块速度异常 |
 | Scaffold | 自动搭桥 |
@@ -61,84 +117,66 @@
 | 七、蜜罐陷阱 | `x_ray`（幻象诱饵矿石）、`chest_esp`、`player_radar`、`tracer`、`fake_drop`、`fake_escape`（假逃脱重定向沙箱收集情报） |
 | 八、行为分析 | `behavior_anomaly`（个人基线偏离）、`keystroke`（击键动力学）、`anti_recon`（反侦察）、`global_anomaly`（孤立森林全局异常） |
 
-另有独立 **物理模拟复算**（`PhysicsSimulator`，服务端重放客户端运动学验证位移合法性）与 **关联检测**（小号识别、团队作弊、设备指纹、社交图谱、行为相似度）。
+另有独立的 **物理模拟复算**（`PhysicsSimulator`，服务端重放客户端运动学验证位移合法性）与 **关联检测**（小号识别、团队作弊、设备指纹、社交图谱、行为相似度）。
 
 ### 🧠 概率融合与智能决策
 
 - `ProbabilityFusionEngine` + `BayesianNetwork` 融合各模块概率证据
 - `RCPComputer` 计算玩家实时作弊概率（RCP），叠加先验、网络延迟与趋势分析
 - `AdaptiveLearningSystem` 基于历史数据自适应调整各检测模块权重
-- `DecisionActionCenter` 按 RCP 阈值输出五级处置；同类提示自动冷却防刷屏
-- `PerformanceMonitor` 监控 TPS/CPU/内存，压力过大自动进入降级模式降低检测频次
+- `DecisionActionCenter` 按 RCP 阈值输出五级处置；提示按「档位升级 + 同档冷却」门控，处罚动作不受节流影响
+- `PerformanceMonitor` 监控 TPS / CPU / 内存，压力过大自动降级检测频次
+
+### 🤖 AI 实验室（`com.anticheat.ai`）
+
+48 维特征工程 → KMeans 个人基线 + 孤立森林全局异常 + 监督学习闭环 + PID 自适应阈值，融合分回注 `updatePlayerRCP`；`ailab.enabled=false` 即退回纯规则模式，数据落在 `dataFolder/ailab/`。
 
 ### 👤 玩家画像（profiles）
 
-每位玩家维护长期档案：移动/战斗/挖矿/背包/社交五大行为特征、瞄准平滑度分析、挖矿时间规律、背包状态机、操作节奏（`TimerDetection`）、身份指纹（历史 ID / IP / 客户端版本 / 语言 / 硬件）、账号关联图与风险历史（每小时自动衰减），为决策中心提供长程上下文，并可在 Web 面板与游戏内 GUI（`/ac profile`）查看。
-
-### 🔐 查端系统（客户端核实）
-
-- `/checkclient <玩家> <QQ号>` - 开始客户端检查
-- 被检查玩家将被：限制移动（无法移动、跳跃、飞行）、限制交互（无法使用指令、聊天、攻击）、施加失明效果、显示自定义标题和聊天消息
-- `/checkdone <玩家>` - 结束检查（通过）
-- 检查超时自动永久封禁；查端过程中退出服务器自动永久封禁
-- **可通过 checkclient.yml 自定义查端信息**（标题 / 聊天文案 / 超时）
+每位玩家维护长期档案：移动 / 战斗 / 挖矿 / 背包 / 社交五大行为特征、瞄准平滑度分析、挖矿时间规律、背包状态机、操作节奏（`TimerDetection`）、身份指纹（历史 ID / IP / 客户端版本 / 语言 / 硬件）、账号关联图与风险历史（每小时衰减），为决策中心提供长程上下文，可在 Web 面板与游戏内 GUI（`/ac profile`）查看。
 
 ### 🧩 验证码系统
 
-- `/captcha <玩家|toggle|timelimit>` - 对玩家发起验证码测试；支持新玩家自动验证码
-- 玩家被传送进**专用验证码世界**（自定义生成器），按提示完成指定交互任务（如 `TypeA_DirectInteraction`）
-- 由融合决策触发（CAPTCHA 级）或管理员手动发起，是介于「监控」与「封禁」之间的低误伤处置手段
+- `/captcha <玩家|toggle|timelimit>` — 对玩家发起验证码测试，支持新玩家自动验证
+- 玩家进入**专用验证码世界**（自定义 chunk generator），从 `captcha.tasks.*` 启用的题库中**随机抽 1 项**：
+  - `TypeA_DirectInteraction` — 注视指定颜色的羊 + 潜行
+  - `TypeB_MotionMimicry` — 随机 3~4 步动作序列（跳跃 / 左右转 / 疾跑 / 潜行，不连续重复），按序号打在聊天框，由 `DtwMatcher`（DTW）对齐判定，**只看做了哪些动作与顺序，时长不参与**
+- 判定通过即放行；失败会重新出题，连续失败达阈值由决策中心升级处置
+- 动作识别阈值刻意放宽（`min-action-ms 150` / `turn-commit-degrees 30` / `min-move-blocks 0.5`），宁可放过误触也不误杀真人
+
+### 🔐 查端系统（客户端核实）
+
+- `/checkclient <玩家> <QQ号>` — 开始客户端检查，被检玩家限制移动 / 交互 / 指令 / 聊天、施加失明、显示自定义标题与聊天消息
+- `/checkdone <玩家>` — 结束检查（通过）
+- 超时或中途退出 → 自动永久封禁
+- 文案、超时时间全部可在 `checkclient.yml` 自定义（支持 `{vault_group}` `{admin}` `{qq}` `{timeout}` 变量）
 
 ### 💰 漏洞赏金系统
 
-- `/bounty enter` - 进入漏洞赏金沙箱
-- `/bounty leave` - 离开漏洞赏金沙箱
-- `/bounty start <任务>` - 开始赏金任务
-- `/bounty report <描述>` - 报告发现的漏洞
-- `/bounty lb` - 查看赏金排行榜
-
-**支持的任务类型**:
-
 | 任务类型 | 描述 | 时间限制 |
 |----------|------|----------|
-| `MOVE_BASIC` | 基础移动测试（从A点到B点） | 3分钟 |
-| `MOVE_ADVANCED` | 高级移动测试（空中直角变向） | 5分钟 |
-| `COMBAT_BASIC` | 基础战斗测试（击杀僵尸） | 5分钟 |
-| `COMBAT_ADVANCED` | 高级战斗测试（杀戮光环检测） | 5分钟 |
-| `INVENTORY_CHALLENGE` | 物品栏挑战（快速切换物品） | 3分钟 |
-| `FREE_TEST` | 自由测试（给予所有道具和怪物） | 10分钟 |
+| `MOVE_BASIC` | 基础移动测试（A → B） | 3 分钟 |
+| `MOVE_ADVANCED` | 高级移动测试（空中直角变向） | 5 分钟 |
+| `COMBAT_BASIC` | 基础战斗测试（击杀僵尸） | 5 分钟 |
+| `COMBAT_ADVANCED` | 高级战斗测试（杀戮光环检测） | 5 分钟 |
+| `INVENTORY_CHALLENGE` | 物品栏挑战（快速切换物品） | 3 分钟 |
+| `FREE_TEST` | 自由测试（给予所有道具与怪物） | 10 分钟 |
 
-**任务自动评估**:
-- **DETECTED** - 检测到作弊行为
-- **BYPASSED** - 无检测且无可疑行为（绕过成功）
-- **ZERO_DAY** - 无检测但有可疑行为（高危发现）
+任务结束自动评估：**DETECTED**（检测到作弊）/ **BYPASSED**（无检测且无可疑行为）/ **ZERO_DAY**（无检测但有可疑行为，高危发现）。
 
-### ⚖️ 智能封禁系统
+### ⚖️ 封禁与举报
 
-- 根据作弊严重程度自动封禁（临时 1 分钟 ~ 永久），违规级别支持踢出阈值与人工审核升级阈值
-- **默认永久封禁**，封禁界面可通过 `messages.yml` 自定义
-- 封禁记录持久化存储，审计全留痕
-
-### 📢 玩家举报系统
-
-- `/report <玩家> <原因>` - 普通玩家可举报作弊玩家
-- **管理员实时收到带点击按钮的举报通知**，[前往举报者] 一键传送
-- 举报记录保存，Web 面板案件中心可审理裁决
-
-### 🌐 跨服务器支持
-
-- 支持 Velocity / BungeeCord 代理环境
-- 数据库同步封禁信息，任一服务器封禁后所有链接服务器自动拒绝进入
-- `/goto <玩家>` 支持跨服传送
+- 按违规严重程度自动封禁（临时 1 分钟 ~ 永久），支持踢出阈值与人工审核升级阈值，封禁界面可在 `messages.yml` 自定义
+- `/report <玩家> <原因>` — 玩家举报，管理员收到**带「前往举报者」按钮**的通知，举报记录可在 Web 案件中心审理
 
 ### 🖥️ 内嵌 Web 管理面板
 
-插件自带 Javalin HTTP + WebSocket 服务器，启动后浏览器直接访问 `http://<服务器IP>:8080/`：
+插件自带 Javalin HTTP + WebSocket 服务，启动后访问 `http://<服务器IP>:8080/`：
 
 | 页面 | 功能 |
 |------|------|
 | 总览 Dashboard | 检测统计、模块状态、服务器状态实时曲线 |
-| 玩家管理 | 列表/详情/画像/封禁操作 |
+| 玩家管理 | 列表 / 详情 / 画像 / 封禁操作 |
 | 案件中心 | 违规案件审理与裁决（RBAC 分工） |
 | 系统配置 | 检测项开关与阈值热更新 |
 | 审计日志 | 全部 Web 操作留痕查询 |
@@ -147,38 +185,33 @@
 | 实时地图 | Canvas 2D 玩家位置沙盘 |
 | 违规回放 | 观察者直播观看 + 遥测 HUD 叠层 + 归档下载 |
 
-- 内置 **RBAC**：admin / moderator / reviewer / observer 四角色演示账号（明文密码 = 用户名）
-- 生产部署：游戏内执行 `/ac genpwd <新密码>` 生成 bcrypt 哈希替换 `config.yml` 中 `web.auth.accounts[].password-hash`，再 `/ac reload` 生效
+- 内置 **RBAC**：admin / moderator / reviewer / observer 四角色演示账号（明文密码 = 用户名，仅用于演示）
+- 生产部署：游戏内 `/ac genpwd <新密码>` 生成 bcrypt 哈希替换 `config.yml` 的 `web.auth.accounts[].password-hash`，再 `/ac reload`
+- REST 前缀 `/api/*`，WebSocket 端点 `/ws`（告警）与 `/ws/replay/{uuid}`（遥测，支持 `lastSeq` 断点续传）
 
 ### 🎬 违规回放（Observer 取证子系统）
 
 针对「截图录屏难以还原作弊现场」的痛点，AAC 提供服务端侧的**真实客户端回放直播**：
 
 ```
-玩家进入 → SurveillanceScheduler 排队调度 → Docker 观察者客户端按需进服
+玩家进入 → SurveillanceScheduler FIFO 调度 → Docker 观察者客户端按需进服
   → setSpectatorTarget 相机绑定（attach 眼位 / shoulder 过肩，违规自动切过肩）
   → 容器 Xvfb + ffmpeg 抓屏 → LL-HLS 推流 → Web 面板 hls.js 播放
   → 20Hz 遥测（坐标/血量/准星目标/36 格背包）WS 下发 → 前端 HUD 叠层对齐视频
   → 会话结束 / 玩家退出 → 视频 + 遥测统一 ZIP 归档（默认保留 7 天）
 ```
 
-- **观察者集群自动部署**：插件首次启动检测 Docker，可用则自动 build + up 观察者容器；不可用时打印「安装 Docker 或关闭回放功能」二选一引导（`/ac replay setup|disable`）
-- **按需进服**：默认仅当有人在面板观看了才让观察者登录服务器，无人观看 120 秒自动退服，资源占用极低
-- **取证画质锁定**：记录到违规即锁分辨率/码率下限，清晰度优先于延迟
-- 群晖 DSM（Synology）NAS 部署已适配，见 `deploy/nas-minecraft/start.sh`
+- **观察者集群自动部署**：首次启动探测 Docker，可用则自动 build + up；不可用时给出「装 Docker 或关闭回放」二选一引导（`/ac replay setup|disable`）
+- **按需进服**：默认仅在有人观看时让观察者登录，无人观看 120 秒自动退服
+- **取证画质锁定**：记录到违规即锁分辨率 / 码率下限，清晰度优先于延迟
+- 群晖 DSM（Synology）部署已适配，见 `deploy/nas-minecraft/start.sh`
+- 配置集中在 `config.yml` 的 `replay.*`（并发 / 队列、机位、HLS、遥测频率、归档保留、观察者实例列表）
 
-配置项集中在 `config.yml` 的 `replay.*`（调度并发/队列、机位、HLS、遥测频率、归档保留、观察者实例列表）。
+### 🛠️ 游戏内配置界面
 
-## 🚀 安装方法
+`/ac config` 提供多级箱子菜单：检测项开关与阈值、数据库、Web 面板、回放参数均可游戏内调整并热更新；`anticheat.whitelist` 持有者可在同一界面维护可信白名单（白名单玩家不做反作弊封禁）。
 
-1. 下载最新版本的插件 JAR 文件（[Releases](https://github.com/cklsit/AntiCheat/releases)，Nightly 每日 21:00 北京时间自动发布）
-2. 将 JAR 文件放入服务器的 `plugins` 目录
-3. 启动服务器，插件会自动生成配置文件：
-   - `plugins/AdvancedAntiCheat/config.yml` - 主配置
-   - `plugins/AdvancedAntiCheat/checkclient.yml` - 查端信息配置
-   - `plugins/AdvancedAntiCheat/messages.yml` - 消息配置
-4. 按需修改配置后执行 `/ac reload`
-5. （可选）启用违规回放：宿主机安装 Docker，重启插件自动部署观察者集群；详见上文「违规回放」
+---
 
 ## 📖 指令说明
 
@@ -196,19 +229,21 @@
 |------|------|------|
 | `/ban <玩家> [时间] [原因]` | 封禁玩家（默认永久，跨服同步） | `anticheat.ban` |
 | `/unban <玩家>` | 解封玩家 | `anticheat.unban` |
-| `/goto <玩家>` | 传送至指定玩家（支持跨服务器） | `anticheat.goto` |
+| `/goto <玩家>` | 传送至指定玩家（支持跨服） | `anticheat.goto` |
 | `/checkclient <玩家> <QQ号>` | 开始客户端检查 | `anticheat.checkclient` |
 | `/checkdone <玩家>` | 结束客户端检查（通过） | `anticheat.checkclient` |
 | `/captcha <玩家\|toggle\|timelimit>` | 验证码测试 | `anticheat.captcha` |
 | `/bounty enter\|leave\|invite\|report\|lb\|start\|complete` | 赏金沙箱管理 | `anticheat.bounty` / `.bounty.admin` |
 | `/ac reload` | 重新加载配置 | `anticheat.admin` |
-| `/ac stats` | 查看检测统计 | `anticheat.admin` |
-| `/ac reports` | 查看待处理举报 | `anticheat.admin` |
+| `/ac stats` / `/ac reports` | 检测统计 / 待处理举报 | `anticheat.admin` |
 | `/ac profile <玩家>` | 查看玩家档案 GUI | `anticheat.admin` |
+| `/ac config` | 游戏内配置界面 | `anticheat.config` |
 | `/ac genpwd <密码>` | 生成 Web 账号 bcrypt 哈希 | `anticheat.admin` |
 | `/ac help` | 列出全部命令 | `anticheat.admin` |
 | `/aac_replay_follow <观察者> <目标>` | 观察者跟随指定玩家 | `anticheat.replay.control` |
 | `/aac_replay_unfollow <观察者>` | 停止跟随 | `anticheat.replay.control` |
+
+> 注意：Paper 1.8.8 控制台执行命令**不能带前导斜杠**（写 `ac help` 而非 `/ac help`）。
 
 ## 🔐 权限节点
 
@@ -224,13 +259,16 @@
 | `anticheat.captcha` | 验证码功能 | 🔒 op |
 | `anticheat.admin` | 反作弊管理员 | 🔒 op |
 | `anticheat.notify` | 接收举报通知 | 🔒 op |
-| `anticheat.replay.observer` | 观察者账号（免踢/免拦截） | ❌ false |
+| `anticheat.config` | 游戏内配置界面 | 🔒 op |
+| `anticheat.whitelist` | 维护可信白名单 | 🔒 op |
+| `anticheat.replay.observer` | 观察者账号（免踢 / 免拦截） | ❌ false |
 | `anticheat.replay.control` | 控制观察者跟随 | 🔒 op |
-| `anticheat.bypass.fly` / `anticheat.bypass.speed` | 绕过对应检测 | 🔒 op |
+
+---
 
 ## 🗄️ 数据库配置
 
-在 `config.yml` 中配置数据库连接（跨服部署时所有节点使用同一后端即可自动同步封禁）：
+在 `config.yml` 中配置数据库（跨服部署时所有节点使用同一后端即自动同步封禁）：
 
 ```yaml
 database:
@@ -246,11 +284,9 @@ database:
     password: ""
 ```
 
-Web 面板操作与审计日志同样持久化到该数据库。
+Web 面板操作与审计日志同样持久化到该数据库。**生产环境请务必替换演示账号密码**，并注意 `config.yml` 中数据库与 Web 凭据均为明文存储。
 
 ## 📝 自定义查端配置
-
-在 `checkclient.yml` 中可以自定义查端时显示的信息：
 
 ```yaml
 checkclient:
@@ -267,58 +303,88 @@ checkclient:
   timeout_minutes: 60
 ```
 
-**可用变量**: `{vault_group}`（管理员权限组）、`{admin}`（管理员名称）、`{qq}`（管理员QQ号）、`{timeout}`（超时分钟）
+**可用变量**：`{vault_group}`（管理员权限组）、`{admin}`（管理员名称）、`{qq}`（管理员 QQ 号）、`{timeout}`（超时分钟）
+
+---
 
 ## 📁 项目结构
 
 ```
 AdvancedAntiCheat/
-├── src/main/java/com/anticheat/
-│   ├── AdvancedAntiCheat.java         # 主插件类（生命周期编排）
-│   ├── detection/                     # 检测系统
-│   │   ├── core/                      #   模块抽象基座（DetectionModule/DetectionResult/Evidence）
-│   │   ├── fusion/                    #   概率融合与决策（贝叶斯/RCP/五级处置）
-│   │   ├── movement|combat|physics|association|network|
-│   │   ├── behavior|fingerprint|inventory|mining|timer/   # 各专项检测
-│   ├── profiles/                      # 玩家画像（行为追踪/瞄准/矿机/背包状态机/指纹）
-│   ├── managers/                      # 业务管理器（封禁/举报/查端/检测编排/审计/回放）
-│   │   ├── replay/                    #   回放调度、观察者集群部署、遥测环、归档
-│   │   └── ffmpeg/                    #   容器 ffmpeg HTTP 控制
-│   ├── replay/                        # 回放相机绑定、准星探针、监视调度
-│   ├── ai/                            # IsolationForest / 在线 K-Means（AI 实验室）
-│   ├── captcha/ | bounty/             # 验证码世界 / 漏洞赏金沙箱
-│   ├── commands/ | listeners/ | gui/  # 11 命令、13 监听器、档案 GUI
-│   ├── web/                           # Javalin REST + WebSocket 后端（RBAC/审计/回放推流）
-│   ├── repositories/                  # SQL(SQLite/H2/MySQL) / Mongo / Redis 数据访问层
-│   ├── compat/ | utils/ | integration/# 1.8↔1.21 兼容层 / 工具 / ProtocolLib 钩子
-├── src/main/resources/                # config.yml / checkclient.yml / messages.yml
-├── web-panel/                         # Vue 3 + Vite + Pinia + TailwindCSS 前端
-├── docker/observer/                   # 回放观察者容器（headless MC + Xvfb + ffmpeg）
-├── deploy/nas-minecraft/              # 群晖 DSM 部署脚本
-├── .github/workflows/                 # CI：paper+spigot 矩阵构建 + nightly release
-├── plugin.yml                         # 插件元数据、命令、权限
-└── pom.xml                            # Maven 构建（集成前端构建 + Shade 重定位）
+├── src/main/java/com/anticheat/          # 220 个 Java 文件 / 约 44k 行
+│   ├── AdvancedAntiCheat.java            # 主插件类（生命周期编排）
+│   ├── detection/                        # 检测系统
+│   │   ├── core/                         #   模块抽象基座（DetectionModule/DetectionResult/Evidence）
+│   │   ├── fusion/                       #   概率融合与决策（贝叶斯 / RCP / 五级处置）
+│   │   └── movement|combat|physics|association|network|
+│   │       behavior|fingerprint|inventory|mining|timer/   # 各专项检测
+│   ├── profiles/                         # 玩家画像（行为追踪 / 瞄准 / 矿机 / 背包状态机 / 指纹）
+│   ├── managers/                         # 业务管理器（封禁 / 举报 / 查端 / 检测编排 / 审计 / 回放）
+│   │   ├── replay/                       #   回放调度、观察者集群部署、遥测环、归档
+│   │   └── ffmpeg/                       #   容器 ffmpeg HTTP 控制
+│   ├── replay/                           # 回放相机绑定、准星探针、监视调度
+│   ├── ai/                               # 48 维特征 / IsolationForest / 在线 KMeans（AI 实验室）
+│   ├── captcha/ | bounty/                # 验证码世界（含 DTW 判定） / 漏洞赏金沙箱
+│   ├── commands/ | listeners/ | gui/     # 12 命令、14 监听器、档案 GUI、配置 GUI
+│   ├── web/                              # Javalin REST + WebSocket 后端（RBAC / 审计 / 回放推流）
+│   ├── repositories/                     # SQL(SQLite/H2/MySQL) / Mongo / Redis 数据访问层
+│   └── compat/ | utils/ | integration/   # 1.8↔1.21 兼容层 / 工具 / ProtocolLib 钩子
+├── src/main/resources/                   # config.yml / checkclient.yml / messages.yml
+├── src/test/                             # JUnit 测试（11 个测试类：DTW 判定、检测逻辑等）
+├── web-panel/                            # Vue 3 + Vite + Pinia + TailwindCSS + ECharts（58 个源文件）
+├── docker/observer/                      # 回放观察者容器（headless MC + Xvfb + ffmpeg）
+├── deploy/nas-minecraft/                 # 群晖 DSM 部署脚本
+├── docs/architecture/                    # 本 README 架构图（spec / 交互 HTML / PNG）
+├── tools/                                # 双版本审计与 CI 复用的质量工具
+├── .github/workflows/                    # CI：矩阵构建 + 双版本 E2E + Nightly Release
+├── plugin.yml                            # 插件元数据、12 命令、15 权限节点
+└── pom.xml                               # Maven 构建（集成前端构建 + Shade 重定位）
 ```
 
-> 更详细的架构文档见仓库根目录 [CODE_WIKI.md](CODE_WIKI.md)。
+> 更详细的模块说明见 [CODE_WIKI.md](CODE_WIKI.md)，回放子系统设计见 [重构设计_违规回放.md](重构设计_违规回放.md)。
+
+---
+
+## 🧪 质量门禁（CI/CD）
+
+单入口流水线 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，7 个 Job：
+
+```
+unit-tests（paper + spigot 双矩阵）
+   └─ frontend（vue-tsc + vite build）
+        └─ package（shade fat-jar）
+             ├─ compat-audit（1.21 编译 / 1.8.8 字节码兼容判定）
+             └─ e2e（真机启动 1.8.8 与 1.21.11，端口 25599/25611）
+                  └─ change-gate（diff ↔ feature_map.json 功能门禁）
+                       └─ quality-gate（汇总）
+```
+
+- **双版本铁律**：Paper 1.21.11 编译、FlamePaper 1.8.8 运行。禁止 `event.getView()`、`Entity.setGravity` 等跨版本不兼容调用，材质一律走 `VersionUtil.compatMaterial`；改动后跑 `tools/audit_dual_version.py` 对**刚打包的 jar** 做字节码判定
+- **功能变更三处同步**：测试类 → `tools/ci/feature_map.json` → `tools/ci/server_e2e.py`，否则 change-gate 红
+- 另有 `nightly-release.yml`（每日 21:00 自动 beta release）与 `test-dispatch.yml`（手动触发测试）
+
+---
 
 ## 🛠️ 开发说明
 
 ### 环境要求
+
 - **JDK 21+**（paper-api 1.21.11 要求）
 - Maven 3.8+
-- Node.js 无需预装（`frontend-maven-plugin` 构建时自动安装 v20.11.0）
+- Node.js 无需预装（`frontend-maven-plugin` 构建时自动安装）
 
 ### 编译项目
+
 ```bash
-mvn clean package              # 默认 -Ppaper（Paper 1.21.11 API），完整构建含前端
-mvn clean package -Pspigot     # Spigot 1.8.8 API 变体
-mvn clean package '-DskipFrontend=true'   # 跳过前端构建（复用已有 dist）
+mvn clean package                          # 默认 -Ppaper（Paper 1.21.11 API），完整构建含前端
+mvn clean package -Pspigot                 # Spigot 1.8.8 API 变体
+mvn clean package -DskipFrontend=true      # 跳过前端构建（复用已有 dist）
 ```
 
-构建产物为 `target/AdvancedAntiCheat-2.1.0.jar`（fat-jar，第三方依赖已重定位到 `com.anticheat.libs.*`，内含 Web 面板静态资源），可直接放入服务端 `plugins/`。
+构建产物为 `target/AdvancedAntiCheat-2.1.0.jar`（fat-jar，第三方依赖已重定位到 `com.anticheat.libs.*`，内含 Web 面板静态资源），直接放入服务端 `plugins/`。
 
 ### 前端开发
+
 ```bash
 cd web-panel
 npm install
@@ -326,13 +392,29 @@ npm run dev      # 开发服务器
 npm run build    # 产物至 web-panel/dist，随后由 Maven 打包进 JAR
 ```
 
+---
+
+## ⚠️ 已知限制
+
+1. **融合决策链的处罚动作尚未接线**：`DecisionActionCenter` 的 `initiateCaptcha / applyTempBan / applyPermBan` 目前是空桩（代码中标注 `Integration point`），RCP 五档当前只产出聊天提示；**真正落地的封禁仍来自规则链** `ViolationManager.recordViolation → BanManager.banPlayer`
+2. **观察者控制端口无鉴权**：`observerctl`（默认 18081–18083）为纯 HTTP 无 token，请通过防火墙 / 内网限制访问
+3. **举报内容未校验**：`/report` 的 `reason` 无长度与字符限制，会直接广播给 `anticheat.notify` 玩家并落盘，公网服务器建议加前置过滤
+4. **依赖 Bukkit `/reload` 不安全**：重载请用 `/ac reload` 或重启服务端
+5. 仓库根目录仍存有大量 NAS 部署期的临时 Python/PowerShell 脚本与截图，待归档至 `tools/`
+
+---
+
 ## 📄 许可证
 
-本项目使用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
+本项目使用 MIT 许可证，详见 [LICENSE](LICENSE)。
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交 Issue 和 Pull Request。提交前请确保：
+
+- `mvn clean package` 与前端 `npm run build` 通过
+- 新增/修改功能已同步测试、`tools/ci/feature_map.json` 与 `tools/ci/server_e2e.py`
+- 涉及检测逻辑的改动附上阈值标定数据或回归测试
 
 ---
 
