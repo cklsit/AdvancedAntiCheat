@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdvancedAntiCheat · 架构文档</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 48px 24px; min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f6f7f9; color: #1f2328;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 24px; margin: 0 0 8px; letter-spacing: .3px; }
+  p.lead { margin: 0 0 32px; color: #59636e; font-size: 14px; line-height: 1.7; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  a.card {
+    display: block; padding: 18px 20px; border-radius: 10px;
+    border: 1px solid #d1d9e0; background: #fff; text-decoration: none; color: inherit;
+    transition: border-color .15s ease, transform .15s ease;
+  }
+  a.card:hover { border-color: #0969da; transform: translateY(-1px); }
+  a.card b { display: block; font-size: 15px; margin-bottom: 4px; color: #0969da; }
+  a.card span { font-size: 13px; color: #59636e; line-height: 1.6; }
+  footer { margin-top: 32px; font-size: 12px; color: #8b949e; line-height: 1.7; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0d1117; color: #e6edf3; }
+    p.lead, a.card span { color: #8b949e; }
+    a.card { background: #161b22; border-color: #30363d; }
+    a.card:hover { border-color: #58a6ff; }
+    a.card b { color: #58a6ff; }
+    footer { color: #6e7681; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>AdvancedAntiCheat · 架构文档</h1>
+  <p class="lead">
+    Minecraft 1.8.8 – 1.21.11 反作弊插件（Paper / Spigot / FlamePaper）的高层运行时架构资料。
+    下图由 <a href="https://github.com/tt-a1i/archify">archify</a> 从仓库真实代码生成，锚定提交
+    <code>4b3bb47</code>，含 16 处源码引用。
+  </p>
+  <ul>
+    <li><a class="card" href="architecture/anticheat-runtime-architecture.html">
+      <b>交互版运行时架构图 →</b>
+      <span>内联 SVG 单页：缩放、平移、节点搜索、关系追踪、深浅主题、PNG/SVG 导出</span>
+    </a></li>
+    <li><a class="card" href="architecture/anticheat-runtime-architecture.png">
+      <b>静态 PNG（浅色）→</b>
+      <span>2580 × 1240，README 中引用的就是这一张</span>
+    </a></li>
+    <li><a class="card" href="architecture/anticheat-runtime-architecture-dark.png">
+      <b>静态 PNG（深色）→</b>
+      <span>同上，深色主题配色</span>
+    </a></li>
+    <li><a class="card" href="architecture/anticheat-runtime-architecture.json">
+      <b>JSON 规格 →</b>
+      <span>可复现渲染的 archify architecture spec（含组件与 sources 溯源）</span>
+    </a></li>
+    <li><a class="card" href="https://github.com/cklsit/AdvancedAntiCheat">
+      <b>返回仓库 README →</b>
+      <span>功能特性、指令与权限、CI 质量门禁、已知限制</span>
+    </a></li>
+  </ul>
+  <footer>GitHub Pages · 内容随 <code>main</code> 分支 <code>/docs</code> 目录自动发布。</footer>
+</main>
+</body>
+</html>
