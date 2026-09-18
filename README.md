@@ -1,6 +1,7 @@
 # AdvancedAntiCheat
 
 [![CI](https://github.com/cklsit/AdvancedAntiCheat/actions/workflows/ci.yml/badge.svg)](https://github.com/cklsit/AdvancedAntiCheat/actions/workflows/ci.yml)
+[![文档](https://img.shields.io/badge/文档-GitHub%20Pages-blue?logo=github)](https://cklsit.github.io/AdvancedAntiCheat/)
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Support](https://img.shields.io/badge/support-1.8.8%20--%201.21.11-orange)
@@ -25,13 +26,16 @@
 ![AdvancedAntiCheat 高层运行时架构](docs/architecture/anticheat-runtime-architecture.png)
 
 > 上图由 [archify](https://github.com/tt-a1i/archify) 从仓库真实代码生成，锚定提交 `4b3bb47`，含 16 处源码引用。
-> 完整产物在 [`docs/architecture/`](docs/architecture/)：
-> [交互版 HTML](docs/architecture/anticheat-runtime-architecture.html)（下载后本地打开，支持缩放 / 搜索 / 主题切换 / 导出）·
+>
+> 🔎 **在线交互版**：<https://cklsit.github.io/AdvancedAntiCheat/architecture/anticheat-runtime-architecture.html>
+> —— 可缩放 / 平移 / 搜索节点 / 追踪关系 / 切换深浅主题 / 导出 PNG·SVG（由 GitHub Pages 从 `docs/` 发布，[落地页](https://cklsit.github.io/AdvancedAntiCheat/)）
+>
+> 其余产物在 [`docs/architecture/`](docs/architecture/)：
 > [JSON 规格](docs/architecture/anticheat-runtime-architecture.json)（可复现渲染）·
 > [深色版 PNG](docs/architecture/anticheat-runtime-architecture-dark.png)
 >
 > GitHub 的 Markdown 清洗器只放行 `img / table / details` 等少量标签，`script`、`style`、`iframe`、`svg`、`picture` 均会被剔除，
-> 因此交互版 HTML **无法直接嵌进 README**。下面折叠区是用 GitHub 原生 Mermaid 渲染的等价版本，可在页面内直接放大查看。
+> 因此交互版 HTML **无法直接嵌进 README**（只能外链）。下面折叠区是用 GitHub 原生 Mermaid 渲染的等价版本，可在页面内直接放大查看。
 
 <details>
 <summary>📐 原生渲染版架构图（GitHub 直接绘制 · 可点击放大 · 随深浅主题切换）</summary>
@@ -378,7 +382,8 @@ AdvancedAntiCheat/
 ├── web-panel/                            # Vue 3 + Vite + Pinia + TailwindCSS + ECharts（58 个源文件）
 ├── docker/observer/                      # 回放观察者容器（headless MC + Xvfb + ffmpeg）
 ├── deploy/nas-minecraft/                 # 群晖 DSM 部署脚本
-├── docs/architecture/                    # 本 README 架构图（spec / 交互 HTML / PNG）
+├── docs/                                  # GitHub Pages 站点（index.html 落地页 + .nojekyll）
+│   └── architecture/                      #   本 README 架构图（spec / 交互 HTML / PNG）
 ├── tools/                                # 双版本审计与 CI 复用的质量工具
 ├── .github/workflows/                    # CI：矩阵构建 + 双版本 E2E + Nightly Release
 ├── plugin.yml                            # 插件元数据、12 命令、15 权限节点
