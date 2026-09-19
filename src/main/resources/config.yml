@@ -261,6 +261,9 @@ detection:
 ban:
   minTime: "1m"
   maxTime: "1d"
+  # 融合决策（DecisionActionCenter）TEMP_BAN 档的自动封禁时长。
+  # 融合分 RCP 升到"临时封禁"档位时自动执行；取值 "30m"/"1h"/"1d"/"permanent"。
+  autoTempBanTime: "1h"
 
 database:
   type: "sqlite"

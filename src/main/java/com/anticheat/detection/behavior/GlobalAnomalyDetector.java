@@ -49,6 +49,11 @@ public class GlobalAnomalyDetector implements Listener {
 
     public GlobalAnomalyDetector(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
+        // behavior.global-anomaly.enabled 此前只声明不生效：模块无条件注册事件并启动分析任务。
+        if (!plugin.getConfig().getBoolean("behavior.global-anomaly.enabled", true)) {
+            plugin.getLogger().info("[Behavior] behavior.global-anomaly.enabled=false，跳过全局异常检测模块");
+            return;
+        }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         startAnalysisTask();
     }

@@ -73,7 +73,11 @@
       "id": "detection",
       "paths": ["src/main/java/com/anticheat/detection/**"],
       "feature": "检测模块（移动 / 战斗 / 背包 / 世界 / 玩家）",
-      "tests": ["com.anticheat.contract.WebApiContractTest"],
+      "tests": [
+        "com.anticheat.contract.WebApiContractTest",
+        "com.anticheat.detection.fusion.DecisionActionCenterTest",
+        "com.anticheat.detection.association.OfflineRuleScannerTest"
+      ],
       "notes": "跨版本陷阱由 tools/audit_dual_version.py 第 1/2/3/5 项兜底；真机加载由 E2E startup 断言兜底",
       "gate": "block"
     },

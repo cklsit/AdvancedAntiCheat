@@ -18,9 +18,20 @@ import java.util.UUID;
 public class MongoRepository implements DatabaseRepository {
     
     private final com.mongodb.client.MongoDatabase mongoDatabase;
+    /**
+     * 创建 {@link #mongoDatabase} 的客户端；由外部直接注入 database 时为 null。
+     * 持有它是为了让 {@link #close()} 能真正释放连接池。
+     */
+    private final com.mongodb.client.MongoClient mongoClient;
     
     public MongoRepository(com.mongodb.client.MongoDatabase mongoDatabase) {
+        this(mongoDatabase, null);
+    }
+
+    public MongoRepository(com.mongodb.client.MongoDatabase mongoDatabase,
+                           com.mongodb.client.MongoClient mongoClient) {
         this.mongoDatabase = mongoDatabase;
+        this.mongoClient = mongoClient;
     }
     
     @Override
@@ -268,7 +279,24 @@ public class MongoRepository implements DatabaseRepository {
         return r;
     }
 
+    /**
+     * 关闭底层 MongoClient，释放连接池。
+     *
+     * <p>此前是空实现，而 MongoClient 在 DatabaseManager 里被创建成局部变量后引用即丢失，
+     * 导致插件卸载时连接永远不释放（重载/重启会持续泄漏连接）。</p>
+     *
+     * <p>不向上抛异常：调用方 DatabaseManager.close() 已有一层 catch，且卸载路径上
+     * 释放失败没有可恢复动作（本类不持有 plugin，无法记日志）。</p>
+     */
     @Override
     public void close() {
+        if (mongoClient == null) {
+            return; // database 由外部注入，客户端生命周期不归本类管理
+        }
+        try {
+            mongoClient.close();
+        } catch (Exception e) {
+            // 连接已失效时 close 抛错属预期情形，忽略
+        }
     }
 }

@@ -42,6 +42,7 @@ public class ConfigManager {
 
         config.addDefault("ban.minTime", "1m");
         config.addDefault("ban.maxTime", "1d");
+        config.addDefault("ban.autoTempBanTime", "1h");
 
         // Web 面板默认值
         config.addDefault("web.enabled", true);
@@ -280,6 +281,14 @@ public class ConfigManager {
     /** 获取指定检测项的封禁时长（毫秒）；"permanent" 返回 Long.MAX_VALUE。 */
     public long getBanTimeMs(String id, long defMs) {
         return parseDurationMs(config.getString("detection." + id + ".banTime", null), defMs);
+    }
+
+    /**
+     * 融合决策（DecisionActionCenter）TEMP_BAN 档的自动封禁时长。
+     * 取值形如 "30m"/"1h"/"1d"/"permanent"，由 {@code BanManager.parseDuration} 解析。
+     */
+    public String getAutoTempBanTime(String def) {
+        return config.getString("ban.autoTempBanTime", def);
     }
 
     /** 获取指定检测项触发踢出的违规阈值。 */

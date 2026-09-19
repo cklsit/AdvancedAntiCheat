@@ -38,6 +38,11 @@ public class AntiReconDetector {
 
     public AntiReconDetector(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
+        // behavior.anti-recon.enabled 此前只声明不生效：模块无条件启动观察任务。
+        if (!plugin.getConfig().getBoolean("behavior.anti-recon.enabled", true)) {
+            plugin.getLogger().info("[Behavior] behavior.anti-recon.enabled=false，跳过反侦察检测模块");
+            return;
+        }
         startObservationTask();
     }
 

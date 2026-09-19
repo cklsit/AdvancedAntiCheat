@@ -110,7 +110,10 @@ public class AILabManager {
         Path dir = plugin.getDataFolder().toPath().resolve("ailab");
 
         globalEngine = new GlobalAnomalyEngine(
-                plugin.getConfig().getInt("ailab.forest.history-capacity", 2000));
+                plugin.getConfig().getInt("ailab.forest.history-capacity", 2000),
+                plugin.getConfig().getInt("ailab.forest.trees", 100),
+                plugin.getConfig().getInt("ailab.forest.sample-size", 256),
+                plugin.getConfig().getInt("ailab.forest.height-limit", 8));
         globalEngine.load(dir.resolve("global_stats.json"));
 
         clusterDetector = new ClusterDetector(

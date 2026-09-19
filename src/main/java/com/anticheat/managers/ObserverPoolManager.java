@@ -1447,17 +1447,8 @@ public class ObserverPoolManager {
         }
     }
 
-    /**
-     * Zip 打包占位：后续 Task 8 将在这里调用 ZipArchiver.asyncPackageWithVideo(...)
-     * 组装 mp4 + 玩家名 + epoch + violations markers 生成最终 zip 归档。
-     */
-    @SuppressWarnings("unused")
-    private void asyncPackageWithVideo(UUID targetUuid, String mp4AbsolutePath) {
-        // TODO(Task 8): 调用 ZipArchiver.asyncPackageWithVideo(targetUuid, mp4AbsolutePath, markers, playerName, epochMs)
-        // 目前仅占位，保证编译通过。
-        if (mp4AbsolutePath != null) {
-            logger.info("[Replay-Pool][Zip-Placeholder] mp4 已生成，等待打包: " + mp4AbsolutePath
-                    + " target=" + targetUuid);
-        }
-    }
+    // 说明（2026-09-19）：此处原有 asyncPackageWithVideo(UUID, String) 占位方法，其注释声明
+    // 将要调用 ZipArchiver.asyncPackageWithVideo(...) —— 该方法在 ZipArchiver 中并不存在，
+    // 占位方法本身也从未被任何调用点引用。mp4 归档实际由 zipVideoSession(...) 完成
+    // （release 路径已调用）。已删除该死代码，避免"归档功能还没做完"的误导。
 }

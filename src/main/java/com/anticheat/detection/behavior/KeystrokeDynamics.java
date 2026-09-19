@@ -42,6 +42,11 @@ public class KeystrokeDynamics implements Listener {
 
     public KeystrokeDynamics(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
+        // behavior.keystroke.enabled 此前只声明不生效：模块无条件注册事件监听。
+        if (!plugin.getConfig().getBoolean("behavior.keystroke.enabled", true)) {
+            plugin.getLogger().info("[Behavior] behavior.keystroke.enabled=false，跳过操作生物特征模块");
+            return;
+        }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 

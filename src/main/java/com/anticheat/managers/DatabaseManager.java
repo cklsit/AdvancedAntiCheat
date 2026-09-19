@@ -48,7 +48,7 @@ public class DatabaseManager {
                 return new RedisRepository(createRedisPool());
             case "mongodb":
             case "mongo":
-                return new MongoRepository(createMongoDatabase());
+                return createMongoRepository();
             case "sqlite":
             default:
                 return new SQLRepository(createSQLiteConnection());
@@ -121,7 +121,13 @@ public class DatabaseManager {
         }
     }
     
-    private MongoDatabase createMongoDatabase() {
+    /**
+     * 创建 MongoDB 仓储。
+     *
+     * <p>MongoClient 必须一并交给仓储：此前它只是本方法的局部变量，返回后引用即丢失，
+     * 使得 MongoRepository.close() 无法释放连接池（插件卸载 / 重载会持续泄漏连接）。</p>
+     */
+    private DatabaseRepository createMongoRepository() {
         try {
             String host = plugin.getConfig().getString("database.mongodb.host", "localhost");
             int port = plugin.getConfig().getInt("database.mongodb.port", 27017);
@@ -132,7 +138,7 @@ public class DatabaseManager {
             MongoDatabase mongoDatabase = mongoClient.getDatabase(database);
             
             plugin.getLogger().info("MongoDB数据库连接成功！");
-            return mongoDatabase;
+            return new MongoRepository(mongoDatabase, mongoClient);
         } catch (Exception e) {
             throw new RuntimeException("MongoDB数据库连接失败: " + e.getMessage(), e);
         }

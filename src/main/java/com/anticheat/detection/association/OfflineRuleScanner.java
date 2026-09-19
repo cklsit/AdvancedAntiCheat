@@ -15,6 +15,8 @@ public class OfflineRuleScanner {
 
     private static final int BATCH_SIZE = 50;
     private static final long SCAN_INTERVAL = 60000L;
+    /** SEQUENCE_ANALYSIS 规则的默认统计窗口（毫秒）。 */
+    private static final long DEFAULT_SEQUENCE_WINDOW_MS = 300_000L;
 
     private final AdvancedAntiCheat plugin;
     private final ProfileManager profileManager;
@@ -57,7 +59,8 @@ public class OfflineRuleScanner {
         return flaggedPlayers;
     }
 
-    private boolean evaluateRule(PlayerProfile profile, DetectionRule rule) {
+    /** 包级可见：供单元测试直接验证各 RuleType 的判定语义。 */
+    boolean evaluateRule(PlayerProfile profile, DetectionRule rule) {
         switch (rule.getType()) {
             case BEHAVIOR_ANOMALY:
                 return evaluateBehaviorAnomaly(profile, rule);
@@ -180,12 +183,127 @@ public class OfflineRuleScanner {
         }
     }
 
+    /**
+     * 关联检测：多个指标同时越限（"多信号共振"）。
+     *
+     * <p>规则参数：</p>
+     * <ul>
+     *   <li>{@code metrics}（必需）——逗号分隔的指标名，取值同 {@link #getMetricValue}：
+     *       {@code cps} / {@code turnSpeed} / {@code jumpInterval} / {@code interfaceAction} / {@code walkStayRatio}</li>
+     *   <li>{@code thresholds}（必需）——与 metrics 逐项对应的下限，逗号分隔</li>
+     *   <li>{@code minMatch}（可选，默认要求全部命中）——至少多少个指标越限才算命中</li>
+     * </ul>
+     *
+     * <p>为什么是"同时越限"而不是相关系数：{@link PlayerProfile} 只保存各指标的均值与标准差，
+     * 不保存原始时间序列，无法计算真实的相关系数。多指标共振是当前数据模型下可解释、
+     * 可复核的关联语义——单个指标越限多为噪声，多个相互独立的指标同时越限才指向外挂。
+     * 阈值全部由规则自描述，不在代码里写死统计常量。</p>
+     */
     private boolean evaluateCorrelation(PlayerProfile profile, DetectionRule rule) {
-        return false;
+        List<String> metrics = splitParam(rule.getParameter("metrics"));
+        List<String> thresholds = splitParam(rule.getParameter("thresholds"));
+        if (metrics.isEmpty() || metrics.size() != thresholds.size()) {
+            return false;
+        }
+
+        int matches = 0;
+        for (int i = 0; i < metrics.size(); i++) {
+            Double limit = parseDouble(thresholds.get(i));
+            if (limit == null) {
+                continue;
+            }
+            if (getMetricValue(profile, metrics.get(i)) >= limit) {
+                matches++;
+            }
+        }
+
+        int required = intParam(rule.getParameter("minMatch"), metrics.size());
+        return required > 0 && matches >= required;
     }
 
+    /**
+     * 序列分析：同一玩家在时间窗口内反复触发违规（"屡犯不改"）。
+     *
+     * <p>规则参数：</p>
+     * <ul>
+     *   <li>{@code windowMs}（可选，默认 300000 即 5 分钟）——统计窗口长度（毫秒）</li>
+     *   <li>{@code minOccurrences}（可选，默认取规则的 threshold）——窗口内至少触发多少次违规</li>
+     * </ul>
+     *
+     * <p>数据来源是本类自行维护的 {@link #violationCache}（带时间戳的违规流水），
+     * 因此结果依赖"同一轮扫描中此前已命中的规则"——扫描顺序会影响判定，这是
+     * {@link #scanHistory} 的既有语义（它按顺序逐条规则扫描并即时累积违规）。</p>
+     */
     private boolean evaluateSequence(PlayerProfile profile, DetectionRule rule) {
-        return false;
+        List<RuleViolation> history = violationCache.get(profile.getPlayerUUID());
+        if (history == null || history.isEmpty()) {
+            return false;
+        }
+
+        long windowMs = (long) intParam(rule.getParameter("windowMs"), (int) DEFAULT_SEQUENCE_WINDOW_MS);
+        if (windowMs <= 0) {
+            windowMs = DEFAULT_SEQUENCE_WINDOW_MS;
+        }
+        int required = intParam(rule.getParameter("minOccurrences"),
+                (int) Math.max(1L, Math.round(rule.getThreshold())));
+        if (required <= 0) {
+            required = 1;
+        }
+
+        long since = System.currentTimeMillis() - windowMs;
+        int count = 0;
+        synchronized (history) {
+            for (RuleViolation violation : history) {
+                if (violation.getTimestamp() >= since) {
+                    count++;
+                }
+            }
+        }
+        return count >= required;
+    }
+
+    /** 把规则参数（逗号分隔字符串或集合）拆成去空项的列表。 */
+    private static List<String> splitParam(Object raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null) {
+            return out;
+        }
+        if (raw instanceof Collection) {
+            for (Object item : (Collection<?>) raw) {
+                if (item != null && !item.toString().trim().isEmpty()) {
+                    out.add(item.toString().trim());
+                }
+            }
+            return out;
+        }
+        for (String segment : raw.toString().split(",")) {
+            if (!segment.trim().isEmpty()) {
+                out.add(segment.trim());
+            }
+        }
+        return out;
+    }
+
+    private static Double parseDouble(String text) {
+        try {
+            return Double.parseDouble(text);
+        } catch (NumberFormatException e) {
+            return null; // 配置写错时跳过该项，不中断整轮扫描
+        }
+    }
+
+    private static int intParam(Object raw, int def) {
+        if (raw instanceof Number) {
+            return ((Number) raw).intValue();
+        }
+        if (raw != null) {
+            try {
+                return Integer.parseInt(raw.toString().trim());
+            } catch (NumberFormatException e) {
+                return def; // 配置写错时退回默认值
+            }
+        }
+        return def;
     }
 
     public void batchScan(List<DetectionRule> rules) {
@@ -239,7 +357,8 @@ public class OfflineRuleScanner {
                                    String.format("%.2f", avgViolationScore));
     }
 
-    private void addViolation(UUID playerUUID, DetectionRule rule) {
+    /** 包级可见：供单元测试构造违规流水，验证 SEQUENCE_ANALYSIS 的判定语义。 */
+    void addViolation(UUID playerUUID, DetectionRule rule) {
         RuleViolation violation = new RuleViolation(
             rule.getRuleId(),
             rule.getRuleName(),
@@ -247,7 +366,13 @@ public class OfflineRuleScanner {
             1.0
         );
 
-        violationCache.computeIfAbsent(playerUUID, k -> new ArrayList<>()).add(violation);
+        // batchScan 跑在异步线程，此前这里直接对普通 ArrayList 做 add：
+        // 与 evaluateSequence 的读取并发时会抛 ConcurrentModificationException 或丢数据。
+        List<RuleViolation> list = violationCache.computeIfAbsent(playerUUID,
+            k -> Collections.synchronizedList(new ArrayList<>()));
+        synchronized (list) {
+            list.add(violation);
+        }
     }
 
     public void startScheduledScans() {

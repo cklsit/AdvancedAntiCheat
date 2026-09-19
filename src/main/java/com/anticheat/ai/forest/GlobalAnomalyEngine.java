@@ -38,8 +38,8 @@ public class GlobalAnomalyEngine {
     private final AiMath.OnlineStats[] dimStats;
     /** 特征历史（标准化后）。 */
     private final ArrayDeque<double[]> history;
-    /** 森林。 */
-    private IsolationForest forest = new IsolationForest();
+    /** 森林。构造时按配置装配（树数 / 子采样 / 树高）。 */
+    private IsolationForest forest;
     /** 历史标准化统计（持久化用）。 */
     private final Map<String, double[]> persistedStats = new ConcurrentHashMap<>();
 
@@ -47,13 +47,26 @@ public class GlobalAnomalyEngine {
     private volatile long lastScorePassAt;
     private volatile int lastTrainSize;
 
+    /** 使用与该类历史默认值一致的森林参数（100 棵树 / 每棵子采样 256 / 树高上限 8）。 */
     public GlobalAnomalyEngine(int historyCapacity) {
+        this(historyCapacity, 100, 256, 8);
+    }
+
+    /**
+     * 按显式森林参数构造。
+     *
+     * <p>这些参数在 config.yml 里以 {@code ailab.forest.trees / sample-size / height-limit}
+     * 暴露，此前构造点始终走无参默认值，导致三个配置项写了不生效（运维调不动模型复杂度）。</p>
+     */
+    public GlobalAnomalyEngine(int historyCapacity, int forestTrees, int forestSampleSize,
+                               int forestHeightLimit) {
         this.historyCapacity = Math.max(200, historyCapacity);
         this.dimStats = new AiMath.OnlineStats[FeatureDimensions.DIMS];
         for (int i = 0; i < dimStats.length; i++) {
             dimStats[i] = new AiMath.OnlineStats();
         }
         this.history = new ArrayDeque<>(historyCapacity);
+        this.forest = new IsolationForest(forestTrees, forestSampleSize, forestHeightLimit, System.nanoTime());
     }
 
     // ================= 标准化 =================

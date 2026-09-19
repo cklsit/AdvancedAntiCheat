@@ -1,10 +1,15 @@
 package com.anticheat.detection.fusion;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.captcha.CaptchaManager;
+import com.anticheat.managers.AuditManager;
+import com.anticheat.managers.BanManager;
 import com.anticheat.managers.ConfigManager;
+import com.anticheat.managers.ReplayRecorder;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
+import java.util.EnumMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedHashMap;
@@ -111,7 +116,26 @@ public class DecisionActionCenter {
 
     private static final int MAX_CONSECUTIVE_CAPTCHA = 3;
     private static final long ACTION_COOLDOWN_MS = 60000;
-    
+
+    // ==================== 处罚动作幂等门控 ====================
+    // makeDecision() 每玩家每 100ms 调用一次 executeAction()，而处罚动作全是"重"操作：
+    // 验证码会传送玩家+清空背包、封禁会踢人+写库、取证标记会向回放缓冲追加条目。
+    // 这里按 (玩家, 档位) 记录最后一次"真正执行"的时间，用冷却窗口保证同一档位不重复执行。
+    // 注意：只压"同档重复"，不压"档位升级"——每个档位有各自独立的名额。
+    private static final long ACTION_COOLDOWN_MONITOR_MS = 60_000L;      // 监控：1min 刷新一次
+    private static final long ACTION_COOLDOWN_CAPTCHA_MS = 120_000L;     // 验证码：2min 内不重复发起
+    private static final long ACTION_COOLDOWN_TEMP_BAN_MS = 300_000L;    // 临时封禁：5min
+    /** 永久封禁：同一玩家只执行一次（另有 BanManager.isBanned 兜底）。 */
+    private static final long ACTION_COOLDOWN_PERM_BAN_MS = Long.MAX_VALUE;
+    /** 门控表容量上限（LRU 淘汰），防止玩家长期累积导致内存增长。 */
+    private static final int ACTION_SLOT_LRU_CAP = 5000;
+
+    /** TEMP_BAN 档自动封禁时长兜底值（配置缺失时使用）。 */
+    private static final String DEFAULT_AUTO_TEMP_BAN_TIME = "1h";
+
+    /** (玩家, 档位) -> 最后一次真正执行处罚动作的时间戳。 */
+    private final Map<UUID, Map<ActionLevel, Long>> lastActionExecutedAt;
+
     public DecisionActionCenter() {
         this(null);
     }
@@ -123,6 +147,7 @@ public class DecisionActionCenter {
         this.consecutiveActions = new ConcurrentHashMap<>();
         this.historicalRCP = new ConcurrentHashMap<>();
         this.lastNotifiedLevel = new ConcurrentHashMap<>();
+        this.lastActionExecutedAt = Collections_Synchronized_LRU(ACTION_SLOT_LRU_CAP);
     }
 
     // ==================== 通知门控（防刷屏的核心） ====================
@@ -210,12 +235,11 @@ public class DecisionActionCenter {
     
     public void executeAction(UUID playerUUID, ActionLevel level) {
         Player player = Bukkit.getPlayer(playerUUID);
-        
+
         if (player == null || !player.isOnline()) {
-            logAction(playerUUID, level, "Player not online");
             return;
         }
-        
+
         switch (level) {
             case NORMAL:
                 handleNormalAction(player);
@@ -233,15 +257,17 @@ public class DecisionActionCenter {
                 handlePermBanAction(player);
                 break;
         }
-        
-        Integer consecutive = consecutiveActions.getOrDefault(playerUUID, 0);
-        if (level == ActionLevel.CAPTCHA) {
-            consecutiveActions.put(playerUUID, consecutive + 1);
-        } else {
+
+        // 非 CAPTCHA 档表示行为已回落，重置"连续验证码"计数。
+        // CAPTCHA 档的累加改由 handleCaptchaAction 在"确实发起了一次验证码"时完成——
+        // 本方法由 makeDecision 以 10Hz 调用，若在此无条件累加，玩家会在 300ms 内
+        // 撞上 MAX_CONSECUTIVE_CAPTCHA 而被误升级为临时封禁。
+        if (level != ActionLevel.CAPTCHA) {
             consecutiveActions.put(playerUUID, 0);
         }
-        
-        logAction(playerUUID, level, "Action executed successfully");
+
+        // 日志由各处罚动作在"确实执行"时自行记录（见 logAction）：
+        // 此处统一记录会随 10Hz 检查循环刷屏。
     }
     
     private void handleNormalAction(Player player) {
@@ -261,7 +287,11 @@ public class DecisionActionCenter {
     private void handleCaptchaAction(Player player) {
         // 即使聊天提示跳过，仍然要启动验证码（否则可以通过快速违规来回避验证码）
         boolean notify = shouldNotify(player, ActionLevel.CAPTCHA);
-        initiateCaptcha(player);
+        if (initiateCaptcha(player)) {
+            // 只有"确实发起了一次验证码"才计入连续次数：发起受 acquireActionSlot 节流，
+            // 所以 N 次意味着玩家在 N × 冷却期内持续处于 CAPTCHA 档仍未纠正行为。
+            noteCaptchaIssued(player.getUniqueId());
+        }
         if (notify) {
             player.sendMessage("§6[AntiCheat] §f为了确认您的身份，请完成验证码测试。");
         }
@@ -284,21 +314,183 @@ public class DecisionActionCenter {
         }
     }
     
+    /**
+     * 是否为本档位保留一次"真正执行"的名额（幂等门控）。
+     *
+     * <p>纯逻辑、不触碰任何 Bukkit API，便于单元测试直接锁定幂等语义。
+     * {@code nowMs} 由调用方注入，避免测试依赖真实时钟。</p>
+     *
+     * @return true 表示本次应真正执行该档位的处罚动作
+     */
+    boolean acquireActionSlot(UUID uuid, ActionLevel level, long nowMs) {
+        Map<ActionLevel, Long> perLevel = lastActionExecutedAt.computeIfAbsent(
+                uuid, k -> new EnumMap<>(ActionLevel.class));
+        synchronized (perLevel) {
+            Long last = perLevel.get(level);
+            if (last != null && nowMs - last < actionCooldownMs(level)) {
+                return false;
+            }
+            perLevel.put(level, nowMs);
+            return true;
+        }
+    }
+
+    /** 各档位处罚动作的执行冷却（毫秒）。 */
+    static long actionCooldownMs(ActionLevel level) {
+        switch (level) {
+            case MONITOR:  return ACTION_COOLDOWN_MONITOR_MS;
+            case CAPTCHA:  return ACTION_COOLDOWN_CAPTCHA_MS;
+            case TEMP_BAN: return ACTION_COOLDOWN_TEMP_BAN_MS;
+            case PERM_BAN: return ACTION_COOLDOWN_PERM_BAN_MS;
+            default:       return Long.MAX_VALUE;
+        }
+    }
+
+    /**
+     * 把处罚动作调度到主线程执行。传送/踢人/广播等 Bukkit API 只能在主线程调用，
+     * 而 executeAction 的调用方 {@code makeDecision} 跑在异步线程池里。
+     *
+     * <p>plugin 为 null（单元测试）或插件已卸载时直接放弃，不做任何 Bukkit 调用。</p>
+     */
+    private void runOnMainThread(Runnable action) {
+        if (plugin == null || !plugin.isEnabled()) {
+            return;
+        }
+        if (Bukkit.isPrimaryThread()) {
+            action.run();
+        } else {
+            Bukkit.getScheduler().runTask(plugin, action);
+        }
+    }
+
+    /** TEMP_BAN 档的自动封禁时长，读 ban.autoTempBanTime。 */
+    private String getAutoTempBanTime() {
+        ConfigManager cm = plugin != null ? plugin.getConfigManager() : null;
+        if (cm == null) {
+            return DEFAULT_AUTO_TEMP_BAN_TIME;
+        }
+        return cm.getAutoTempBanTime(DEFAULT_AUTO_TEMP_BAN_TIME);
+    }
+
+    /**
+     * 增强监控：把融合判决作为一次违规事件交给回放系统取证，并留审计痕迹。
+     *
+     * <p>{@link ReplayRecorder#recordViolation} 内部自行调度主线程（切过肩机位取证 +
+     * 回放队列插队），对"未被录制"的玩家是 no-op。每次调用都会向回放缓冲追加一个违规标记，
+     * 因此必须由门控保证不被 10Hz 的检查循环重复触发。</p>
+     */
     private void startEnhancedMonitoring(Player player) {
-        // Integration point with monitoring system
+        if (plugin == null) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        if (!acquireActionSlot(uuid, ActionLevel.MONITOR, System.currentTimeMillis())) {
+            return;
+        }
+
+        ReplayRecorder recorder = plugin.getReplayRecorder();
+        if (recorder != null) {
+            try {
+                recorder.recordViolation(uuid, "RCP_MONITOR", "MEDIUM");
+            } catch (Throwable t) {
+                plugin.getLogger().warning("[DecisionActionCenter] 回放取证标记失败: " + t.getMessage());
+            }
+        }
+
+        logAction(uuid, ActionLevel.MONITOR,
+                "已标记违规并提升监控（RCP=" + String.format("%.3f", getLatestRCP(uuid)) + "）");
     }
-    
-    private void initiateCaptcha(Player player) {
-        // Integration point with CaptchaManager
+
+    /**
+     * 验证码审判：接入 CaptchaManager；已在验证码流程中则不重复发起。
+     *
+     * @return true 表示本次占用了验证码执行名额（已提交主线程发起）
+     */
+    private boolean initiateCaptcha(Player player) {
+        if (plugin == null) {
+            return false;
+        }
+        UUID uuid = player.getUniqueId();
+        if (!acquireActionSlot(uuid, ActionLevel.CAPTCHA, System.currentTimeMillis())) {
+            return false;
+        }
+
+        runOnMainThread(() -> {
+            Player target = Bukkit.getPlayer(uuid);
+            if (target == null || !target.isOnline()) {
+                return;
+            }
+            CaptchaManager captchaManager = plugin.getCaptchaManager();
+            if (captchaManager == null) {
+                plugin.getLogger().warning("[DecisionActionCenter] CaptchaManager 不可用，跳过验证码审判");
+                return;
+            }
+            // startCaptcha 内部已保证"已有 session / 正在人工查端 / 已被封禁"三种情况不重复发起
+            captchaManager.startCaptcha(target, CaptchaManager.Initiator.AUTO_DETECTION);
+            logAction(uuid, ActionLevel.CAPTCHA, "已发起验证码审判");
+        });
+        return true;
     }
-    
+
+    /** 临时封禁：接入 BanManager，时长取 ban.autoTempBanTime（默认 1h）。 */
     private void applyTempBan(Player player) {
-        // Integration point with BanManager
-        // Default: 1 hour temp ban
+        if (plugin == null) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        if (!acquireActionSlot(uuid, ActionLevel.TEMP_BAN, System.currentTimeMillis())) {
+            return;
+        }
+
+        final String duration = getAutoTempBanTime();
+        final String reason = "融合决策判定作弊（临时封禁）";
+
+        runOnMainThread(() -> {
+            Player target = Bukkit.getPlayer(uuid);
+            if (target == null || !target.isOnline()) {
+                return;
+            }
+            BanManager banManager = plugin.getBanManager();
+            if (banManager == null) {
+                plugin.getLogger().warning("[DecisionActionCenter] BanManager 不可用，跳过临时封禁");
+                return;
+            }
+            if (banManager.isBanned(uuid)) {
+                return; // 已有生效中的封禁：不重复写库、不重复踢人
+            }
+            banManager.banPlayer(uuid, target.getName(), duration, reason);
+            logAction(uuid, ActionLevel.TEMP_BAN, "已执行临时封禁 " + duration);
+        });
     }
-    
+
+    /** 永久封禁：接入 BanManager。 */
     private void applyPermBan(Player player) {
-        // Integration point with BanManager
+        if (plugin == null) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        if (!acquireActionSlot(uuid, ActionLevel.PERM_BAN, System.currentTimeMillis())) {
+            return;
+        }
+
+        final String reason = "融合决策判定作弊（永久封禁）";
+
+        runOnMainThread(() -> {
+            Player target = Bukkit.getPlayer(uuid);
+            if (target == null || !target.isOnline()) {
+                return;
+            }
+            BanManager banManager = plugin.getBanManager();
+            if (banManager == null) {
+                plugin.getLogger().warning("[DecisionActionCenter] BanManager 不可用，跳过永久封禁");
+                return;
+            }
+            if (banManager.isBanned(uuid)) {
+                return;
+            }
+            banManager.banPlayer(uuid, target.getName(), "permanent", reason);
+            logAction(uuid, ActionLevel.PERM_BAN, "已执行永久封禁");
+        });
     }
     
     public ActionLevel getCurrentAction(UUID playerUUID) {
@@ -340,14 +532,43 @@ public class DecisionActionCenter {
         historicalRCP.remove(playerUUID);
         actionTimestamps.remove(playerUUID);
         lastNotifiedLevel.remove(playerUUID);
+        // 注意：不清 lastActionExecutedAt。处罚动作的执行冷却（尤其 PERM_BAN 的"只执行一次"）
+        // 必须跨"退出-重进"保持，否则玩家重登即可重置门控、被重复封禁。该表有 LRU 上限，不会泄漏。
     }
     
+    /**
+     * 处罚动作的统一日志出口。
+     *
+     * <p>只由"确实执行了处罚动作"的调用点触发（各动作内部受 acquireActionSlot 节流），
+     * 因此不会随 10Hz 检查循环刷屏。INFO 级日志用于运维追溯"谁在什么时候被如何处置"，
+     * 同时写一条审计记录，供 Web 面板按 {@code anticheat_action} 类型查询。</p>
+     */
     private void logAction(UUID playerUUID, ActionLevel level, String message) {
-        // Logging implementation
+        Player player = Bukkit.getPlayer(playerUUID);
+        String name = player != null ? player.getName() : String.valueOf(playerUUID);
+        plugin.getLogger().info("[DecisionAction] " + level.getDescription() + " -> " + name + "：" + message);
+
+        AuditManager audit = plugin.getAuditManager();
+        if (audit != null) {
+            audit.log("AntiCheat", 0, "anticheat_action", name, null, "warning",
+                    level.getDescription() + "：" + message);
+        }
     }
     
     public int getConsecutiveActionCount(UUID playerUUID) {
         return consecutiveActions.getOrDefault(playerUUID, 0);
+    }
+
+    /**
+     * 记录一次"确实发起了验证码"，用于连续次数累加。
+     *
+     * <p>累加必须发生在真实发起点，不能放在 {@link #executeAction} 里：后者由
+     * {@code makeDecision} 以 10Hz 调用，无条件累加会让玩家在 300ms 内撞上
+     * {@link #MAX_CONSECUTIVE_CAPTCHA} 被误升级为临时封禁。
+     * 包级可见，供单元测试锁定该语义。</p>
+     */
+    void noteCaptchaIssued(UUID playerUUID) {
+        consecutiveActions.merge(playerUUID, 1, Integer::sum);
     }
     
     public void resetConsecutiveActions(UUID playerUUID) {
