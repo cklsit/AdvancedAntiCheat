@@ -40,6 +40,8 @@ public class AntiCheatCommand implements TabExecutor {
         if (subCommand.equals("reload")) {
             plugin.reloadConfig();
             plugin.getConfigManager().reloadMessagesConfig();
+            // 核心层：重载阈值并把新配置下发到每个在线玩家的检测实例（未启用时自身 no-op）
+            com.anticheat.core.AntiCheatCore.reload();
             sender.sendMessage("§a[AntiCheat] 配置和消息文件已重新加载！");
         } else if (subCommand.equals("stats")) {
             showStats(sender);

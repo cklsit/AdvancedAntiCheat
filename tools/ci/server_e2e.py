@@ -466,6 +466,17 @@ def prepare_workdir(args, server_jar: Path, plugin_jar: Path) -> Path:
     target_jar = server_dir / server_jar.name
     shutil.copy2(server_jar, target_jar)
 
+    # 预热 vanilla 缓存：Paper 首次启动会去 Mojang 下载 mojang_<版本>.jar（约 50MB）。
+    # 在受限网络下这一步会静默卡满整个启动超时，表现为「等了 420s 没见 Done」——
+    # 看起来像插件把服务端搞挂了，实际只是下载没完成。把 <workdir>/cache 下预置的
+    # vanilla jar 复制到服务端自己的 cache 目录，即可离线复现。
+    seed = Path(args.workdir).resolve() / "cache" / ("mojang_%s.jar" % args.version)
+    if seed.is_file():
+        vanilla_dir = server_dir / "cache"
+        vanilla_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(seed, vanilla_dir / seed.name)
+        log("    复用本地 vanilla 缓存: %s (%.1f MB)" % (seed.name, seed.stat().st_size / 1048576.0))
+
     (server_dir / "eula.txt").write_text("eula=true\n", encoding="utf-8")
     props = [
         "online-mode=false",

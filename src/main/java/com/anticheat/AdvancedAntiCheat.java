@@ -4,6 +4,8 @@ import com.anticheat.commands.*;
 import com.anticheat.compat.CompatManager;
 import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.bounty.BountyManager;
+import com.anticheat.core.AntiCheatCore;
+import com.anticheat.core.platform.bukkit.BukkitPlatformLoader;
 import com.anticheat.listeners.*;
 import com.anticheat.managers.*;
 import com.anticheat.profiles.BehaviorTracker;
@@ -40,6 +42,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
     // 审计日志（融合决策的自动处罚动作留痕）
     private AuditManager auditManager;
 
+    /** Grim 式核心层是否成功启动（失败即降级为纯旧规则模式，插件整体保持可用） */
+    private boolean coreStarted;
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
@@ -59,12 +64,17 @@ public class AdvancedAntiCheat extends JavaPlugin {
         // 初始化审计日志（供融合决策的处罚动作留痕）
         initializeAuditManager();
 
+        // Grim 式核心层（包层 + 生命周期 + 检测注册）——失败不影响旧检测体系
+        initializeCore();
+
         getLogger().info("§2[AdvancedAntiCheat] 插件已成功启用！");
         getLogger().info("§6[AdvancedAntiCheat] 保护您的服务器免受作弊侵害！");
     }
 
     @Override
     public void onDisable() {
+        stopCore();
+
         if (auditManager != null) {
             // AuditManager 当前无 close 钩子，预留扩展位
         }
@@ -136,6 +146,44 @@ public class AdvancedAntiCheat extends JavaPlugin {
             auditManager = new AuditManager(this);
         } catch (Throwable t) {
             getLogger().severe("[Audit] 审计管理器初始化异常: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 启动 Grim 式核心层。
+     *
+     * <p>失败即**降级**而不是禁用插件：核心层（PacketEvents 通道注入 + 每玩家检测实例）
+     * 与旧检测体系是两套独立链路，包层在个别服务端上注入失败（非标准 Netty 管道、
+     * 其它注入型插件冲突）时，旧体系仍应继续提供保护。</p>
+     */
+    private void initializeCore() {
+        try {
+            if (!getConfig().getBoolean("core.enabled", true)) {
+                getLogger().info("[Core] core.enabled=false，核心层未启动（仅旧检测体系生效）");
+                return;
+            }
+
+            AntiCheatCore.load(new BukkitPlatformLoader(this));
+            AntiCheatCore.start();
+            coreStarted = AntiCheatCore.isInitialized();
+            getLogger().info("§b[Core] Grim 式核心层已启用（" + AntiCheatCore.VERSION + "）");
+        } catch (Throwable t) {
+            coreStarted = false;
+            getLogger().severe("[Core] 核心层启动失败，已降级为纯旧规则模式: " + t);
+        }
+    }
+
+    /** 停止核心层：必须早于其它管理器的收尾，避免已拆卸的通道上还有回调。 */
+    private void stopCore() {
+        if (!coreStarted) {
+            return;
+        }
+        try {
+            AntiCheatCore.stop();
+        } catch (Throwable t) {
+            getLogger().warning("[Core] 核心层停止异常: " + t.getMessage());
+        } finally {
+            coreStarted = false;
         }
     }
 
@@ -252,6 +300,11 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public AuditManager getAuditManager() {
         return auditManager;
+    }
+
+    /** 核心层是否处于运行态（`/ac` 运维查询用）。 */
+    public boolean isCoreStarted() {
+        return coreStarted;
     }
 
     private void startRiskDecayTask() {

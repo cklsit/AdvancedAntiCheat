@@ -442,3 +442,44 @@ captcha:
       window-multiplier: 2.2         # 采集窗口 = 动作数对应的时间预算 × 该系数 + 2.5 秒
       window-min-ms: 6000            # 采集窗口下限（毫秒）
       window-max-ms: 14000           # 采集窗口上限（毫秒）
+
+# ==============================================================
+# 核心层（Grim 式架构，com.anticheat.core）
+# ==============================================================
+# 与旧 detection 模块并存的独立反作弊内核：平台抽象 + 事件总线 + 每玩家状态容器
+# + 注解驱动的 Check 框架 + PacketEvents 包层。
+# 这里的默认值必须与 CoreConfigManager.kt 里的默认值逐字一致——
+# 否则管理员删掉某个键会静默改变行为（本项目历史上踩过这个坑）。
+core:
+  enabled: true                      # 核心层总开关。false = 完全退回旧的 detection 引擎
+  debug: false                       # 调试日志。开启后终端打印核心层生命周期与逐包摘要
+  experimental-checks: false         # 实验性检测总闸。@CheckData(experimental=true) 的检测需此开关才参与判定
+
+  # ---------------- 告警 ----------------
+  alerts:
+    enabled: true                    # 是否向有权限的玩家广播违规告警
+    permission: "anticheat.notify"   # 接收告警所需权限
+    min-interval-ms: 1000            # 同一玩家两次同检测告警的最小间隔（毫秒），防刷屏
+    prefix: "§8[§cAAC§8] §7"          # 告警行前缀
+    verbose: false                   # 冗余模式：告警附带检测内部调试信息
+
+  # ---------------- 处罚 ----------------
+  punishment:
+    enabled: false                   # 总开关。false = 只告警不处罚（默认，先观察再开）
+    threshold: 20.0                  # 单人单检测违规分（VL）累计到该值才触发处罚
+    action: "kick"                   # 处罚动作：kick / ban / command（command 需在命令模板里用 %player%）
+    cooldown-ms: 30000               # 同一玩家两次处罚的最小间隔（毫秒）
+    kick-message: "§c反作弊检测到异常行为（%check% VL=%vl%）"   # 支持 %check% / %vl% / %player% 占位符
+
+  # ---------------- 逐检测覆盖 ----------------
+  # 键名 = @CheckData 的 name。enabled=false 可单独关掉某项；
+  # decay 越大违规分衰减越快；setback 阈值 >0 时该项才会触发位置拉回。
+  checks:
+    BadPacketsA:
+      enabled: true
+      decay: 0.05
+      setback: 0.0
+    BadPacketsB:
+      enabled: true
+      decay: 0.05
+      setback: 0.0

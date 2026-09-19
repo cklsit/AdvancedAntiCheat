@@ -25,6 +25,12 @@
         <junit.version>5.10.2</junit.version>
         <surefire.version>3.2.5</surefire.version>
         <snakeyaml.version>2.2</snakeyaml.version>
+        <!-- 核心层：Kotlin 编写（与 Grim 同源范式），运行期 stdlib 随 jar 重定位后打入 -->
+        <kotlin.version>1.9.23</kotlin.version>
+        <!-- 核心层包源：PacketEvents（Grim 同款），支持 1.8.8 ~ 1.21.x 全协议 -->
+        <packetevents.version>2.13.0</packetevents.version>
+        <adventure.version>4.26.1</adventure.version>
+        <examination.version>1.3.0</examination.version>
     </properties>
 
     <repositories>
@@ -44,7 +50,44 @@
             <id>dmulloy2-repo</id>
             <url>https://repo.dmulloy2.net/repository/public/</url>
         </repository>
+        <!-- PacketEvents 的发布仓库（CodeMC），Maven Central 上没有 -->
+        <repository>
+            <id>codemc-repo</id>
+            <url>https://repo.codemc.io/repository/maven-releases/</url>
+        </repository>
     </repositories>
+
+    <!-- 强制 PacketEvents 运行时依赖的版本：paper-api 也间接依赖 net.kyori:adventure-*，
+         Maven 的「最近优先」会让 paper 的旧版抢先，导致 PE 在运行时 NoSuchMethodError。 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>net.kyori</groupId>
+                <artifactId>adventure-api</artifactId>
+                <version>${adventure.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.kyori</groupId>
+                <artifactId>adventure-key</artifactId>
+                <version>${adventure.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.kyori</groupId>
+                <artifactId>adventure-nbt</artifactId>
+                <version>${adventure.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.kyori</groupId>
+                <artifactId>examination-api</artifactId>
+                <version>${examination.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.kyori</groupId>
+                <artifactId>examination-string</artifactId>
+                <version>${examination.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -103,6 +146,29 @@
             <version>2.10.1</version>
         </dependency>
 
+        <!-- ============ 核心层（Grim 式）依赖：compile scope → 全部 shade 后随 jar 分发 ============ -->
+        <!-- 数据包层。注入 Netty 通道，按协议版本解码收发包；这是"零外部依赖 + 自动适配版本"的关键。 -->
+        <dependency>
+            <groupId>com.github.retrooper</groupId>
+            <artifactId>packetevents-spigot</artifactId>
+            <version>${packetevents.version}</version>
+        </dependency>
+        <!-- 核心层用 Kotlin 编写（对齐 Grim 的做法），运行期 stdlib 会被重定位后打入 jar。
+             必须排掉 kotlin-stdlib 传递进来的 org.jetbrains:annotations:13.0：
+             13.0 的 @NotNull 没有 TYPE_USE 目标，会把纸面 API 提供的 24.x 顶掉，
+             导致既有代码里 `byte @NotNull [] args` 这类类型注解直接编译失败。 -->
+        <dependency>
+            <groupId>org.jetbrains.kotlin</groupId>
+            <artifactId>kotlin-stdlib</artifactId>
+            <version>${kotlin.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains</groupId>
+                    <artifactId>annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- ============ 测试依赖（test scope：不参与编译产物与 shade） ============ -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -143,6 +209,46 @@
 
     <build>
         <plugins>
+            <!-- Kotlin 必须先于 javac 编译：混合源码里 Java 会引用 Kotlin 产物（com.anticheat.core.*）。
+                 process-sources 阶段早于 maven-compiler-plugin 的 compile，产物落在同一 target/classes。 -->
+            <plugin>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-maven-plugin</artifactId>
+                <version>${kotlin.version}</version>
+                <executions>
+                    <execution>
+                        <id>compile</id>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <sourceDirs>
+                                <source>${project.basedir}/src/main/java</source>
+                            </sourceDirs>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>test-compile</id>
+                        <phase>process-test-sources</phase>
+                        <goals>
+                            <goal>test-compile</goal>
+                        </goals>
+                        <configuration>
+                            <sourceDirs>
+                                <source>${project.basedir}/src/test/java</source>
+                            </sourceDirs>
+                        </configuration>
+                    </execution>
+                </executions>
+                <configuration>
+                    <jvmTarget>21</jvmTarget>
+                    <javaParameters>true</javaParameters>
+                    <args>
+                        <arg>-Xjvm-default=all</arg>
+                    </args>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -214,6 +320,28 @@
                                     <pattern>com.mongodb</pattern>
                                     <shadedPattern>com.anticheat.libs.mongodb</shadedPattern>
                                 </relocation>
+                                <!-- ===== 核心层依赖：必须重定位，否则与服务器/其它插件的同名类互相污染 ===== -->
+                                <!-- PacketEvents 的 API 与 spigot 实现分属两个根包，都要重定位 -->
+                                <relocation>
+                                    <pattern>com.github.retrooper.packetevents</pattern>
+                                    <shadedPattern>com.anticheat.libs.packetevents</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>io.github.retrooper.packetevents</pattern>
+                                    <shadedPattern>com.anticheat.libs.packetevents.spigot</shadedPattern>
+                                </relocation>
+                                <!-- PE 的文本/日志层依赖 adventure；1.8 服务端没有这个库，只能自带一份。
+                                     注意：插件自身代码禁止在编译期引用 net.kyori（会一起被重定位指向影子类，
+                                     运行时把影子 Component 传给 Paper 的 Player#sendMessage 会 NoSuchMethodError）。
+                                     需要 adventure 的地方走 com.anticheat.compat 的反射封装。 -->
+                                <relocation>
+                                    <pattern>net.kyori</pattern>
+                                    <shadedPattern>com.anticheat.libs.kyori</shadedPattern>
+                                </relocation>
+                                <relocation>
+                                    <pattern>kotlin</pattern>
+                                    <shadedPattern>com.anticheat.libs.kotlin</shadedPattern>
+                                </relocation>
                             </relocations>
                             <filters>
                                 <filter>
@@ -223,6 +351,18 @@
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
                                         <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/versions/*/module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                                <!-- packetevents-spigot 自带一份 plugin.yml（它可作为独立插件运行）。
+                                     内嵌模式下 PE 用宿主插件对象构建（SpigotPacketEventsBuilder.build(plugin)），
+                                     这份 descriptor 完全用不到，但会在 shade 时与我们的 plugin.yml 同名冲突：
+                                     胜出方取决于打包顺序——靠顺序碰运气等于把"插件能否加载"交给构建细节。
+                                     显式排除，保证永远是我们的 descriptor 进 jar。 -->
+                                <filter>
+                                    <artifact>com.github.retrooper:packetevents-spigot</artifact>
+                                    <excludes>
+                                        <exclude>plugin.yml</exclude>
                                     </excludes>
                                 </filter>
                             </filters>

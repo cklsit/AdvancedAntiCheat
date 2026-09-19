@@ -40,12 +40,15 @@ public class CompatManager {
         }
     }
 
+    /**
+     * 服务端是否具备 adventure 文本 API。
+     *
+     * <p>判据用**服务端版本**而不是 {@code Class.forName("net.kyori.adventure.text.Component")}：
+     * 核心层依赖的 PacketEvents 会自带一份 net.kyori（1.8 服务端没有这个库），
+     * shade 之后插件自己的类加载器里一定能找到该类，探测会恒为 true，
+     * 从而在 1.8 上给出错误结论。</p>
+     */
     public static boolean hasAdventureAPI() {
-        try {
-            Class.forName("net.kyori.adventure.text.Component");
-            return true;
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
+        return VersionUtil.getMajorVersion() >= 16;
     }
 }

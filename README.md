@@ -159,6 +159,19 @@ flowchart LR
 
 另有独立的 **物理模拟复算**（`PhysicsSimulator`，服务端重放客户端运动学验证位移合法性）与 **关联检测**（小号识别、团队作弊、设备指纹、社交图谱、行为相似度）。
 
+### 🧬 核心层（`com.anticheat.core`）—— Grim 式内核
+
+参照开源反作弊 [GrimAC](https://github.com/GrimAnticheat/Grim) 重构的独立内核，**Kotlin 编写**，与上面那套基于 Bukkit 事件的旧引擎**并存、互不依赖**（`core.enabled=false` 即整体退回旧体系）。
+
+- **包层**：内嵌 PacketEvents 2.13.0，注入 Netty 通道，**一个 jar 覆盖 1.8.8 – 1.21.x**，不依赖 ProtocolLib 或服务端版本分支
+- **分派**：`CheckManager` 在玩家接入时按接口类型把检测切成扁平数组，位置/朝向回调不做任何反射或 `instanceof`
+- **检测框架**：`@CheckData` 注解携带「名字 / 衰减 / setback 阈值」，新增检测不需要改注册代码；`flag()` 是唯一违规入口
+- **违规账本**：`ViolationData` 不依赖任何平台类型，可离线单测（`ViolationDataTest`）——`flag` 加分、`reward` 按 decay 扣分，保证真人分数能回落
+- **失败即降级**：包层注入失败（非标准 Netty 管道、其它注入型插件冲突）时旧体系继续提供保护，而不是把插件拖死
+
+自带两个端到端示例检测：`BadPacketsA`（非法位移 / NaN）、`BadPacketsB`（非法 pitch）。
+配置见 `config.yml` 的 `core:` 段。详见 [CODE_WIKI 3.7](CODE_WIKI.md#37-核心层core--grim-式内核)。
+
 ### 🧠 概率融合与智能决策
 
 - `ProbabilityFusionEngine` + `BayesianNetwork` 融合各模块概率证据
@@ -308,9 +321,14 @@ checkclient:
 
 ```
 AdvancedAntiCheat/
-├── src/main/java/com/anticheat/          # 148 个 Java 文件 / 约 31k 行
+├── src/main/java/com/anticheat/          # 159 个 Java 文件 + 43 个 Kotlin 文件
 │   ├── AdvancedAntiCheat.java            # 主插件类（生命周期编排）
-│   ├── detection/                        # 检测系统
+│   ├── core/                             # 【Grim 式内核 · Kotlin】平台抽象/事件总线/Check 框架/包层
+│   │   ├── platform/                     #   Bukkit 解耦（PlatformLoader + Bukkit 实现）
+│   │   ├── manager/                      #   三段式生命周期（load/start/stop）+ CheckManager 分派
+│   │   ├── check/                        #   @CheckData 注解驱动 + ViolationData 违规账本
+│   │   └── events/packets/               #   PacketEvents 监听入口（Netty 包层）
+│   ├── detection/                        # 旧检测系统（与 core 并存）
 │   │   ├── core/                         #   模块抽象基座（DetectionModule/DetectionResult/Evidence）
 │   │   ├── fusion/                       #   概率融合与决策（贝叶斯 / RCP / 五级处置）
 │   │   └── movement|combat|physics|association|network|
@@ -323,14 +341,14 @@ AdvancedAntiCheat/
 │   ├── repositories/                     # SQL(SQLite/H2/MySQL) / Mongo / Redis 数据访问层
 │   └── compat/ | utils/ | integration/   # 1.8↔1.21 兼容层 / 工具 / ProtocolLib 钩子
 ├── src/main/resources/                   # config.yml / checkclient.yml / messages.yml
-├── src/test/                             # JUnit 测试（10 个测试类：DTW 判定、融合决策门控、配置契约等）
+├── src/test/                             # JUnit 测试（12 个测试类：DTW 判定、融合决策门控、配置契约、违规账本等）
 ├── deploy/nas-minecraft/                 # 群晖 DSM 部署脚本
 ├── docs/                                  # GitHub Pages 站点（index.html 落地页 + .nojekyll）
 │   └── architecture/                      #   本 README 架构图（spec / 交互 HTML / PNG）
 ├── tools/                                # 双版本审计与 CI 复用的质量工具
 ├── .github/workflows/                    # CI：矩阵构建 + 双版本 E2E
 ├── plugin.yml                            # 插件元数据、10 命令、13 权限节点
-└── pom.xml                               # Maven 构建（Shade 重定位）
+└── pom.xml                               # Maven 构建（Kotlin + Shade 重定位）
 ```
 
 > 更详细的模块说明见 [CODE_WIKI.md](CODE_WIKI.md)。
@@ -360,8 +378,12 @@ unit-tests（paper + spigot 双矩阵）
 
 ### 环境要求
 
-- **JDK 21+**（paper-api 1.21.11 要求）
+- **JDK 21+**（paper-api 1.21.11 要求，也是本项目的**编译目标**：`maven.compiler.target=21` + Kotlin `jvmTarget=21`）
+- **运行环境同样是 Java 21**，即使是 1.8.8 服务端
 - Maven 3.8+
+
+> ⚠️ **「1.8.8 / 1.21」指 Minecraft 服务端版本，不是 JVM 版本。两个服务端版本都跑在 Java 21 上**（生产服为 `mcjava21`，CI 也是 JDK 21 跑双版本 E2E）。
+> 因此用 JRE 8 去启动 1.8.8 服务端会得到 `UnsupportedClassVersionError: class file version 65.0` —— 这是 JVM 选错，不是代码不兼容。
 
 ### 编译项目
 

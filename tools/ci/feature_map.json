@@ -84,6 +84,29 @@
       "gate": "block"
     },
     {
+      "id": "core-kernel",
+      "paths": [
+        "src/main/java/com/anticheat/core/**",
+        "src/main/java/com/anticheat/AdvancedAntiCheat.java"
+      ],
+      "feature": "核心层（Grim 式架构：平台抽象 / 事件总线 / 玩家状态容器 / Check 框架 / PacketEvents 包层）+ 插件主类接线",
+      "tests": [
+        "com.anticheat.core.check.ViolationDataTest",
+        "com.anticheat.core.util.update.UpdateSnapshotTest",
+        "com.anticheat.contract.ConfigContractTest"
+      ],
+      "notes": "Kotlin 源码有两处工具扫描盲区，改动核心层时必须手工兜底：① ConfigContractTest.everyConfigPathReadByCodeExists 只扫 .java，core.* 的读取在 CoreConfigManager.kt —— 改配置键必须逐字核对 src/main/resources/config.yml 的 core: 段；② tools/audit_dual_version.py 第 4/5 项（Material 常量 / @EventHandler 事件类型）也只扫 .java —— 核心层新增 Kotlin 代码引用 org.bukkit 类型时需自行确认 1.8.8 存在（审计第 1/2/3 项走字节码，对 Kotlin 同样生效）",
+      "gate": "block"
+    },
+    {
+      "id": "compat",
+      "paths": ["src/main/java/com/anticheat/compat/**"],
+      "feature": "跨版本适配层（聊天 / 标题 / 音效 / 材质）",
+      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "notes": "聊天走 BungeeCord chat API（1.8.8 与 1.21 均内置）；禁止使用 net.kyori.adventure —— 它会被 shade 重定位，运行时把影子 Component 交给 Paper 会 NoSuchMethodError",
+      "gate": "block"
+    },
+    {
       "id": "build",
       "paths": ["pom.xml", ".github/workflows/**", "tools/**"],
       "feature": "构建与 CI 基础设施",

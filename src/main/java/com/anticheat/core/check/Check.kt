@@ -1,0 +1,113 @@
+package com.anticheat.core.check
+
+import com.anticheat.core.AntiCheatCore
+import com.anticheat.core.events.AlertEvent
+import com.anticheat.core.events.FlagEvent
+import com.anticheat.core.player.PlayerData
+
+/**
+ * 检测基类。对齐 Grim 的 `Check`：
+ *
+ * - 元数据来自类上的 [CheckData] 注解，新增检测不需要改注册表；
+ * - 违规分账本收敛在 [ViolationData]（可离线单测）；
+ * - [flag] 是唯一的违规入口，内部依次做「开关 → 豁免 → 事件否决 → 记账 → 处罚决策」，
+ *   避免各检测各写一套导致语义漂移。
+ */
+abstract class Check(player: PlayerData) : CoreProcessor(player) {
+
+    private val annotation: CheckData? = javaClass.getAnnotation(CheckData::class.java)
+
+    /** 稳定标识，例如 `BadPacketsA`。 */
+    val checkName: String = annotation?.name?.takeIf { it.isNotEmpty() } ?: javaClass.simpleName
+
+    /** config.yml 里的键名。 */
+    val configName: String =
+        annotation?.configName?.takeIf { it.isNotEmpty() && it != "DEFAULT" } ?: checkName
+
+    val description: String = annotation?.description ?: ""
+
+    /** 实验性检测默认关闭。 */
+    val experimental: Boolean = annotation?.experimental ?: false
+
+    private val violationData = ViolationData(
+        annotation?.decay ?: DEFAULT_DECAY,
+        annotation?.setback ?: DEFAULT_SETBACK
+    )
+
+    /** 由配置驱动；构造后立即由 [reload] 覆盖。 */
+    @Volatile
+    var isEnabled: Boolean = true
+
+    /** `anticheat.exempt.<configName>` 权限持有者：检测照常统计但不处罚。 */
+    @Volatile
+    var exemptPermission: Boolean = false
+
+    /** 当前违规分。 */
+    val violations: Double get() = violationData.violations
+
+    /** setback 阈值；<= 0 表示本检测不参与拉回。 */
+    val setbackVl: Double get() = violationData.getSetbackVl()
+
+    // ------------------------------------------------------------------ 违规入口
+
+    fun flag(): Boolean = flag("")
+
+    /**
+     * 记一次违规。
+     *
+     * @return true 表示本次违规被记账（调用方通常紧接着做别的状态更新）。
+     */
+    fun flag(verbose: String): Boolean {
+        if (!isEnabled || exemptPermission || player.exempt) return false
+        if (experimental && !player.experimentalChecks) return false
+
+        // 外部模块可以否决本次违规（返回 true = 已否决，不记账）
+        val event = FlagEvent(player, this, verbose)
+        AntiCheatCore.eventBus.fire(event)
+        if (event.cancelled) return false
+
+        violationData.flag()
+        AntiCheatCore.punishmentManager.handleViolation(player, this)
+        return true
+    }
+
+    /** 记违规并（若越过阈值）拉回玩家。 */
+    fun flagWithSetback(verbose: String = ""): Boolean {
+        if (!flag(verbose)) return false
+        setbackIfAboveSetbackVl()
+        return true
+    }
+
+    /**
+     * 记一次安全动作，按 decay 扣分。
+     *
+     * <p>**每个检测都必须在「合规路径」上调用它**，否则违规分只增不减，
+     * 长时间在线后任何一次偶然抖动都会顶到阈值——这是这类框架最常见的误封来源。</p>
+     */
+    fun reward() {
+        violationData.reward()
+    }
+
+    // ------------------------------------------------------------------ setback / 告警
+
+    fun setbackIfAboveSetbackVl(): Boolean {
+        if (!violationData.shouldSetback()) return false
+        return player.setbackUtil.executeViolationSetback()
+    }
+
+    /** 由 [com.anticheat.core.manager.AlertManager] 调用，广播告警事件。 */
+    fun broadcastAlert(text: String) {
+        AntiCheatCore.eventBus.fire(AlertEvent(player, this, text, violations))
+    }
+
+    override fun reload() {
+        AntiCheatCore.configManager.applyTo(this)
+    }
+
+    override fun toString(): String = checkName + "(" + player.name + ")"
+
+    companion object {
+        const val DEFAULT_DECAY = 0.02
+        const val DEFAULT_SETBACK = 0.0
+    }
+}
