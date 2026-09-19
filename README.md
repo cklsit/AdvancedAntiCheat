@@ -25,7 +25,8 @@
 
 ![AdvancedAntiCheat 高层运行时架构](docs/architecture/anticheat-runtime-architecture.png)
 
-> 上图由 [archify](https://github.com/tt-a1i/archify) 从仓库真实代码生成，锚定提交 `4b3bb47`，含 16 处源码引用。
+> 上图由 [archify](https://github.com/tt-a1i/archify) 从仓库真实代码生成，锚定提交 `5ae02ab`，含 13 处源码引用。
+> （该提交下线了观察者回放与 Web 面板，图已同步移除「管理面板」「观察者容器」节点。）
 >
 > 🔎 **在线交互版**：<https://cklsit.github.io/AdvancedAntiCheat/architecture/anticheat-runtime-architecture.html>
 > —— 可缩放 / 平移 / 搜索节点 / 追踪关系 / 切换深浅主题 / 导出 PNG·SVG（由 GitHub Pages 从 `docs/` 发布，[落地页](https://cklsit.github.io/AdvancedAntiCheat/)）
