@@ -117,7 +117,7 @@ flowchart LR
 
 ## 🚀 安装方法
 
-1. 下载最新版插件 JAR（[Releases](https://github.com/cklsit/AdvancedAntiCheat/releases)，Nightly 每日 21:00（北京时间）自动发布）
+1. 下载最新版插件 JAR（[Releases](https://github.com/cklsit/AdvancedAntiCheat/releases)）
 2. 将 JAR 放入服务端 `plugins` 目录
 3. 启动服务器，插件自动生成配置：
    - `plugins/AdvancedAntiCheat/config.yml` — 主配置（检测项 / 数据库 / 验证码 / AI 实验室）
@@ -328,7 +328,7 @@ AdvancedAntiCheat/
 ├── docs/                                  # GitHub Pages 站点（index.html 落地页 + .nojekyll）
 │   └── architecture/                      #   本 README 架构图（spec / 交互 HTML / PNG）
 ├── tools/                                # 双版本审计与 CI 复用的质量工具
-├── .github/workflows/                    # CI：矩阵构建 + 双版本 E2E + Nightly Release
+├── .github/workflows/                    # CI：矩阵构建 + 双版本 E2E
 ├── plugin.yml                            # 插件元数据、10 命令、13 权限节点
 └── pom.xml                               # Maven 构建（Shade 重定位）
 ```
@@ -352,7 +352,7 @@ unit-tests（paper + spigot 双矩阵）
 
 - **双版本铁律**：Paper 1.21.11 编译、FlamePaper 1.8.8 运行。禁止 `event.getView()`、`Entity.setGravity` 等跨版本不兼容调用，材质一律走 `VersionUtil.compatMaterial`；改动后跑 `tools/audit_dual_version.py` 对**刚打包的 jar** 做字节码判定
 - **功能变更三处同步**：测试类 → `tools/ci/feature_map.json` → `tools/ci/server_e2e.py`，否则 change-gate 红
-- 另有 `nightly-release.yml`（每日 21:00 自动 beta release）与 `test-dispatch.yml`（手动触发测试）
+- 另有 `test-dispatch.yml`（手动触发测试）
 
 ---
 
