@@ -43,7 +43,6 @@ permissions:
 env:
   JAVA_VERSION: '21'
   PYTHON_VERSION: '3.12'
-  NODE_VERSION: '20'
   # 后端测试用 python 脚本；E2E 与审计报告统一落在 .ci-e2e / .ci-tools
   REPORT_DIR: .ci-tools
 
@@ -99,7 +98,7 @@ jobs:
             m2-${{ runner.os }}-
 
       - name: Run unit + contract tests (${{ matrix.label }})
-        run: mvn -B -ntp -P${{ matrix.profile }} test -DskipFrontend=true
+        run: mvn -B -ntp -P${{ matrix.profile }} test
 
       - name: Print test summary
         if: always()
@@ -118,44 +117,9 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  # ------------------------------------------------------------------ 2) 前端
-  frontend:
-    name: 前端 · typecheck + build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Set up Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v5
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web-panel/package-lock.json
-
-      - name: Install dependencies
-        working-directory: web-panel
-        run: npm ci
-
-      - name: Typecheck (vue-tsc)
-        working-directory: web-panel
-        run: npm run typecheck
-
-      - name: Build (vite)
-        working-directory: web-panel
-        run: npm run build
-
-      - name: Upload dist
-        uses: actions/upload-artifact@v5
-        with:
-          name: web-panel-dist
-          path: web-panel/dist/**
-          retention-days: 7
-
-  # ------------------------------------------------------------------ 3) 打包
+  # ------------------------------------------------------------------ 2) 打包
   package:
-    name: 打包插件 jar（含前端资源）
+    name: 打包插件 jar
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -193,17 +157,7 @@ jobs:
             m2-${{ runner.os }}-${{ hashFiles('pom.xml') }}-
             m2-${{ runner.os }}-
 
-      - name: Cache frontend toolchain (node + node_modules)
-        uses: actions/cache@v5
-        with:
-          path: |
-            target/node
-            web-panel/node_modules
-          key: frontend-${{ runner.os }}-${{ hashFiles('web-panel/package-lock.json') }}
-          restore-keys: |
-            frontend-${{ runner.os }}-
-
-      - name: Package (frontend + java + shade)
+      - name: Package (java + shade)
         run: mvn -B -ntp clean package -DskipTests -Ppaper
 
       - name: Verify artifact
@@ -211,9 +165,8 @@ jobs:
           set -e
           JAR=$(ls target/AdvancedAntiCheat-*.jar | grep -v shaded | head -1)
           echo "产物: $JAR ($(du -h "$JAR" | cut -f1))"
-          # jar 里必须真的有 plugin.yml 与前端 dist，否则「打包成功」毫无意义
+          # jar 里必须真的有 plugin.yml，否则「打包成功」毫无意义
           unzip -l "$JAR" | grep -q 'plugin.yml'
-          unzip -l "$JAR" | grep -q 'web/' || echo "::warning::jar 内未发现前端资源目录"
 
       - name: Upload plugin jar
         uses: actions/upload-artifact@v5
@@ -222,7 +175,7 @@ jobs:
           path: target/AdvancedAntiCheat-*.jar
           retention-days: 14
 
-  # ------------------------------------------------------------------ 4) 双版本兼容审计
+  # ------------------------------------------------------------------ 3) 双版本兼容审计
   compat-audit:
     name: 双版本兼容审计（1.21 编译 · 1.8.8 运行）
     needs: package
@@ -270,7 +223,7 @@ jobs:
           set -e
           mkdir -p $REPORT_DIR/api
           # 双保险：先按 pom 的 provided 依赖整体拷，取不到再按坐标单独拷
-          mvn -B -ntp -Pspigot -DskipFrontend=true dependency:copy-dependencies \
+          mvn -B -ntp -Pspigot dependency:copy-dependencies \
             -DincludeScope=provided -DoutputDirectory=$REPORT_DIR/api || true
           if ! ls $REPORT_DIR/api/spigot-api-1.8.8*.jar >/dev/null 2>&1; then
             mvn -B -ntp dependency:copy \
@@ -299,7 +252,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  # ------------------------------------------------------------------ 5/6) 真机 E2E（双版本）
+  # ------------------------------------------------------------------ 4/5) 真机 E2E（双版本）
   e2e:
     name: 真机 E2E · Paper ${{ matrix.version }}
     needs: package
@@ -311,11 +264,9 @@ jobs:
         include:
           - version: '1.8.8'
             mc_port: 25599
-            web_port: 18088
             label: 1.8.8
           - version: '1.21.11'
             mc_port: 25611
-            web_port: 18188
             label: 1.21.11
     steps:
       - name: Checkout code
@@ -356,7 +307,6 @@ jobs:
             --workdir .ci-e2e/${{ matrix.version }} \
             --java "$JAVA_HOME/bin/java" \
             --mc-port ${{ matrix.mc_port }} \
-            --web-port ${{ matrix.web_port }} \
             --heap 1500M \
             --report .ci-e2e/report-${{ matrix.version }}.json \
             --keep
@@ -372,7 +322,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  # ------------------------------------------------------------------ 7) 变更 → 功能 门禁
+  # ------------------------------------------------------------------ 6) 变更 → 功能 门禁
   change-gate:
     name: 变更 → 功能 门禁
     needs: [unit-tests, e2e]
@@ -446,7 +396,7 @@ jobs:
   # ------------------------------------------------------------------ 质量门 + 汇总
   quality-gate:
     name: 质量门 + CI 汇总
-    needs: [unit-tests, frontend, package, compat-audit, e2e, change-gate]
+    needs: [unit-tests, package, compat-audit, e2e, change-gate]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -500,7 +450,6 @@ jobs:
         run: |
           echo "各阶段结果："
           echo "  unit-tests   = ${{ needs.unit-tests.result }}"
-          echo "  frontend     = ${{ needs.frontend.result }}"
           echo "  package      = ${{ needs.package.result }}"
           echo "  compat-audit = ${{ needs.compat-audit.result }}"
           echo "  e2e          = ${{ needs.e2e.result }}"
@@ -508,7 +457,6 @@ jobs:
           failed=0
           for r in \
             "${{ needs.unit-tests.result }}" \
-            "${{ needs.frontend.result }}" \
             "${{ needs.package.result }}" \
             "${{ needs.compat-audit.result }}" \
             "${{ needs.e2e.result }}" \

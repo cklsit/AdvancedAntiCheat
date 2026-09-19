@@ -9,15 +9,15 @@
 
 适用于 **Minecraft 1.8.8 – 1.21.11** 服务端（Paper / Purpur / Spigot / FlamePaper）的高级反作弊插件：**一套源码编译，双版本运行**。
 
-不只是阈值检测——AAC 构建了「**多层检测引擎 → 玩家画像 → 贝叶斯概率融合 → 五级智能处置 → Web 可视化取证**」的完整反作弊闭环：
+不只是阈值检测——AAC 构建了「**多层检测引擎 → 玩家画像 → 贝叶斯概率融合 → 五级智能处置**」的完整反作弊闭环：
 
 - 🧠 **RCP 实时作弊概率**：多模块概率经贝叶斯网络融合，自适应学习调整权重，输出 NORMAL → MONITOR → CAPTCHA → TEMP_BAN → PERM_BAN 五级处置
 - 🕵️ **八大类 40+ 检测项**：移动 / 战斗 / 挖掘建筑 / 背包物品 / 网络协议 / 客户端指纹 / 蜜罐陷阱 / 行为分析全项覆盖
 - 👤 **玩家画像系统**：瞄准分析、挖矿模式、背包状态机、击键动力学、身份指纹、社交关联图谱与风险历史
 - 🔐 **三套人工介入机制**：查端（客户端核实）、验证码（专用世界任务 + 动作模仿 DTW 判定）、漏洞赏金（白盒自测沙箱）
 - 🌐 **跨服务器同步封禁**：SQLite / H2 / MySQL / MongoDB / Redis，配合 BungeeCord / Velocity 全服生效
-- 🖥️ **内嵌 Web 管理面板**：Vue 3 SPA + REST + WebSocket，总览 / 玩家 / 案件 / 配置 / 审计 / AI 实验室 / 联盟图谱 / 实时地图 / 违规回放
-- 🎬 **违规实时回放取证**：Docker 观察者客户端跟随 suspect，ffmpeg 抓屏 LL-HLS 直播 + 20Hz 遥测合成 HUD 叠层，一键归档取证包
+- 🧩 **游戏内管理界面**：`/ac config` 多级箱子菜单，检测项开关 / 数据库 / 白名单 / 封禁管理全部游戏内完成并热更新
+- 📝 **审计留痕**：融合决策的每一次自动处置（监控 / 验证码 / 临时封禁 / 永久封禁）都写入审计表，供事后追溯
 
 ---
 
@@ -61,16 +61,11 @@ flowchart LR
 
   P -->|移动 / 攻击 / 背包数据包| E
 
-  W["管理面板<br/>Vue3 SPA · Javalin :8080"]:::auth
-  W -->|管理指令 Bearer + RBAC| G
-
-  E -->|分配观察者槽位 FIFO ≤3| O["观察者容器<br/>ffmpeg · HLS"]:::external
   M <-.->|数据包事件| L["ProtocolLib<br/>协议级校验"]:::soft
   S -->|封禁落盘| DB[("外部数据库<br/>sqlite / mysql / redis")]:::external
   S -.->|跨服封禁同步| PR["代理服<br/>BungeeCord / Velocity"]:::soft
 
   classDef untrusted fill:#ffe6e6,stroke:#d64545,stroke-width:2px,color:#4a1010
-  classDef auth fill:#e6f0ff,stroke:#2f6fd0,stroke-width:2px,color:#0d2440
   classDef external fill:#f1ecff,stroke:#7a5cd6,stroke-width:1.5px,color:#241247
   classDef soft fill:#f5f5f5,stroke:#8a8a8a,stroke-width:1px,stroke-dasharray:4 3,color:#2b2b2b
 ```
@@ -97,10 +92,8 @@ flowchart LR
 | 类型 | 对象 | 现状 |
 |------|------|------|
 | 🔴 信任边界 | 玩家客户端（全部输入不可信） | 事件节流 + `ProtocolValidator` 结构校验；白名单挂 `anticheat.bypass` 附件全局豁免 |
-| 🔴 信任边界 | 管理面板 `/api/*` | `AuthFilter` 校验 Bearer token，bcrypt(cost=10) + RBAC 权限点；`BukkitBridge.callSyncMethod` 回主线程（5s 超时） |
 | 🟠 外部系统 | 外部数据库 | `database.type` 五选一：sqlite（默认）/ mysql / h2 / redis / mongodb |
 | 🟠 外部系统 | 代理服 | 软依赖 BungeeCord / Velocity，实现跨服封禁同步与 `/goto` |
-| 🟠 外部系统 | 观察者容器 | 插件通过 HTTP 调 `observerctl`（默认 `:18081–18083`）启动 HLS 录制 |
 | 🟠 外部系统 | ProtocolLib | 软依赖，未安装时协议层检测自动降级 |
 
 ---
@@ -118,7 +111,6 @@ flowchart LR
 |--------|------|
 | BungeeCord / Velocity | 跨服务器消息通道，用于跨服封禁同步与 `/goto` |
 | ProtocolLib | 协议级检测（非法数据包结构、微时序、假方块）；未安装时相关检测自动降级，插件照常运行 |
-| Docker（可选） | 仅违规回放子系统需要；不可用时可 `/ac replay disable` 关闭 |
 
 ---
 
@@ -127,11 +119,10 @@ flowchart LR
 1. 下载最新版插件 JAR（[Releases](https://github.com/cklsit/AdvancedAntiCheat/releases)，Nightly 每日 21:00（北京时间）自动发布）
 2. 将 JAR 放入服务端 `plugins` 目录
 3. 启动服务器，插件自动生成配置：
-   - `plugins/AdvancedAntiCheat/config.yml` — 主配置（检测项 / 数据库 / Web 面板 / 回放）
+   - `plugins/AdvancedAntiCheat/config.yml` — 主配置（检测项 / 数据库 / 验证码 / AI 实验室）
    - `plugins/AdvancedAntiCheat/checkclient.yml` — 查端文案
    - `plugins/AdvancedAntiCheat/messages.yml` — 玩家侧全部消息
-4. 改完执行 `/ac reload`（**不要用 Bukkit `/reload`**，会踢下线且观察者不自动重连）
-5. （可选）启用违规回放：宿主机装 Docker，插件首次启动自动部署观察者集群，或 `/ac replay setup`
+4. 改完执行 `/ac reload`（**不要用 Bukkit `/reload`**：它会踢所有玩家下线）
 
 ---
 
@@ -181,7 +172,7 @@ flowchart LR
 
 ### 👤 玩家画像（profiles）
 
-每位玩家维护长期档案：移动 / 战斗 / 挖矿 / 背包 / 社交五大行为特征、瞄准平滑度分析、挖矿时间规律、背包状态机、操作节奏（`TimerDetection`）、身份指纹（历史 ID / IP / 客户端版本 / 语言 / 硬件）、账号关联图与风险历史（每小时衰减），为决策中心提供长程上下文，可在 Web 面板与游戏内 GUI（`/ac profile`）查看。
+每位玩家维护长期档案：移动 / 战斗 / 挖矿 / 背包 / 社交五大行为特征、瞄准平滑度分析、挖矿时间规律、背包状态机、操作节奏（`TimerDetection`）、身份指纹（历史 ID / IP / 客户端版本 / 语言 / 硬件）、账号关联图与风险历史（每小时衰减），为决策中心提供长程上下文，可在游戏内 GUI（`/ac profile`）查看。
 
 ### 🧩 验证码系统
 
@@ -215,49 +206,11 @@ flowchart LR
 ### ⚖️ 封禁与举报
 
 - 按违规严重程度自动封禁（临时 1 分钟 ~ 永久），支持踢出阈值与人工审核升级阈值，封禁界面可在 `messages.yml` 自定义
-- `/report <玩家> <原因>` — 玩家举报，管理员收到**带「前往举报者」按钮**的通知，举报记录可在 Web 案件中心审理
-
-### 🖥️ 内嵌 Web 管理面板
-
-插件自带 Javalin HTTP + WebSocket 服务，启动后访问 `http://<服务器IP>:8080/`：
-
-| 页面 | 功能 |
-|------|------|
-| 总览 Dashboard | 检测统计、模块状态、服务器状态实时曲线 |
-| 玩家管理 | 列表 / 详情 / 画像 / 封禁操作 |
-| 案件中心 | 违规案件审理与裁决（RBAC 分工） |
-| 系统配置 | 检测项开关与阈值热更新 |
-| 审计日志 | 全部 Web 操作留痕查询 |
-| AI 实验室 | IsolationForest / 在线 K-Means 异常分析可视化 |
-| 联盟图谱 | 关联账号社交图谱可视化 |
-| 实时地图 | Canvas 2D 玩家位置沙盘 |
-| 违规回放 | 观察者直播观看 + 遥测 HUD 叠层 + 归档下载 |
-
-- 内置 **RBAC**：admin / moderator / reviewer / observer 四角色演示账号（明文密码 = 用户名，仅用于演示）
-- 生产部署：游戏内 `/ac genpwd <新密码>` 生成 bcrypt 哈希替换 `config.yml` 的 `web.auth.accounts[].password-hash`，再 `/ac reload`
-- REST 前缀 `/api/*`，WebSocket 端点 `/ws`（告警）与 `/ws/replay/{uuid}`（遥测，支持 `lastSeq` 断点续传）
-
-### 🎬 违规回放（Observer 取证子系统）
-
-针对「截图录屏难以还原作弊现场」的痛点，AAC 提供服务端侧的**真实客户端回放直播**：
-
-```
-玩家进入 → SurveillanceScheduler FIFO 调度 → Docker 观察者客户端按需进服
-  → setSpectatorTarget 相机绑定（attach 眼位 / shoulder 过肩，违规自动切过肩）
-  → 容器 Xvfb + ffmpeg 抓屏 → LL-HLS 推流 → Web 面板 hls.js 播放
-  → 20Hz 遥测（坐标/血量/准星目标/36 格背包）WS 下发 → 前端 HUD 叠层对齐视频
-  → 会话结束 / 玩家退出 → 视频 + 遥测统一 ZIP 归档（默认保留 7 天）
-```
-
-- **观察者集群自动部署**：首次启动探测 Docker，可用则自动 build + up；不可用时给出「装 Docker 或关闭回放」二选一引导（`/ac replay setup|disable`）
-- **按需进服**：默认仅在有人观看时让观察者登录，无人观看 120 秒自动退服
-- **取证画质锁定**：记录到违规即锁分辨率 / 码率下限，清晰度优先于延迟
-- 群晖 DSM（Synology）部署已适配，见 `deploy/nas-minecraft/start.sh`
-- 配置集中在 `config.yml` 的 `replay.*`（并发 / 队列、机位、HLS、遥测频率、归档保留、观察者实例列表）
+- `/report <玩家> <原因>` — 玩家举报，管理员收到**带「前往举报者」按钮**的通知，举报记录可用 `/ac reports` 查看
 
 ### 🛠️ 游戏内配置界面
 
-`/ac config` 提供多级箱子菜单：检测项开关与阈值、数据库、Web 面板、回放参数均可游戏内调整并热更新；`anticheat.whitelist` 持有者可在同一界面维护可信白名单（白名单玩家不做反作弊封禁）。
+`/ac config` 提供多级箱子菜单：在线玩家列表、玩家详情（封禁 / 查证 / 发送验证码）、封禁名单与解封均可游戏内完成；`anticheat.whitelist` 持有者可在同一界面维护可信白名单（白名单玩家不做反作弊封禁）。
 
 ---
 
@@ -285,11 +238,8 @@ flowchart LR
 | `/ac reload` | 重新加载配置 | `anticheat.admin` |
 | `/ac stats` / `/ac reports` | 检测统计 / 待处理举报 | `anticheat.admin` |
 | `/ac profile <玩家>` | 查看玩家档案 GUI | `anticheat.admin` |
-| `/ac config` | 游戏内配置界面 | `anticheat.config` |
-| `/ac genpwd <密码>` | 生成 Web 账号 bcrypt 哈希 | `anticheat.admin` |
+| `/ac config` | 游戏内管理界面 | `anticheat.config` |
 | `/ac help` | 列出全部命令 | `anticheat.admin` |
-| `/aac_replay_follow <观察者> <目标>` | 观察者跟随指定玩家 | `anticheat.replay.control` |
-| `/aac_replay_unfollow <观察者>` | 停止跟随 | `anticheat.replay.control` |
 
 > 注意：Paper 1.8.8 控制台执行命令**不能带前导斜杠**（写 `ac help` 而非 `/ac help`）。
 
@@ -309,8 +259,6 @@ flowchart LR
 | `anticheat.notify` | 接收举报通知 | 🔒 op |
 | `anticheat.config` | 游戏内配置界面 | 🔒 op |
 | `anticheat.whitelist` | 维护可信白名单 | 🔒 op |
-| `anticheat.replay.observer` | 观察者账号（免踢 / 免拦截） | ❌ false |
-| `anticheat.replay.control` | 控制观察者跟随 | 🔒 op |
 
 ---
 
@@ -332,7 +280,7 @@ database:
     password: ""
 ```
 
-Web 面板操作与审计日志同样持久化到该数据库。**生产环境请务必替换演示账号密码**，并注意 `config.yml` 中数据库与 Web 凭据均为明文存储。
+审计日志同样持久化到该数据库。**生产环境请勿在 `config.yml` 中明文存放数据库凭据**，建议使用最小权限账号并限制数据库访问来源。
 
 ## 📝 自定义查端配置
 
@@ -359,7 +307,7 @@ checkclient:
 
 ```
 AdvancedAntiCheat/
-├── src/main/java/com/anticheat/          # 220 个 Java 文件 / 约 44k 行
+├── src/main/java/com/anticheat/          # 148 个 Java 文件 / 约 31k 行
 │   ├── AdvancedAntiCheat.java            # 主插件类（生命周期编排）
 │   ├── detection/                        # 检测系统
 │   │   ├── core/                         #   模块抽象基座（DetectionModule/DetectionResult/Evidence）
@@ -367,45 +315,38 @@ AdvancedAntiCheat/
 │   │   └── movement|combat|physics|association|network|
 │   │       behavior|fingerprint|inventory|mining|timer/   # 各专项检测
 │   ├── profiles/                         # 玩家画像（行为追踪 / 瞄准 / 矿机 / 背包状态机 / 指纹）
-│   ├── managers/                         # 业务管理器（封禁 / 举报 / 查端 / 检测编排 / 审计 / 回放）
-│   │   ├── replay/                       #   回放调度、观察者集群部署、遥测环、归档
-│   │   └── ffmpeg/                       #   容器 ffmpeg HTTP 控制
-│   ├── replay/                           # 回放相机绑定、准星探针、监视调度
+│   ├── managers/                         # 业务管理器（封禁 / 举报 / 查端 / 检测编排 / 审计）
 │   ├── ai/                               # 48 维特征 / IsolationForest / 在线 KMeans（AI 实验室）
 │   ├── captcha/ | bounty/                # 验证码世界（含 DTW 判定） / 漏洞赏金沙箱
-│   ├── commands/ | listeners/ | gui/     # 12 命令、14 监听器、档案 GUI、配置 GUI
-│   ├── web/                              # Javalin REST + WebSocket 后端（RBAC / 审计 / 回放推流）
+│   ├── commands/ | listeners/ | gui/     # 9 命令、12 监听器、档案 GUI、配置 GUI
 │   ├── repositories/                     # SQL(SQLite/H2/MySQL) / Mongo / Redis 数据访问层
 │   └── compat/ | utils/ | integration/   # 1.8↔1.21 兼容层 / 工具 / ProtocolLib 钩子
 ├── src/main/resources/                   # config.yml / checkclient.yml / messages.yml
-├── src/test/                             # JUnit 测试（11 个测试类：DTW 判定、检测逻辑等）
-├── web-panel/                            # Vue 3 + Vite + Pinia + TailwindCSS + ECharts（58 个源文件）
-├── docker/observer/                      # 回放观察者容器（headless MC + Xvfb + ffmpeg）
+├── src/test/                             # JUnit 测试（10 个测试类：DTW 判定、融合决策门控、配置契约等）
 ├── deploy/nas-minecraft/                 # 群晖 DSM 部署脚本
 ├── docs/                                  # GitHub Pages 站点（index.html 落地页 + .nojekyll）
 │   └── architecture/                      #   本 README 架构图（spec / 交互 HTML / PNG）
 ├── tools/                                # 双版本审计与 CI 复用的质量工具
 ├── .github/workflows/                    # CI：矩阵构建 + 双版本 E2E + Nightly Release
-├── plugin.yml                            # 插件元数据、12 命令、15 权限节点
-└── pom.xml                               # Maven 构建（集成前端构建 + Shade 重定位）
+├── plugin.yml                            # 插件元数据、10 命令、13 权限节点
+└── pom.xml                               # Maven 构建（Shade 重定位）
 ```
 
-> 更详细的模块说明见 [CODE_WIKI.md](CODE_WIKI.md)，回放子系统设计见 [重构设计_违规回放.md](重构设计_违规回放.md)。
+> 更详细的模块说明见 [CODE_WIKI.md](CODE_WIKI.md)。
 
 ---
 
 ## 🧪 质量门禁（CI/CD）
 
-单入口流水线 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，7 个 Job：
+单入口流水线 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，6 个 Job：
 
 ```
 unit-tests（paper + spigot 双矩阵）
-   └─ frontend（vue-tsc + vite build）
-        └─ package（shade fat-jar）
-             ├─ compat-audit（1.21 编译 / 1.8.8 字节码兼容判定）
-             └─ e2e（真机启动 1.8.8 与 1.21.11，端口 25599/25611）
-                  └─ change-gate（diff ↔ feature_map.json 功能门禁）
-                       └─ quality-gate（汇总）
+   └─ package（shade fat-jar）
+        ├─ compat-audit（1.21 编译 / 1.8.8 字节码兼容判定）
+        └─ e2e（真机启动 1.8.8 与 1.21.11，端口 25599/25611）
+             └─ change-gate（diff ↔ feature_map.json 功能门禁）
+                  └─ quality-gate（汇总）
 ```
 
 - **双版本铁律**：Paper 1.21.11 编译、FlamePaper 1.8.8 运行。禁止 `event.getView()`、`Entity.setGravity` 等跨版本不兼容调用，材质一律走 `VersionUtil.compatMaterial`；改动后跑 `tools/audit_dual_version.py` 对**刚打包的 jar** 做字节码判定
@@ -420,36 +361,24 @@ unit-tests（paper + spigot 双矩阵）
 
 - **JDK 21+**（paper-api 1.21.11 要求）
 - Maven 3.8+
-- Node.js 无需预装（`frontend-maven-plugin` 构建时自动安装）
 
 ### 编译项目
 
 ```bash
-mvn clean package                          # 默认 -Ppaper（Paper 1.21.11 API），完整构建含前端
+mvn clean package                          # 默认 -Ppaper（Paper 1.21.11 API）
 mvn clean package -Pspigot                 # Spigot 1.8.8 API 变体
-mvn clean package -DskipFrontend=true      # 跳过前端构建（复用已有 dist）
 ```
 
-构建产物为 `target/AdvancedAntiCheat-2.1.0.jar`（fat-jar，第三方依赖已重定位到 `com.anticheat.libs.*`，内含 Web 面板静态资源），直接放入服务端 `plugins/`。
-
-### 前端开发
-
-```bash
-cd web-panel
-npm install
-npm run dev      # 开发服务器
-npm run build    # 产物至 web-panel/dist，随后由 Maven 打包进 JAR
-```
+构建产物为 `target/AdvancedAntiCheat-2.1.0.jar`（fat-jar，第三方依赖已重定位到 `com.anticheat.libs.*`），直接放入服务端 `plugins/`。
 
 ---
 
 ## ⚠️ 已知限制
 
-1. **融合决策链的处罚动作尚未接线**：`DecisionActionCenter` 的 `initiateCaptcha / applyTempBan / applyPermBan` 目前是空桩（代码中标注 `Integration point`），RCP 五档当前只产出聊天提示；**真正落地的封禁仍来自规则链** `ViolationManager.recordViolation → BanManager.banPlayer`
-2. **观察者控制端口无鉴权**：`observerctl`（默认 18081–18083）为纯 HTTP 无 token，请通过防火墙 / 内网限制访问
-3. **举报内容未校验**：`/report` 的 `reason` 无长度与字符限制，会直接广播给 `anticheat.notify` 玩家并落盘，公网服务器建议加前置过滤
-4. **依赖 Bukkit `/reload` 不安全**：重载请用 `/ac reload` 或重启服务端
-5. 仓库根目录仍存有大量 NAS 部署期的临时 Python/PowerShell 脚本与截图，待归档至 `tools/`
+1. **举报内容未校验**：`/report` 的 `reason` 无长度与字符限制，会直接广播给 `anticheat.notify` 玩家并落盘，公网服务器建议加前置过滤
+2. **依赖 Bukkit `/reload` 不安全**：重载请用 `/ac reload` 或重启服务端
+3. **静默吞异常约 40 处**：`catch (Throwable ignored) {}` 多为 1.8 / 1.21 跨版本防御，但背包还原、文件写入等路径完全无日志，故障时不可观测
+4. 仓库根目录仍存有大量 NAS 部署期的临时 Python/PowerShell 脚本与截图，待归档至 `tools/`
 
 ---
 
@@ -461,7 +390,7 @@ npm run build    # 产物至 web-panel/dist，随后由 Maven 打包进 JAR
 
 欢迎提交 Issue 和 Pull Request。提交前请确保：
 
-- `mvn clean package` 与前端 `npm run build` 通过
+- `mvn clean package` 通过
 - 新增/修改功能已同步测试、`tools/ci/feature_map.json` 与 `tools/ci/server_e2e.py`
 - 涉及检测逻辑的改动附上阈值标定数据或回归测试
 

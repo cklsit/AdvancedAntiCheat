@@ -5,7 +5,6 @@ import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.managers.AuditManager;
 import com.anticheat.managers.BanManager;
 import com.anticheat.managers.ConfigManager;
-import com.anticheat.managers.ReplayRecorder;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -373,11 +372,11 @@ public class DecisionActionCenter {
     }
 
     /**
-     * 增强监控：把融合判决作为一次违规事件交给回放系统取证，并留审计痕迹。
+     * 增强监控：把融合判决落成一条审计记录，供运维追溯。
      *
-     * <p>{@link ReplayRecorder#recordViolation} 内部自行调度主线程（切过肩机位取证 +
-     * 回放队列插队），对"未被录制"的玩家是 no-op。每次调用都会向回放缓冲追加一个违规标记，
-     * 因此必须由门控保证不被 10Hz 的检查循环重复触发。</p>
+     * <p>原先此处还会把违规事件交给回放取证系统（过肩机位 + 回放队列插队），
+     * 回放能力已随观察者架构整体下线，因此只保留审计留痕。
+     * 命中频率由 {@link #acquireActionSlot} 门控保证，不受 10Hz 检查循环影响。</p>
      */
     private void startEnhancedMonitoring(Player player) {
         if (plugin == null) {
@@ -388,17 +387,8 @@ public class DecisionActionCenter {
             return;
         }
 
-        ReplayRecorder recorder = plugin.getReplayRecorder();
-        if (recorder != null) {
-            try {
-                recorder.recordViolation(uuid, "RCP_MONITOR", "MEDIUM");
-            } catch (Throwable t) {
-                plugin.getLogger().warning("[DecisionActionCenter] 回放取证标记失败: " + t.getMessage());
-            }
-        }
-
         logAction(uuid, ActionLevel.MONITOR,
-                "已标记违规并提升监控（RCP=" + String.format("%.3f", getLatestRCP(uuid)) + "）");
+                "进入增强监控（RCP=" + String.format("%.3f", getLatestRCP(uuid)) + "）");
     }
 
     /**

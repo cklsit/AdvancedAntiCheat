@@ -1,9 +1,9 @@
 package com.anticheat.managers;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.managers.audit.AuditDTO;
 import com.anticheat.managers.audit.AuditQuery;
 import com.anticheat.managers.audit.AuditRecord;
-import com.anticheat.web.dto.AuditDTO;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -15,7 +15,9 @@ import java.util.List;
  * 审计日志管理器。
  * <p>
  * - {@link #log} 异步入库，由 {@link DatabaseManager#saveAudit} 投递到异步任务
- * - {@link #query} / {@link #count} 同步查询（仅供 Web 线程使用，主线程会阻塞）
+ * - {@link #query} / {@link #count} 同步查询（会阻塞调用线程，不要在检测热路径上调用）
+ *
+ * <p>Web 面板已随观察者架构一并移除，本类保留落库与查询能力，供日后接入新的管理端使用。</p>
  */
 public class AuditManager {
 

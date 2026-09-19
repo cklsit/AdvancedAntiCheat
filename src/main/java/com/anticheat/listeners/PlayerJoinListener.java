@@ -30,16 +30,6 @@ public class PlayerJoinListener implements Listener {
             }
         } catch (Throwable ignored) {}
 
-        // 启动持续录制 session（防异常：被 ban 玩家不会走完 join 流程，但 session 是幂等 startSession 防重入）
-        try { plugin.getReplayRecorder().startSession(player); } catch (Throwable ignored) {}
-
-        // 监视调度（需求 1）：进入即入队，超出 maxConcurrent 按顺序排队
-        try {
-            if (plugin.getSurveillanceScheduler() != null) {
-                plugin.getSurveillanceScheduler().onPlayerJoin(player);
-            }
-        } catch (Throwable ignored) {}
-
         if (plugin.getBanManager().isBanned(player.getUniqueId())) {
             BanInfo banInfo = plugin.getBanManager().getBanInfo(player.getUniqueId());
             if (banInfo != null) {

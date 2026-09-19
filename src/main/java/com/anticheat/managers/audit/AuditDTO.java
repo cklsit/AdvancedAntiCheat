@@ -1,7 +1,10 @@
-package com.anticheat.web.dto;
+package com.anticheat.managers.audit;
 
 /**
- * 审计日志条目。与前端 AuditItem 对齐。
+ * 审计日志条目。
+ *
+ * <p>原位于 {@code com.anticheat.web.dto}，随 Web 面板移除后迁入本包，
+ * 供 {@code AuditManager} 的查询接口继续使用。</p>
  */
 public class AuditDTO {
 

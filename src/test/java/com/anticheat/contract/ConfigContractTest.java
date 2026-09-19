@@ -81,7 +81,7 @@ class ConfigContractTest {
     void topLevelSectionsExist() {
         Set<String> expected = new LinkedHashSet<>(java.util.Arrays.asList(
                 "notify", "detection", "ban", "database", "check-client", "bounty",
-                "honeypot", "fingerprint", "behavior", "ailab", "web", "replay",
+                "honeypot", "fingerprint", "behavior", "ailab",
                 "gui", "captcha"));
         Set<String> missing = new TreeSet<>();
         for (String key : expected) {
@@ -175,39 +175,23 @@ class ConfigContractTest {
     }
 
     @Test
-    @DisplayName("Web 面板：端口、账号与服务端配置完整")
-    @SuppressWarnings("unchecked")
-    void webPanelConfig() {
-        assertTrue(bool("web.enabled"), "Web 面板默认开启");
-        int port = ((Number) value("web.port")).intValue();
-        assertTrue(port > 0 && port < 65536, "web.port 非法：" + port);
-        String host = String.valueOf(value("web.host"));
-        assertFalse(host.trim().isEmpty(), "web.host 不能为空");
-
-        List<Map<String, Object>> accounts =
-                (List<Map<String, Object>>) value("web.auth.accounts");
-        assertTrue(accounts != null && !accounts.isEmpty(), "至少需要一个面板账号，否则面板无法登录");
-        for (Map<String, Object> ac : accounts) {
-            String name = String.valueOf(ac.get("username"));
-            assertNotNull(ac.get("password-hash"), name + " 缺少 password-hash");
-            String hash = String.valueOf(ac.get("password-hash"));
-            assertTrue(hash.startsWith("$2"), name + " 的 password-hash 必须是 bcrypt（$2 开头）");
-            assertNotNull(ac.get("role"), name + " 缺少 role");
-            Object perms = ac.get("permissions");
-            assertTrue(perms instanceof List && !((List<?>) perms).isEmpty(),
-                    name + " 必须声明 permissions（否则前端整片功能不可见）");
-        }
-    }
-
-    @Test
-    @DisplayName("GUI / 回放配置项存在且类型正确")
-    void guiAndReplayConfig() {
+    @DisplayName("GUI 配置项存在且类型正确")
+    void guiConfig() {
         assertTrue(value("gui.enabled") instanceof Boolean, "gui.enabled 必须是布尔");
         assertFalse(String.valueOf(value("gui.filler-material")).trim().isEmpty(),
                 "gui.filler-material 不能为空");
         assertFalse(String.valueOf(value("gui.title-prefix")).trim().isEmpty(), "gui.title-prefix 不能为空");
-        assertFalse(String.valueOf(value("replay.hls.dir")).trim().isEmpty(),
-                "replay.hls.dir 不能为空（HLS 切片目录）");
+    }
+
+    @Test
+    @DisplayName("已下线能力不得回流：web / replay 配置段必须保持移除状态")
+    void removedSectionsStayRemoved() {
+        for (String section : new String[]{"web", "replay"}) {
+            assertFalse(config.containsKey(section),
+                    "config.yml 不应再出现 " + section + " 段——Web 面板与观察者回放已整体下线，"
+                            + "重新引入会带来「声明了却不生效」的配置项");
+        }
+        assertNotNull(config.get("gui"), "gui 段必须保留（游戏内管理界面仍在用）");
     }
 
     @Test

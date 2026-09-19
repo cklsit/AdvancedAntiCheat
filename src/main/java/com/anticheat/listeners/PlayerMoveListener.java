@@ -43,10 +43,6 @@ public class PlayerMoveListener implements Listener {
         }
         lastCheckTimes.put(playerId, now);
 
-        // 回放采样已迁移到 ReplayRecorder 的 BukkitRunnable 定时触发（每 1 tick 检查，每 50ms 实际采样）
-        // 不再由 PlayerMoveListener 驱动，避免高频 move 事件导致的采样重叠
-        // try { plugin.getReplayRecorder().sampleTick(player); } catch (Throwable ignored) {}
-
         if (now - lastCheckTimes.getOrDefault(playerId + "_fly", 0L) >= FLY_CHECK_INTERVAL_MS) {
             detectJump(event);
             plugin.getDetectionManager().getDetection("fly").check(player);

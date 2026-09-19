@@ -3,19 +3,19 @@
 """真机端到端测试：在真实 MC 服务端上装载 AdvancedAntiCheat 并断言功能可用。
 
 与单元测试的分工：
-  * 单元测试 / 契约测试  —— 纯 JVM，验证算法正确性、配置键与路由契约是否自洽；
+  * 单元测试 / 契约测试  —— 纯 JVM，验证算法正确性、配置键与命令契约是否自洽；
   * 本脚本            —— 真服务端 + 真插件，验证「装上以后功能到底能不能用」。
 
-断言覆盖四层：
+断言覆盖两层：
   1. 启动健康度 —— 插件启用、无「整类监听器注册失败」、无本插件栈帧异常；
-  2. 控制台命令 —— /ac help|stats|reports|reload|genpwd|replay status|profile 逐一执行并核对输出；
-  3. Web 面板   —— 免鉴权端点、登录发 token、未带 token 必须 401、全量只读端点必须 200 且 code=0；
-  4. AI 实验室  —— features 字典 / settings / thresholds / simulate 真实推理链路。
+  2. 控制台命令 —— /ac help|stats|reports|reload|profile 等逐一执行并核对输出。
+
+Web 面板与观察者回放已整体下线，原先的 HTTP 端点断言（第 3、4 层）已随之移除。
 
 用法：
   python tools/ci/server_e2e.py --version 1.21.11 \
       --plugin target/AdvancedAntiCheat-2.1.0.jar \
-      --workdir .ci-e2e/1.21.11 --mc-port 25565 --web-port 18080 \
+      --workdir .ci-e2e/1.21.11 --mc-port 25565 \
       --java "/c/Program Files/Zulu/zulu-21/bin/java.exe" --report .ci-e2e/1.21.11.json
 
 退出码：0 = 全通过；1 = 有失败项；3 = 环境/启动期致命错误（无法进入断言阶段）。
@@ -73,16 +73,12 @@ STARTUP_REQUIRED = [
     ("版本识别正常", r"检测到服务器版本"),
 ]
 
-# 异步启动的子系统：要在「Done」之后继续等，不能立刻判定
-STARTUP_DEFERRED = [
-    ("Web 面板已启动", r"\[Web\] 面板已启动"),
-]
+# 异步启动的子系统：要在「Done」之后继续等，不能立刻判定。
+# Web 面板与观察者回放已整体下线，当前没有需要延后等待的子系统；保留空表以便后续新增。
+STARTUP_DEFERRED: list[tuple[str, str]] = []
 
 STARTUP_FORBIDDEN = [
     ("AI 实验室初始化失败（退化为纯规则模式）", r"AI 实验室初始化失败"),
-    ("ReplayRecorder 初始化失败", r"ReplayRecorder 初始化失败"),
-    ("Follower 初始化失败", r"ObserverFollowManager 初始化失败"),
-    ("Web 面板启动异常", r"\[Web\].*(异常|失败)"),
 ]
 
 # 控制台命令断言：任一 marker 命中即通过（soft=True 的命令只要有回显即可）
@@ -91,43 +87,13 @@ CONSOLE_CHECKS = [
     ("/ac stats", ["检测统计"], False),
     ("/ac reports", ["待处理举报"], False),
     ("/ac reload", ["已重新加载"], False),
-    ("/ac genpwd ci_probe", ["$2a$"], False),
-    ("/ac replay status", ["违规回放", "观察者", "Docker"], True),
     ("/ac profile __ci_no_such_player__", ["只有玩家", "不在线"], True),
     ("/ac totally-bogus-subcommand", ["未知子命令"], False),
+    # 已下线能力不得复活：这两个子命令随 Web 面板 / 观察者回放一并移除，
+    # 必须回落到「未知子命令」——若有人把分支加回来，这里会立刻变红。
+    ("/ac genpwd ci_probe", ["未知子命令"], False),
+    ("/ac replay status", ["未知子命令"], False),
 ]
-
-# 只读端点：必须 200 且 code=0（500 = 该功能已坏）
-READ_ENDPOINTS = [
-    "/api/meta",
-    "/api/debug/online",
-    "/api/auth/me",
-    "/api/dashboard/stats",
-    "/api/dashboard/alerts",
-    "/api/players",
-    "/api/cases",
-    "/api/replays",
-    "/api/replays/archives",
-    "/api/replays/clock",
-    "/api/replays/players",
-    "/api/replay/clock",
-    "/api/replay/observer-status",
-    "/api/notifications",
-    "/api/audit",
-    "/api/config/modules",
-    "/api/config/replay",
-    "/api/alliance/graph",
-    "/api/ailab/overview",
-    "/api/ailab/clusters",
-    "/api/ailab/labels",
-    "/api/ailab/models",
-    "/api/ailab/settings",
-    "/api/ailab/thresholds",
-    "/api/ailab/features",
-]
-
-# 免鉴权端点（AuthFilter 白名单）
-PUBLIC_ENDPOINTS = ["/api/meta", "/api/debug/online"]
 
 
 # --------------------------------------------------------------------------- 基础工具
@@ -195,16 +161,6 @@ def http(method: str, url: str, body=None, token: str | None = None, timeout: in
         return 0, "%s: %s" % (type(e).__name__, e)
 
 
-def probe_json(method: str, url: str, body=None, token=None, timeout=15):
-    status, text = http(method, url, body, token, timeout)
-    payload = None
-    try:
-        payload = json.loads(text)
-    except Exception:  # noqa: BLE001
-        payload = None
-    return status, text, payload
-
-
 def download(url: str, dest: Path, sha256: str | None = None) -> None:
     log("    下载 %s" % url)
     tmp = dest.with_suffix(dest.suffix + ".part")
@@ -266,11 +222,11 @@ def resolve_server_jar(version: str, cache_dir: Path, explicit: Path | None = No
     return dest
 
 
-def patch_plugin_config(text: str, web_port: int, web_host: str) -> str:
-    """强制打开 Web 面板与 AI 实验室，并把端口改到 CI 用端口。
+def patch_plugin_config(text: str) -> str:
+    """把 config.yml 里 CI 需要强制打开的开关改成开启态。
 
     逐行扫描而非 YAML 反序列化：保留原文注释与缩进，避免整份配置被重写后
-    和插件内置默认值产生漂移。
+    和插件内置默认值产生漂移。Web 面板与观察者回放已下线，这里只剩 AI 实验室。
     """
     out, top, sub = [], None, None
     for line in text.splitlines():
@@ -280,13 +236,6 @@ def patch_plugin_config(text: str, web_port: int, web_host: str) -> str:
         elif top and line.startswith("  ") and not line.startswith("   ") and line.strip() \
                 and not line.lstrip().startswith("#") and line.rstrip().endswith(":"):
             sub = line.strip()[:-1]
-        if top == "web" and sub is None:
-            if re.match(r"^  enabled:", line):
-                line = "  enabled: true"
-            elif re.match(r"^  host:", line):
-                line = '  host: "%s"' % web_host
-            elif re.match(r"^  port:", line):
-                line = "  port: %d" % web_port
         if top == "ailab" and sub is None and re.match(r"^  enabled:", line):
             line = "  enabled: true"
         out.append(line)
@@ -539,14 +488,14 @@ def prepare_workdir(args, server_jar: Path, plugin_jar: Path) -> Path:
     shutil.copy2(plugin_jar, server_dir / "plugins" / plugin_jar.name)
     data_dir = server_dir / "plugins" / "AdvancedAntiCheat"
     data_dir.mkdir(parents=True, exist_ok=True)
-    cfg = patch_plugin_config(extract_plugin_config(plugin_jar), args.web_port, "127.0.0.1")
+    cfg = patch_plugin_config(extract_plugin_config(plugin_jar))
     (data_dir / "config.yml").write_text(cfg, encoding="utf-8")
     log("    测试服目录就绪: %s" % server_dir)
     return server_dir
 
 
 def phase_startup(rep: Report, console: ServerConsole, args) -> bool:
-    log("  [1/4] 启动健康度")
+    log("  [1/2] 启动健康度")
     hit = console.wait_pattern(r"Done \(", args.timeout)
     if not rep.add("startup", "服务端启动完成（Done）", bool(hit),
                    "等待 %ds 未见 \"Done (\"；最后日志：\n%s" % (args.timeout, tail(console.tail_from(0)))):
@@ -581,7 +530,7 @@ def phase_startup(rep: Report, console: ServerConsole, args) -> bool:
 
 
 def phase_console(rep: Report, console: ServerConsole) -> None:
-    log("  [2/4] 控制台命令")
+    log("  [2/2] 控制台命令")
     for command, markers, soft in CONSOLE_CHECKS:
         mark = console.mark()
         try:
@@ -620,119 +569,6 @@ def phase_console(rep: Report, console: ServerConsole) -> None:
                     "期望包含 %s，实际：\n%s" % (markers, tail(out)))
 
 
-def api_ok(status: int, payload) -> bool:
-    """判定一次 API 调用是否成功。
-
-    ApiResp 约定 {code:0, message:"ok", data:...}，但少数调试端点直接返回裸 JSON
-    （如 /api/debug/online 无 code 字段）——那种情况只校验 HTTP 200。
-    """
-    if status != 200:
-        return False
-    if isinstance(payload, dict) and "code" in payload:
-        return payload.get("code") == 0
-    return payload is not None
-
-
-def phase_web(rep: Report, args) -> str | None:
-    log("  [3/4] Web 面板")
-    base = "http://127.0.0.1:%d" % args.web_port
-
-    ready = False
-    deadline = time.time() + 90
-    while time.time() < deadline:
-        status, _ = http("GET", base + "/api/meta", timeout=5)
-        if status == 200:
-            ready = True
-            break
-        time.sleep(1)
-    if not rep.add("web", "面板端口可达 /api/meta", ready, "%s 在 90s 内未返回 200" % base):
-        return None
-
-    for path in PUBLIC_ENDPOINTS:
-        status, _, payload = probe_json("GET", base + path)
-        rep.add("web", "免鉴权 %s -> 200" % path, api_ok(status, payload),
-                "status=%s body=%s" % (status, short(payload)))
-
-    # 未带 token 必须 401（鉴权网不能漏）
-    status, _, payload = probe_json("GET", base + "/api/dashboard/stats")
-    rep.add("web", "未鉴权访问受保护端点 -> 401", status == 401,
-            "期望 401，实际 status=%s body=%s" % (status, short(payload)))
-
-    status, _, payload = probe_json("POST", base + "/api/auth/login",
-                                    {"username": "admin", "password": "wrong-password"})
-    rep.add("web", "错误口令登录 -> 401", status == 401,
-            "期望 401，实际 status=%s body=%s" % (status, short(payload)))
-
-    status, _, payload = probe_json("POST", base + "/api/auth/login",
-                                    {"username": "admin", "password": "admin"})
-    token = (payload or {}).get("data", {}).get("token") if isinstance(payload, dict) else None
-    if not rep.add("web", "admin 登录并下发 token", status == 200 and bool(token),
-                   "status=%s body=%s" % (status, short(payload))):
-        return None
-
-    for path in READ_ENDPOINTS:
-        status, _, payload = probe_json("GET", base + path, token=token)
-        rep.add("web", "GET %s -> 200" % path, api_ok(status, payload),
-                "status=%s body=%s" % (status, short(payload)))
-
-    # 写操作：登出走 AuthManager.logout 全链路
-    status, _, payload = probe_json("POST", base + "/api/auth/logout", {}, token)
-    rep.add("web", "登出 -> 200", status == 200,
-            "status=%s body=%s" % (status, short(payload)))
-    status, _, payload = probe_json("GET", base + "/api/auth/me", token=token)
-    rep.add("web", "登出后旧 token 失效 -> 401", status == 401,
-            "status=%s body=%s" % (status, short(payload)))
-    return token
-
-
-def phase_ailab(rep: Report, args) -> None:
-    log("  [4/4] AI 实验室")
-    base = "http://127.0.0.1:%d" % args.web_port
-    status, _, payload = probe_json("POST", base + "/api/auth/login",
-                                    {"username": "admin", "password": "admin"})
-    token = (payload or {}).get("data", {}).get("token")
-    if not token:
-        rep.add("ailab", "取 token", False, "登录失败，跳过 AI 断言")
-        return
-
-    status, _, payload = probe_json("GET", base + "/api/ailab/overview", token=token)
-    data = payload.get("data") if isinstance(payload, dict) else None
-    data = data if isinstance(data, dict) else {}
-    rep.add("ailab", "AI 实验室处于启用态", status == 200 and data.get("enabled") is True,
-            "status=%s body=%s" % (status, short(payload)))
-
-    # /api/ailab/features 的 data 是数组（前端 AILabFeatureDictItem[]），不是 {features:[...]}
-    status, _, payload = probe_json("GET", base + "/api/ailab/features", token=token)
-    data = payload.get("data") if isinstance(payload, dict) else None
-    if isinstance(data, dict):
-        rows = data.get("features") or data.get("dimensions") or data.get("items")
-    else:
-        rows = data
-    rep.add("ailab", "特征字典返回 48 维", status == 200 and isinstance(rows, list) and len(rows) == 48,
-            "status=%s 维度=%s body=%s" % (status, len(rows) if isinstance(rows, list) else "N/A",
-                                          short(payload, 160)))
-
-    # 真实推理：喂一组特征值，必须走完 归一化 → 孤立森林/监督模型 → 融合分
-    status, text, payload = probe_json(
-        "POST", base + "/api/ailab/simulate",
-        {"features": {"hSpeedMean": 0.31, "hSpeedVar": 0.04, "vSpeedMean": 0.02,
-                      "accelMean": 0.11, "cpsMean": 9.0}},
-        token=token)
-    data = payload.get("data") if isinstance(payload, dict) else None
-    data = data if isinstance(data, dict) else {}
-    ok = status == 200 and (payload or {}).get("code") == 0 and "fused" in data
-    rep.add("ailab", "评分模拟器返回融合分（推理链路通）", ok,
-            "status=%s body=%s" % (status, short(payload)))
-
-    status, _, payload = probe_json("POST", base + "/api/ailab/train", {}, token=token)
-    rep.add("ailab", "手动训练不报 5xx（标签不足时允许 4xx）", 0 < status < 500,
-            "status=%s body=%s" % (status, short(payload)))
-
-    status, _, payload = probe_json("GET", base + "/api/ailab/thresholds", token=token)
-    rep.add("ailab", "自适应阈值可读", api_ok(status, payload),
-            "status=%s body=%s" % (status, short(payload)))
-
-
 # --------------------------------------------------------------------------- 输出辅助
 
 def tail(text: str, lines: int = 25) -> str:
@@ -760,7 +596,6 @@ def parse_args(argv=None):
     p.add_argument("--workdir", required=True, help="测试服务器工作目录")
     p.add_argument("--java", default="java", help="java 可执行文件（1.21.11 需 JDK 21+）")
     p.add_argument("--mc-port", type=int, default=25565)
-    p.add_argument("--web-port", type=int, default=18080)
     p.add_argument("--heap", default="1400M")
     p.add_argument("--timeout", type=int, default=420, help="等待服务端启动完成的秒数")
     p.add_argument("--report", default="", help="JSON 报告输出路径")
@@ -782,7 +617,6 @@ def main(argv=None) -> int:
     log("=" * 72)
 
     args.mc_port = free_port(args.mc_port)
-    args.web_port = free_port(args.web_port)
     try:
         args.java = ensure_runnable(args.java)
     except Exception as e:  # noqa: BLE001
@@ -811,8 +645,6 @@ def main(argv=None) -> int:
             fatal = True
         else:
             phase_console(rep, console)
-            phase_web(rep, args)
-            phase_ailab(rep, args)
     except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
@@ -824,12 +656,12 @@ def main(argv=None) -> int:
         if not args.keep and server_dir.exists():
             shutil.rmtree(server_dir, ignore_errors=True)
 
-    extra = {"pluginJar": plugin_jar.name, "mcPort": args.mc_port, "webPort": args.web_port}
+    extra = {"pluginJar": plugin_jar.name, "mcPort": args.mc_port}
     report = rep.to_json(extra)
 
     log("")
     log("-" * 72)
-    for group in ("startup", "console", "web", "ailab", "harness"):
+    for group in ("startup", "console", "harness"):
         rows = [c for c in rep.checks if c["group"] == group]
         if rows:
             log("  %-8s %d/%d 通过" % (group, sum(1 for c in rows if c["ok"]), len(rows)))

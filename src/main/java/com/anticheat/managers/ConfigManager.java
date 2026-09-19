@@ -44,13 +44,6 @@ public class ConfigManager {
         config.addDefault("ban.maxTime", "1d");
         config.addDefault("ban.autoTempBanTime", "1h");
 
-        // Web 面板默认值
-        config.addDefault("web.enabled", true);
-        config.addDefault("web.host", "0.0.0.0");
-        config.addDefault("web.port", 8080);
-        config.addDefault("web.session-timeout-minutes", 120);
-        config.addDefault("web.cors.enabled", false);
-
         // /ac config 游戏内管理界面
         config.addDefault("gui.enabled", true);
         config.addDefault("gui.title-prefix", "§8AAC");
@@ -76,48 +69,6 @@ public class ConfigManager {
         config.addDefault(prefix + "humanReviewThreshold", humanReviewThreshold);
         config.addDefault(prefix + "warningCooldownSecs", warningCooldownSecs);
         config.addDefault(prefix + "notifyCooldownMs", notifyCooldownMs);
-    }
-
-    // ===================== Web 面板配置 Getter =====================
-
-    public boolean isWebEnabled() {
-        return config.getBoolean("web.enabled", true);
-    }
-
-    public String getWebHost() {
-        return config.getString("web.host", "0.0.0.0");
-    }
-
-    public int getWebPort() {
-        return config.getInt("web.port", 8080);
-    }
-
-    public int getWebSessionTimeoutMinutes() {
-        return config.getInt("web.session-timeout-minutes", 120);
-    }
-
-    public boolean isWebCorsEnabled() {
-        return config.getBoolean("web.cors.enabled", false);
-    }
-
-    /**
-     * 读取 web.auth.accounts 列表，每项含 username/password-hash/role/permissions。
-     * 缺失时返回空列表，不会抛 NPE。
-     */
-    public List<Map<String, Object>> getWebAccounts() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        List<?> raw = config.getList("web.auth.accounts");
-        if (raw == null) {
-            return result;
-        }
-        for (Object item : raw) {
-            if (item instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> entry = (Map<String, Object>) item;
-                result.add(entry);
-            }
-        }
-        return result;
     }
 
     private void loadMessagesConfig() {

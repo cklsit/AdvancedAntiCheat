@@ -13,7 +13,7 @@
       "url": "https://github.com/cklsit/AdvancedAntiCheat",
       "provider": "github",
       "link_mode": "web",
-      "revision": "4b3bb479840c7b920d3860422eec86cdad75b549"
+      "revision": "31e55b9"
     },
     "views": [
       {
@@ -36,10 +36,8 @@
         "focus": [
           "player",
           "ingest",
-          "panel",
           "decision",
-          "sanction",
-          "observer"
+          "sanction"
         ],
         "note": "两处入站边界：不可信的玩家输入、需认证的管理指令。"
       },
@@ -48,7 +46,6 @@
         "label": "外部依赖旁路",
         "focus": [
           "ingest",
-          "observer",
           "modules",
           "protocollib",
           "sanction",
@@ -217,33 +214,6 @@
       ]
     },
     {
-      "id": "panel",
-      "type": "frontend",
-      "label": "管理面板",
-      "sublabel": "Javalin :8080",
-      "tag": "Bearer + RBAC",
-      "pos": [
-        930,
-        104
-      ],
-      "size": [
-        120,
-        68
-      ],
-      "sources": [
-        {
-          "path": "src/main/java/com/anticheat/web/WebServer.java",
-          "line": 1,
-          "label": "Javalin 服务"
-        },
-        {
-          "path": "src/main/java/com/anticheat/web/auth/AuthFilter.java",
-          "line": 30,
-          "label": "Bearer 校验"
-        }
-      ]
-    },
-    {
       "id": "proxy",
       "type": "external",
       "label": "代理服",
@@ -267,28 +237,6 @@
           "path": "src/main/java/com/anticheat/listeners/BungeeCordMessageListener.java",
           "line": 1,
           "label": "插件消息通道"
-        }
-      ]
-    },
-    {
-      "id": "observer",
-      "type": "external",
-      "label": "观察者容器",
-      "sublabel": "ffmpeg · HLS",
-      "tag": "无鉴权",
-      "pos": [
-        226,
-        480
-      ],
-      "size": [
-        120,
-        68
-      ],
-      "sources": [
-        {
-          "path": "src/main/java/com/anticheat/managers/ffmpeg/FfmpegManager.java",
-          "line": 1,
-          "label": "HTTP observerctl"
         }
       ]
     },
@@ -357,14 +305,6 @@
         "player"
       ],
       "pad": 8
-    },
-    {
-      "kind": "security-group",
-      "label": "认证边界",
-      "wraps": [
-        "panel"
-      ],
-      "pad": 12
     }
   ],
   "connections": [
@@ -407,22 +347,6 @@
       "label": "档位升级"
     },
     {
-      "id": "panel-to-decision",
-      "from": "panel",
-      "to": "decision",
-      "label": "管理指令",
-      "variant": "security",
-      "labelDy": 80
-    },
-    {
-      "id": "ingest-to-observer",
-      "from": "ingest",
-      "to": "observer",
-      "label": "分配观察者槽位",
-      "variant": "dashed",
-      "labelDy": 80
-    },
-    {
       "id": "protocollib-to-modules",
       "from": "protocollib",
       "to": "modules",
@@ -451,7 +375,7 @@
       "items": [
         "Listener ×12 采集 + 事件节流 20/50ms；AdvancedDetectionManager 每 100ms 异步全项检查，RCP 每 1s 重算",
         "五档 ActionLevel：NORMAL 0.5 / MONITOR 0.75 / CAPTCHA 0.95 / TEMP_BAN 0.995 / PERM_BAN",
-        "决策中心 CAPTCHA / TEMP_BAN / PERM_BAN 动作仍是空桩（Integration point），真实封禁只来自规则链 ViolationManager → BanManager"
+        "决策中心 CAPTCHA / TEMP_BAN / PERM_BAN 已接入 CaptchaManager / BanManager；10Hz 检查循环下按「玩家 × 档位」冷却做幂等，连续验证码计数只由真实发起点累加"
       ]
     },
     {
@@ -459,8 +383,7 @@
       "title": "信任边界与薄弱点",
       "items": [
         "玩家输入全部不可信：移动/攻击包节流 + ProtocolValidator 校验；白名单靠 anticheat.bypass 附件全局豁免",
-        "/api/* 除 login|register|meta|debug 外统一过 AuthFilter（Bearer token）+ bcrypt cost=10 + RBAC 权限点",
-        "observerctl 端口 18081–18083 无鉴权；举报 reason 无长度与字符校验即广播落盘"
+        "举报 reason 无长度与字符校验即广播落盘；静默吞异常约 40 处（跨版本防御为主，背包还原等路径缺日志）"
       ]
     },
     {
@@ -469,7 +392,7 @@
       "items": [
         "数据库 database.type 五选一：sqlite（默认）/ mysql / h2 / redis / mongodb，凭据在 config.yml",
         "代理 BungeeCord / Velocity 软依赖（只实现 BungeeCord 消息通道）；ProtocolLib 5.3.0 未装则协议层降级",
-        "面板 Javalin :8080（REST /api/*、WS /ws、/ws/replay/{uuid}，BukkitBridge 回主线程）；观察者容器走 HTTP observerctl 产 HLS"
+        "审计日志异步入同一数据库（AuditManager）；管理端全部走游戏内 /ac config（Web 面板与观察者回放已于 v2.1.0 下线）"
       ]
     }
   ]

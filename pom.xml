@@ -21,7 +21,6 @@
         <api.version>${paper.version}</api.version>
         <api.groupId>io.papermc.paper</api.groupId>
         <api.artifactId>paper-api</api.artifactId>
-        <skipFrontend>false</skipFrontend>
         <!-- 测试相关版本（仅 test scope，不进入 shade 产物） -->
         <junit.version>5.10.2</junit.version>
         <surefire.version>3.2.5</surefire.version>
@@ -102,31 +101,6 @@
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1</version>
-        </dependency>
-        <dependency>
-            <groupId>io.javalin</groupId>
-            <artifactId>javalin</artifactId>
-            <version>6.1.6</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>ch.qos.logback</groupId>
-                    <artifactId>logback-classic</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.slf4j</groupId>
-                    <artifactId>slf4j-api</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-jdk14</artifactId>
-            <version>2.0.13</version>
-        </dependency>
-        <dependency>
-            <groupId>at.favre.lib</groupId>
-            <artifactId>bcrypt</artifactId>
-            <version>0.10.2</version>
         </dependency>
 
         <!-- ============ 测试依赖（test scope：不参与编译产物与 shade） ============ -->
@@ -240,26 +214,6 @@
                                     <pattern>com.mongodb</pattern>
                                     <shadedPattern>com.anticheat.libs.mongodb</shadedPattern>
                                 </relocation>
-                                <relocation>
-                                    <pattern>io.javalin</pattern>
-                                    <shadedPattern>com.anticheat.libs.javalin</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>org.eclipse.jetty</pattern>
-                                    <shadedPattern>com.anticheat.libs.jetty</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>jakarta</pattern>
-                                    <shadedPattern>com.anticheat.libs.jakarta</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>at.favre.lib</pattern>
-                                    <shadedPattern>com.anticheat.libs.bcrypt</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>org.slf4j</pattern>
-                                    <shadedPattern>com.anticheat.libs.slf4j</shadedPattern>
-                                </relocation>
                             </relocations>
                             <filters>
                                 <filter>
@@ -279,71 +233,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>com.github.eirslett</groupId>
-                <artifactId>frontend-maven-plugin</artifactId>
-                <version>1.15.0</version>
-                <configuration>
-                    <workingDirectory>${project.basedir}/web-panel</workingDirectory>
-                    <installDirectory>${project.build.directory}/node</installDirectory>
-                    <nodeVersion>v20.11.0</nodeVersion>
-                    <skip>${skipFrontend}</skip>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>install-node-and-npm</id>
-                        <goals>
-                            <goal>install-node-and-npm</goal>
-                        </goals>
-                        <phase>generate-resources</phase>
-                    </execution>
-                    <execution>
-                        <id>npm-install</id>
-                        <goals>
-                            <goal>npm</goal>
-                        </goals>
-                        <phase>generate-resources</phase>
-                        <configuration>
-                            <arguments>ci</arguments>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>npm-build</id>
-                        <goals>
-                            <goal>npm</goal>
-                        </goals>
-                        <phase>generate-resources</phase>
-                        <configuration>
-                            <arguments>run build</arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-                <executions>
-                    <execution>
-                        <id>copy-frontend-dist</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>copy-resources</goal>
-                        </goals>
-                        <configuration>
-                            <outputDirectory>${project.build.outputDirectory}/web/dist</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>${project.basedir}/web-panel/dist</directory>
-                                    <includes>
-                                        <include>**/*</include>
-                                    </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
         <resources>
             <resource>
@@ -356,19 +245,6 @@
                 <directory>src/main/resources</directory>
                 <includes>
                     <include>**/*</include>
-                </includes>
-            </resource>
-            <!-- 观察者容器构建文件随 jar 打包，供 ObserverProvisioner 运行期释放并 docker build -->
-            <resource>
-                <directory>docker/observer</directory>
-                <targetPath>observer</targetPath>
-                <includes>
-                    <include>Dockerfile</include>
-                    <include>entrypoint.sh</include>
-                    <include>healthcheck.sh</include>
-                    <include>run-mc.sh</include>
-                    <include>observerctl.py</include>
-                    <include>xorg-dummy.conf</include>
                 </includes>
             </resource>
         </resources>

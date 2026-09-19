@@ -3,19 +3,13 @@ package com.anticheat.detection;
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.detection.ViolationRecord.Severity;
 import com.anticheat.detection.ViolationRecord.ViolationType;
-import com.anticheat.web.WebServer;
-import com.anticheat.web.dto.AlertDTO;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.*;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class ViolationManager {
 
@@ -29,10 +23,6 @@ public class ViolationManager {
 
     private final Map<UUID, Long> lastKickTime;
     private final Map<UUID, Long> lastWarnTime;
-
-    private static final DateTimeFormatter ISO =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss").withZone(ZoneId.systemDefault());
-    private static final AtomicLong ALERT_SEQ = new AtomicLong(0);
 
     public ViolationManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
@@ -61,57 +51,11 @@ public class ViolationManager {
 
         PunishmentResult punishment = calculatePunishment(type, severity, getViolationCount(uuid, type));
 
-        // 违规回放触发（必须在 executePunishment 之前，否则玩家可能已被 kick）
-        try { plugin.getReplayRecorder().onViolationTriggered(uuid, record); } catch (Throwable ignored) {}
-
         executePunishment(player, punishment, type);
 
         saveViolationData();
 
         notifyAdmins(player, type, punishment);
-
-        // 推送到 Web 面板告警广播
-        broadcastAlert(player, record);
-    }
-
-    /**
-     * 把违规事件转成 AlertDTO 推送到 Web 面板。
-     * WebServer 未启动时跳过（plugin.getWebServer() 可能为 null）。
-     */
-    private void broadcastAlert(Player player, ViolationRecord record) {
-        try {
-            WebServer webServer = plugin.getWebServer();
-            if (webServer == null) return;
-            int score = Math.min(100, (int) Math.round(record.getViolationLevel() * 10));
-            String level;
-            if (score >= 90) level = "critical";
-            else if (score >= 70) level = "high";
-            else if (score >= 50) level = "medium";
-            else level = "low";
-            String title = "检测到 " + record.getType().getDisplayName() + " 违规";
-            String message = "玩家 " + player.getName() + " "
-                    + record.getType().getDisplayName()
-                    + " (score=" + score + ")";
-            AlertDTO alert = new AlertDTO(
-                    "al-" + ALERT_SEQ.incrementAndGet(),
-                    level,
-                    title,
-                    message,
-                    player.getName(),
-                    ISO.format(Instant.ofEpochMilli(record.getTimestamp())),
-                    record.getType().name(),
-                    score
-            );
-            // 违规回放联动：填充该玩家最近一次已保存的回放片段 id。
-            // 告警推送先于本次片段 10s 固化落库，故可能指向上一段；前端会按玩家 uuid 兜底查询最新回放。
-            if (plugin.getReplayRecorder() != null) {
-                alert.replayId = plugin.getReplayRecorder().getLastSegmentId(player.getUniqueId());
-            }
-            webServer.getBroadcaster().broadcast(alert);
-        } catch (Throwable t) {
-            // 推送失败不应影响违规处理流程
-            plugin.getLogger().warning("[Web] 推送告警失败: " + t.getMessage());
-        }
     }
 
     public void recordViolation(Player player, ViolationType type) {
