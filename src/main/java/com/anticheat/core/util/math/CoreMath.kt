@@ -60,4 +60,41 @@ object CoreMath {
     @JvmStatic
     fun clamp(value: Double, min: Double, max: Double): Double =
         if (value < min) min else if (value > max) max else value
+
+    /**
+     * 玩家朝向与该向量之间的夹角（度，0~180）。
+     *
+     * <p>朝向按 Minecraft 约定换算成视线单位向量：yaw 0 面向 +Z，pitch 越大越朝下。
+     * </p>
+     *
+     * <pre>
+     *   vx = -sin(yaw) * cos(pitch)
+     *   vy = -sin(pitch)
+     *   vz =  cos(yaw) * cos(pitch)
+     * </pre>
+     *
+     * <p>把 yaw/pitch 的组合算成视线向量再求夹角，比"分别比较 yaw 差与 pitch 差"
+     * 更严谨：后者在朝上/朝下时会把水平方向的偏差放大（俯视时身体朝向的影响变小），
+     * 更容易误判。向量夹角在全方向上语义一致。</p>
+     *
+     * @param dx 目标方向分量（不必归一化）；长度为 0 时返回 0（无方向可言，不做判定）
+     */
+    @JvmStatic
+    fun angleOffViewDegrees(yawDegrees: Float, pitchDegrees: Float, dx: Double, dy: Double, dz: Double): Double {
+        val length = kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+        if (length < MIN_DIRECTION_LENGTH) return 0.0
+
+        val yaw = Math.toRadians(yawDegrees.toDouble())
+        val pitch = Math.toRadians(pitchDegrees.toDouble())
+        val cosPitch = kotlin.math.cos(pitch)
+
+        val vx = -kotlin.math.sin(yaw) * cosPitch
+        val vy = -kotlin.math.sin(pitch)
+        val vz = kotlin.math.cos(yaw) * cosPitch
+
+        val dot = (vx * dx + vy * dy + vz * dz) / length
+        return Math.toDegrees(kotlin.math.acos(clamp(dot, -1.0, 1.0)))
+    }
+
+    private const val MIN_DIRECTION_LENGTH = 1.0e-6
 }

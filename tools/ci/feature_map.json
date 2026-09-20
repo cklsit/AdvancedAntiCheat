@@ -92,10 +92,13 @@
       "feature": "核心层（Grim 式架构：平台抽象 / 事件总线 / 玩家状态容器 / Check 框架 / PacketEvents 包层）+ 插件主类接线",
       "tests": [
         "com.anticheat.core.check.ViolationDataTest",
+        "com.anticheat.core.check.impl.reach.EntityBoxesTest",
         "com.anticheat.core.check.impl.timer.TimerBalanceTest",
         "com.anticheat.core.util.math.CoreMathTest",
         "com.anticheat.core.util.math.DoubleRingTest",
+        "com.anticheat.core.util.math.PointHistoryTest",
         "com.anticheat.core.util.math.RateTrackerTest",
+        "com.anticheat.core.util.math.ViewAngleTest",
         "com.anticheat.core.util.update.UpdateSnapshotTest",
         "com.anticheat.contract.ConfigContractTest",
         "com.anticheat.contract.CoreCheckContractTest"

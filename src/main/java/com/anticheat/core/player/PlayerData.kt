@@ -3,6 +3,7 @@ package com.anticheat.core.player
 import com.anticheat.core.manager.CheckManager
 import com.anticheat.core.manager.SetbackTeleportUtil
 import com.anticheat.core.platform.api.player.PlatformPlayer
+import com.anticheat.core.platform.api.player.ServerSnapshot
 import com.github.retrooper.packetevents.protocol.player.ClientVersion
 import com.github.retrooper.packetevents.protocol.player.User
 import com.github.retrooper.packetevents.util.Vector3d
@@ -73,12 +74,74 @@ class PlayerData(
     @Volatile
     var serverOnGround: Boolean = false
 
+    /**
+     * 服务端算出的眼睛位置（主线程刷新）。
+     *
+     * <p>伸手距离与视线类判据必须从眼睛出发，而眼球高度随姿态变化
+     * （站立 1.62 / 潜行 1.54 / 爬行 0.4 / 鞘翅 0.4）。自己去猜高度会直接造成误报，
+     * 所以这里存服务端给的 `getEyeLocation()`。</p>
+     */
+    @Volatile
+    var serverEyeX: Double = 0.0
+
+    @Volatile
+    var serverEyeY: Double = 0.0
+
+    @Volatile
+    var serverEyeZ: Double = 0.0
+
+    /** 骑乘的实体 id；[ServerSnapshot.NO_VEHICLE] 表示没有。 */
+    @Volatile
+    var serverVehicleEntityId: Int = -1
+
+    /** 是否正在滑翔（鞘翅）。 */
+    @Volatile
+    var serverGliding: Boolean = false
+
+    /** 是否骑乘中。移动包节奏由载具驱动，计时器类判据必须让路。 */
+    val serverInVehicle: Boolean get() = serverVehicleEntityId > -1
+
     /** 最近一次「站在地面且未异常」的位置，setback 的落点。 */
     @Volatile
     var setbackWorld: String? = null
 
     @Volatile
     var setbackPosition: Vector3d = Vector3d(0.0, 0.0, 0.0)
+
+    /**
+     * 本 tick 内**攻击过的目标实体 id**。
+     *
+     * <p>为什么要在两个线程之间倒一次手：攻击包在 **Netty 线程**到达，
+     * 而目标实体的位置只能在**主线程**读（Bukkit 世界/实体 API 不是线程安全的）。
+     * 于是收包时先把 id 记进 [pendingAttackTargets]，主线程在 tick 开始时
+     * 一次性取走并放进这个字段，检测再读它——这样检测永远不必自己处理跨线程。</p>
+     *
+     * <p>用"集合"而不是"列表"：同一 tick 内打同一个目标多次，只需要它的位置一次。</p>
+     */
+    @Volatile
+    var attackTargetsThisTick: List<Int> = emptyList()
+        private set
+
+    private val pendingAttackTargets = LinkedHashSet<Int>()
+
+    /** Netty 线程调用：记下一个被攻击的目标 id。 */
+    fun recordAttackTarget(entityId: Int) {
+        synchronized(pendingAttackTargets) {
+            // 上限是防御性的：客户端可以在一秒内灌进上千个攻击包，
+            // 不设上限会让这个集合无界增长（每个 id 都是一次主线程实体查找）
+            if (pendingAttackTargets.size < MAX_PENDING_ATTACK_TARGETS) {
+                pendingAttackTargets.add(entityId)
+            }
+        }
+    }
+
+    /** 主线程调用：把待处理目标搬到 [attackTargetsThisTick]。 */
+    fun drainAttackTargets() {
+        synchronized(pendingAttackTargets) {
+            attackTargetsThisTick = pendingAttackTargets.toList()
+            pendingAttackTargets.clear()
+        }
+    }
 
     // ------------------------------------------------------------------ 运行时标志
 
@@ -208,13 +271,18 @@ class PlayerData(
     }
 
     /** 由主线程在每 tick 末尾调用，刷新权威位置并推进 setback 锚点。 */
-    fun refreshServerState(world: String?, x: Double, y: Double, z: Double, ground: Boolean) {
-        serverWorld = world
-        serverPosition = Vector3d(x, y, z)
-        serverOnGround = ground
-        if (world != null && ground) {
-            setbackWorld = world
-            setbackPosition = Vector3d(x, y, z)
+    fun refreshServerState(snapshot: ServerSnapshot) {
+        serverWorld = snapshot.world
+        serverPosition = Vector3d(snapshot.x, snapshot.y, snapshot.z)
+        serverOnGround = snapshot.onGround
+        serverEyeX = snapshot.eyeX
+        serverEyeY = snapshot.eyeY
+        serverEyeZ = snapshot.eyeZ
+        serverVehicleEntityId = snapshot.vehicleEntityId
+        serverGliding = snapshot.gliding
+        if (snapshot.onGround) {
+            setbackWorld = snapshot.world
+            setbackPosition = Vector3d(snapshot.x, snapshot.y, snapshot.z)
         }
     }
 
@@ -224,6 +292,7 @@ class PlayerData(
         attacksThisTick = 0
         swingsThisTick = 0
         inventoryClicksThisTick = 0
+        attackTargetsThisTick = emptyList()
     }
 
     /** 距上次挥手的毫秒数；从未挥手时返回一个很大的值而不是 0（避免被当成"刚刚挥过"）。 */
@@ -252,5 +321,8 @@ class PlayerData(
     companion object {
         /** 结束挖掘后仍需忽略挥手间隔的时长（毫秒）。 */
         const val DIGGING_NOISE_MILLIS = 3000L
+
+        /** 单 tick 内最多记录多少个被攻击目标（防御恶意高频攻击包）。 */
+        const val MAX_PENDING_ATTACK_TARGETS = 16
     }
 }

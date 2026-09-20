@@ -24,15 +24,11 @@ import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPl
  * <h3>三处让路</h3>
  * 1. 服务端刚传送过 → 直接 [TimerBalance.reset]。传送后的包序与时间戳全部异常，
  *    而且如果这里只是"扣一点额度"，反而会让余额掉到下界、让之后几十秒都无法触发检测；
- * 2. 载具（船/矿车）与鞘翅飞行不参与——它们的移动包节奏由服务端实体驱动，
- *    与玩家的客户端时钟无关。**本实现暂未识别载具**，因此这类玩家可能被误报，
- *    详见下面 `TODO`；
+ * 2. **骑乘与滑翔**同样直接重置：这两类状态下移动包的节奏由载具 / 鞘翅物理驱动，
+ *    与玩家自己的客户端时钟无关，拿它做计时器判定必然误报。
+ *    这两个状态由 [com.anticheat.core.platform.api.player.ServerSnapshot]
+ *    从服务端读出（`vehicle` / `isGliding`），不再依赖猜测；
  * 3. 余额下界给到 1000ms，容纳真实卡顿。
- *
- * `TODO(载具识别)`：需要从服务端读玩家是否骑乘实体，而当前
- * [com.anticheat.core.platform.api.player.ServerSnapshot] 还没有这个字段。
- * 在那之前，**建议骑乘/飞行玩法为主的服务器把本检测设为观察模式**
- * （`core.checks.TimerA.enabled: false`，靠告警日志人工观察）。
  */
 @CheckData(
     name = "TimerA",
@@ -49,6 +45,12 @@ class TimerA(player: PlayerData) : Check(player), PacketReceiveListener {
 
         // 传送后的包序不可信：整体重置，而不是扣一点额度
         if (AntiCheatCore.tickManager.currentTick - player.lastTeleportTick < TELEPORT_IMMUNITY_TICKS) {
+            balance.reset()
+            return
+        }
+
+        // 骑乘 / 滑翔：移动包节奏由载具与鞘翅物理驱动，不属于玩家的发包频率
+        if (player.serverInVehicle || player.serverGliding) {
             balance.reset()
             return
         }

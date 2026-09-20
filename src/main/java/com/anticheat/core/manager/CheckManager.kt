@@ -14,6 +14,9 @@ import com.anticheat.core.check.impl.combat.NoSwingA
 import com.anticheat.core.check.impl.combat.ToolSwitchA
 import com.anticheat.core.check.impl.inventory.InventoryA
 import com.anticheat.core.check.impl.inventory.InventoryB
+import com.anticheat.core.check.impl.reach.ReachA
+import com.anticheat.core.check.impl.reach.ReachB
+import com.anticheat.core.check.impl.reach.TargetTracker
 import com.anticheat.core.check.impl.timer.TimerA
 import com.anticheat.core.check.impl.timer.TimerB
 import com.anticheat.core.check.impl.world.BreakRestartA
@@ -82,6 +85,10 @@ class CheckManager(val player: PlayerData) {
 
     init {
         // ---------------- 检测登记表 ----------------
+        // 共享状态容器：不是检测，但必须最先登记——
+        // ReachA / ReachB 在构造后会通过 get(TargetTracker::class.java) 取它。
+        // （它们用的是 lazy 解析，所以顺序并不是正确性前提；先登记只是让语义更清楚）
+        register(TargetTracker(player))
         // 非法数据包 / 协议违规
         register(BadPacketsA(player))
         register(BadPacketsB(player))
@@ -99,6 +106,9 @@ class CheckManager(val player: PlayerData) {
         register(AutoClickerC(player))
         // 瞄准
         register(AimA(player))
+        // 伸手与视线（射线类）
+        register(ReachA(player))
+        register(ReachB(player))
         // 战斗动作
         register(NoSwingA(player))
         register(ToolSwitchA(player))

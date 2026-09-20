@@ -42,6 +42,12 @@ class BukkitPlayer(private val player: Player) : PlatformPlayer {
         if (!player.isOnline) return null
         val location = player.location ?: return null
         val world = location.world ?: return null
+
+        // 眼睛位置由服务端算，不做"身高 + 猜测的眼球高度"：
+        // 眼球高度随姿态变化（站立 1.62 / 潜行 1.54 / 爬行 0.4 / 鞘翅 0.4），
+        // 猜错会直接把 reach / 视线类判据带偏（reach 必须从眼睛出发）。
+        val eye = runCatching { player.eyeLocation }.getOrNull()
+
         return ServerSnapshot(
             world.name,
             location.x,
@@ -49,7 +55,17 @@ class BukkitPlayer(private val player: Player) : PlatformPlayer {
             location.z,
             location.yaw,
             location.pitch,
-            player.isOnGround
+            player.isOnGround,
+            eye?.x ?: location.x,
+            eye?.y ?: (location.y + FALLBACK_EYE_HEIGHT),
+            eye?.z ?: location.z,
+            runCatching { player.vehicle?.entityId }.getOrNull() ?: ServerSnapshot.NO_VEHICLE,
+            BukkitEntityCompat.isGliding(player)
         )
+    }
+
+    companion object {
+        /** 仅在 `getEyeLocation()` 取不到时使用的兜底站立眼球高度。 */
+        const val FALLBACK_EYE_HEIGHT = 1.62
     }
 }

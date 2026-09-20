@@ -56,6 +56,8 @@ object PacketCombatTracker {
             if (update.isAttack) {
                 data.attacksThisTick++
                 data.lastAttackMillis = System.currentTimeMillis()
+                // 目标实体的位置只能在主线程读，先记下 id，由 TickRunner 倒手给检测
+                data.recordAttackTarget(update.targetEntityId)
             }
 
             data.checkManager.onAttack(update)

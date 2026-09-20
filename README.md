@@ -169,7 +169,7 @@ flowchart LR
 - **违规账本**：`ViolationData` 不依赖任何平台类型，可离线单测（`ViolationDataTest`）——`flag` 加分、`reward` 按 decay 扣分，保证真人分数能回落
 - **失败即降级**：包层注入失败（非标准 Netty 管道、其它注入型插件冲突）时旧体系继续提供保护，而不是把插件拖死
 
-内置 16 项检测（`core.checks.<名字>` 可逐项开关/调参）：
+内置 18 项检测（`core.checks.<名字>` 可逐项开关/调参）：
 
 | 分组 | 检测 | 判据 |
 |------|------|------|
@@ -185,6 +185,8 @@ flowchart LR
 | 自动点击 | `AutoClickerB` | 点击间隔香农熵过低（1.13 以下） |
 | 自动点击 | `AutoClickerC` | 每秒攻击次数超限；单 tick 多次攻击加重 |
 | 瞄准 | `AimA` | 攻击期间朝向增量过于均匀（机械瞄准） |
+| 射线 | `ReachA` | 攻击距离超原版上限（含 8 tick 延迟补偿，只累积不单次判定） |
+| 射线 | `ReachB` | 攻击了完全不在视线内的实体（无视线攻击 / silent aura） |
 | 战斗 | `NoSwingA` | 攻击了却没有挥手包（silent aura） |
 | 战斗 | `ToolSwitchA` | 挖掘开始后 1 tick 内切换手持（自动换工具） |
 | 世界 | `BreakRestartA` | 同一方块被反复重启挖掘（fastbreak / nuker） |

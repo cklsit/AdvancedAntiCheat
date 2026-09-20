@@ -77,4 +77,37 @@ class CoreMathTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new com.anticheat.core.check.impl.timer.TimerBalance(50.0, 0.0, 0.75, 1000.0));
     }
+
+    @Test
+    @DisplayName("视线向量换算与 Minecraft 约定一致（yaw 0 面向 +Z，yaw 90 面向 -X）")
+    void viewVectorFollowsMinecraftConvention() {
+        // yaw 0 / pitch 0 -> 面向 +Z
+        assertEquals(0.0, CoreMath.angleOffViewDegrees(0f, 0f, 0, 0, 1), 1e-6);
+        assertEquals(180.0, CoreMath.angleOffViewDegrees(0f, 0f, 0, 0, -1), 1e-6);
+        assertEquals(90.0, CoreMath.angleOffViewDegrees(0f, 0f, 1, 0, 0), 1e-6);
+
+        // yaw 90 -> 面向 -X
+        assertEquals(0.0, CoreMath.angleOffViewDegrees(90f, 0f, -1, 0, 0), 1e-6);
+        assertEquals(180.0, CoreMath.angleOffViewDegrees(90f, 0f, 1, 0, 0), 1e-6);
+
+        // pitch -90 -> 朝正上方
+        assertEquals(0.0, CoreMath.angleOffViewDegrees(0f, -90f, 0, 1, 0), 1e-6);
+        // pitch 90 -> 朝正下方
+        assertEquals(0.0, CoreMath.angleOffViewDegrees(0f, 90f, 0, -1, 0), 1e-6);
+    }
+
+    @Test
+    @DisplayName("视线夹角：零长度方向返回 0 而不是抛异常（退化输入不得变成误报）")
+    void zeroLengthDirectionIsSafe() {
+        assertEquals(0.0, CoreMath.angleOffViewDegrees(37f, 12f, 0, 0, 0), 1e-9);
+    }
+
+    @Test
+    @DisplayName("视线夹角与方向向量长度无关（内部会归一化）")
+    void angleIsScaleInvariant() {
+        double unit = CoreMath.angleOffViewDegrees(0f, -20f, 0, 0, 1);
+        double scaled = CoreMath.angleOffViewDegrees(0f, -20f, 0, 0, 1000);
+        assertEquals(unit, scaled, 1e-9);
+        assertEquals(20.0, unit, 1e-4, "pitch -20 时夹角的直接读数应正好是 20 度");
+    }
 }

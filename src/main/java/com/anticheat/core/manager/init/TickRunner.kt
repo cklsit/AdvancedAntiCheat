@@ -58,7 +58,11 @@ class TickRunner : StartableInitable, StoppableInitable {
                     data.lastTeleportTick = tick
                 }
             }
-            data.refreshServerState(snapshot.world, snapshot.x, snapshot.y, snapshot.z, snapshot.onGround)
+            data.refreshServerState(snapshot)
+
+            // 把收包线程攒下的"本 tick 被攻击的目标"交给检测：
+            // 目标位置只能在主线程读，所以要在检测跑之前倒一次手
+            data.drainAttackTargets()
 
             if (refreshPing) {
                 data.ping = runCatching {
