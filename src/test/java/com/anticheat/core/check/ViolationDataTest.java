@@ -91,4 +91,66 @@ class ViolationDataTest {
         data.reward();
         assertEquals(0.0, data.getViolations(), 1e-9, "decay 大于当前分时应直接归零而非变负");
     }
+
+    @Test
+    @DisplayName("加权 flag：协议类判据可以用更大的权重")
+    void weightedFlagAddsExactAmount() {
+        ViolationData data = new ViolationData(0.05, 0.0);
+
+        assertEquals(3.0, data.flag(3.0), 1e-9, "权重 3.0 必须一次加 3 分");
+        assertEquals(5.5, data.flag(2.5), 1e-9);
+        assertEquals(6.5, data.flag(1.0), 1e-9, "权重 1.0 与无参 flag 等价");
+        assertEquals(7.5, data.flag(), 1e-9, "无参 flag 的默认权重就是 1.0");
+    }
+
+    @Test
+    @DisplayName("非正权重被忽略：不允许出现减分式 flag")
+    void nonPositiveWeightIsIgnored() {
+        ViolationData data = new ViolationData(0.05, 0.0);
+        data.flag(4.0);
+
+        assertEquals(4.0, data.flag(0.0), 1e-9, "权重 0 不应改变账本");
+        assertEquals(4.0, data.flag(-2.0), 1e-9,
+                "负权重会让检测间互相抵消，必须整体禁止而不是'反向加分'");
+        assertEquals(4.0, data.getViolations(), 1e-9);
+    }
+
+    @Test
+    @DisplayName("reward(amount) 支持自定义降温额度，且同样不会扣成负数")
+    void weightedRewardClampsAtZero() {
+        ViolationData data = new ViolationData(0.05, 0.0);
+        data.flag(5.0);
+
+        assertEquals(4.8, data.reward(0.2), 1e-9);
+        assertEquals(0.0, data.reward(99.0), 1e-9, "超额扣分必须归零而不是变负");
+    }
+
+    @Test
+    @DisplayName("configure 能把配置里的 decay/setback 覆盖项下发到账本")
+    void configureAppliesOverrides() {
+        ViolationData data = new ViolationData(0.02, 0.0);
+        assertEquals(0.02, data.getDecay(), 1e-9);
+        assertEquals(0.0, data.getSetbackVl(), 1e-9);
+
+        data.configure(0.5, 3.0);
+        assertEquals(0.5, data.getDecay(), 1e-9, "配置里的 decay 必须真的生效");
+        assertEquals(3.0, data.getSetbackVl(), 1e-9);
+
+        // 覆盖之后 reward 用新速率，setback 用新阈值
+        data.flag(4.0);
+        data.reward();
+        assertEquals(3.5, data.getViolations(), 1e-9);
+        assertTrue(data.shouldSetback(), "越过新阈值 3.0 后必须触发拉回");
+    }
+
+    @Test
+    @DisplayName("configure 传入 0 setback 表示关闭拉回")
+    void configureCanDisableSetback() {
+        ViolationData data = new ViolationData(0.02, 1.0);
+        data.flag(50.0);
+        assertTrue(data.shouldSetback());
+
+        data.configure(0.02, 0.0);
+        assertFalse(data.shouldSetback(), "setback <= 0 表示本检测不参与拉回");
+    }
 }

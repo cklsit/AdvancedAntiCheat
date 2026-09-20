@@ -169,7 +169,27 @@ flowchart LR
 - **违规账本**：`ViolationData` 不依赖任何平台类型，可离线单测（`ViolationDataTest`）——`flag` 加分、`reward` 按 decay 扣分，保证真人分数能回落
 - **失败即降级**：包层注入失败（非标准 Netty 管道、其它注入型插件冲突）时旧体系继续提供保护，而不是把插件拖死
 
-自带两个端到端示例检测：`BadPacketsA`（非法位移 / NaN）、`BadPacketsB`（非法 pitch）。
+内置 16 项检测（`core.checks.<名字>` 可逐项开关/调参）：
+
+| 分组 | 检测 | 判据 |
+|------|------|------|
+| 协议 | `BadPacketsA` | 非法位移（NaN/Inf、单包位移超物理上限） |
+| 协议 | `BadPacketsB` | 非法 pitch（越界 / NaN） |
+| 协议 | `BadPacketsC` | 松开右键包携带非法作用面（原版恒为 DOWN） |
+| 协议 | `BadPacketsD` | 连续上报相同手持槽位（原版只在变化时才发） |
+| 背包 | `InventoryA` | 服务端未开窗却点击容器 |
+| 背包 | `InventoryB` | 拾取后 100ms 内换入副手（自动图腾，1.9+） |
+| 计时 | `TimerA` | 移动包持续快于原版（计时器加速，余额法） |
+| 计时 | `TimerB` | 移动包连续长间隔（客户端攒包 / blink） |
+| 自动点击 | `AutoClickerA` | 点击间隔标准差长期过低且稳定（1.13 以下） |
+| 自动点击 | `AutoClickerB` | 点击间隔香农熵过低（1.13 以下） |
+| 自动点击 | `AutoClickerC` | 每秒攻击次数超限；单 tick 多次攻击加重 |
+| 瞄准 | `AimA` | 攻击期间朝向增量过于均匀（机械瞄准） |
+| 战斗 | `NoSwingA` | 攻击了却没有挥手包（silent aura） |
+| 战斗 | `ToolSwitchA` | 挖掘开始后 1 tick 内切换手持（自动换工具） |
+| 世界 | `BreakRestartA` | 同一方块被反复重启挖掘（fastbreak / nuker） |
+| 世界 | `FastPlaceA` | 同 tick 多次放置 / 每秒放置次数超限（fastplace） |
+
 配置见 `config.yml` 的 `core:` 段。详见 [CODE_WIKI 3.7](CODE_WIKI.md#37-核心层core--grim-式内核)。
 
 ### 🧠 概率融合与智能决策

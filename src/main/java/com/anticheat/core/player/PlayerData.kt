@@ -118,6 +118,67 @@ class PlayerData(
     @Volatile
     var positionPacketsThisTick: Int = 0
 
+    // ------------------------------------------------------------------ 动作包状态（战斗 / 背包 / 方块）
+
+    /** 当前手持槽位（0..8）。由 `HELD_ITEM_CHANGE` 更新。 */
+    @Volatile
+    var heldSlot: Int = 0
+
+    /** 上一次手持槽位；用于识别「连包携带同一 slot」这种协议层异常。 */
+    @Volatile
+    var lastHeldSlot: Int = 0
+
+    /**
+     * 客户端是否**认为**自己打开着容器窗口。
+     *
+     * <p>刻意由包层自己维护（服务端发 `OPEN_WINDOW` 置 true、任一方 `CLOSE_WINDOW` 置 false），
+     * 而不是去问 Bukkit：如果查服务端，得到的永远是"真实状态"，
+     * 那就不可能发现"客户端在没开窗的情况下点击容器"这类欺骗。</p>
+     */
+    @Volatile
+    var inventoryOpen: Boolean = false
+
+    /** 最近一次服务端要求打开的窗口 id。 */
+    @Volatile
+    var openWindowId: Int = 0
+
+    /** 是否正在挖掘方块（`START_DIGGING` 后置位，`FINISHED/CANCELLED` 后清零）。 */
+    @Volatile
+    var breakingBlock: Boolean = false
+
+    /** 本 tick 的攻击 / 挥手 / 窗口点击计数。用于「攻击了却没挥手」这类跨包判据。 */
+    @Volatile
+    var attacksThisTick: Int = 0
+
+    @Volatile
+    var swingsThisTick: Int = 0
+
+    @Volatile
+    var inventoryClicksThisTick: Int = 0
+
+    /**
+     * 最近一次攻击 / 挥手 / 开始挖掘的墙钟时间（毫秒）。
+     *
+     * <p>为什么这类间隔用墙钟而不是 tick：点击间隔是**亚 tick 级**的物理量
+     * （20 CPS = 每 50ms 一次），用 tick 计数会把它量化掉，
+     * 而自动点击器的破绽恰恰在毫秒级的间隔分布上。</p>
+     */
+    @Volatile
+    var lastAttackMillis: Long = 0L
+
+    @Volatile
+    var lastSwingMillis: Long = 0L
+
+    @Volatile
+    var lastDigStartMillis: Long = 0L
+
+    @Volatile
+    var lastDigStopMillis: Long = 0L
+
+    /** 开始挖掘时的 tick；用于「挖掘重启间隔」判据（该判据必须用 tick，见对应检测）。 */
+    @Volatile
+    var digStartTick: Long = 0L
+
     // ------------------------------------------------------------------ 状态写入
 
     /** 接受一次位置更新，并把「上一次」滚动保存。 */
@@ -160,7 +221,36 @@ class PlayerData(
     /** 每 tick 末尾清零包计数。 */
     fun resetTickCounters() {
         positionPacketsThisTick = 0
+        attacksThisTick = 0
+        swingsThisTick = 0
+        inventoryClicksThisTick = 0
     }
 
+    /** 距上次挥手的毫秒数；从未挥手时返回一个很大的值而不是 0（避免被当成"刚刚挥过"）。 */
+    fun millisSinceLastSwing(now: Long): Long =
+        if (lastSwingMillis == 0L) Long.MAX_VALUE else now - lastSwingMillis
+
+    /** 距上次开始挖掘的毫秒数。 */
+    fun millisSinceDigStart(now: Long): Long =
+        if (lastDigStartMillis == 0L) Long.MAX_VALUE else now - lastDigStartMillis
+
+    /** 距上次结束（完成或取消）挖掘的毫秒数。 */
+    fun millisSinceDigStop(now: Long): Long =
+        if (lastDigStopMillis == 0L) Long.MAX_VALUE else now - lastDigStopMillis
+
+    /**
+     * 是否处于「挖掘噪声窗口」内。
+     *
+     * <p>挖掘方块会持续挥手。所有基于挥手间隔的检测都必须在这个窗口内让路，
+     * 否则挖矿玩家会被自己的挥臂节奏判成自动点击器——这是该类检测的头号假阳性来源。</p>
+     */
+    fun inDiggingNoiseWindow(now: Long): Boolean =
+        breakingBlock || millisSinceDigStop(now) < DIGGING_NOISE_MILLIS
+
     override fun toString(): String = name + "(" + uuid + ", " + clientVersion + ")"
+
+    companion object {
+        /** 结束挖掘后仍需忽略挥手间隔的时长（毫秒）。 */
+        const val DIGGING_NOISE_MILLIS = 3000L
+    }
 }

@@ -474,7 +474,12 @@ core:
   # ---------------- 逐检测覆盖 ----------------
   # 键名 = @CheckData 的 name。enabled=false 可单独关掉某项；
   # decay 越大违规分衰减越快；setback 阈值 >0 时该项才会触发位置拉回。
+  # 除这三项外，个别检测还读自己的专属参数（见各项注释），
+  # 这些键不写就等于用代码里的默认值，删掉不会报错也不会改变行为。
+  #
+  # ⚠ 新增检测后必须在这里补一条：漏了不会报错，但管理员会看不到、也关不掉它。
   checks:
+    # ---- 协议非法数据（原版客户端不可能产生的值）----
     BadPacketsA:
       enabled: true
       decay: 0.05
@@ -483,3 +488,83 @@ core:
       enabled: true
       decay: 0.05
       setback: 0.0
+    # 松开右键包携带非 DOWN 作用面
+    BadPacketsC:
+      enabled: true
+      decay: 0.05
+    # 连续收到相同手持槽位（原版只在变化时才发）
+    BadPacketsD:
+      enabled: true
+      decay: 0.1
+
+    # ---- 背包与窗口 ----
+    # 未开窗却点击容器
+    InventoryA:
+      enabled: true
+      decay: 0.05
+    # 拾取后 100ms 内换入副手（自动图腾；仅 1.9+ 生效）
+    InventoryB:
+      enabled: true
+      decay: 0.05
+
+    # ---- 收包频率（计时器）----
+    # 移动包持续快于原版（时钟加速）
+    # buffer-ms: 允许的时间欠账额度。网络抖动大的服务器可上调到 2000~4000，
+    #            但每上调 1000ms 就多给作弊器约 1 秒的伪装空间。
+    # ⚠ 骑乘/鞘翅飞行玩法为主的服务器建议先设为 enabled: false 观察日志，
+    #   本实现尚未识别载具，这类玩家可能被误报（详见 TimerA.kt 的 TODO）。
+    TimerA:
+      enabled: true
+      decay: 0.05
+      buffer-ms: 1000
+    # 移动包出现连续长间隔（客户端攒包 / blink）
+    TimerB:
+      enabled: true
+      decay: 0.1
+
+    # ---- 自动点击 ----
+    # 间隔标准差长期过低（仅 1.13 以下客户端生效，见 AutoClickerA.kt 说明）
+    AutoClickerA:
+      enabled: true
+      decay: 0.05
+    # 间隔取值过于单一（香农熵过低；仅 1.13 以下客户端生效）
+    AutoClickerB:
+      enabled: true
+      decay: 0.05
+    # 每秒攻击次数超限（所有客户端版本生效）
+    # max-cps: 一秒内允许的攻击次数。人类极限约 12~15 且无法持续，
+    #          默认 20；设为 0 或负数即关闭判定（保留统计）。
+    AutoClickerC:
+      enabled: true
+      decay: 0.1
+      max-cps: 20
+
+    # ---- 瞄准 ----
+    # 攻击期间朝向增量过于均匀（机械瞄准 / 平滑 aimbot）
+    AimA:
+      enabled: true
+      decay: 0.05
+
+    # ---- 战斗动作 ----
+    # 攻击了却没有挥手包（silent aura / 隐藏挥臂）
+    NoSwingA:
+      enabled: true
+      decay: 0.1
+    # 挖掘开始后 1 tick 内切换手持槽位（自动换工具）
+    ToolSwitchA:
+      enabled: true
+      decay: 0.1
+
+    # ---- 世界交互 ----
+    # 同一方块被反复重启挖掘（fastbreak / nuker）
+    BreakRestartA:
+      enabled: true
+      decay: 0.05
+    # 放置方块频率异常（fastplace）
+    # max-per-second: 一秒内允许的放置次数。原版右键冷却远低于 20/s，
+    #                 默认 15 已留约 3 倍余量；设为 0 或负数即关闭判定。
+    FastPlaceA:
+      enabled: true
+      decay: 0.1
+      max-per-second: 15
+

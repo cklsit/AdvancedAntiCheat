@@ -3,6 +3,7 @@ package com.anticheat.core.manager.config
 import com.anticheat.core.AntiCheatCore
 import com.anticheat.core.check.Check
 import com.anticheat.core.util.CoreLog
+import org.bukkit.configuration.ConfigurationSection
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -75,6 +76,27 @@ class CoreConfigManager {
     private val checkDecayOverride = ConcurrentHashMap<String, Double>()
     private val checkSetbackOverride = ConcurrentHashMap<String, Double>()
 
+    /**
+     * 每个检测的**原始配置段**（`core.checks.<名字>`）。
+     *
+     * <p>为什么要把整段留下来：不同检测的可调参数完全不同（CPS 上限、余额缓冲、
+     * 统计窗口长度……），在管理器里为每一项都写一个具名属性会让这里迅速膨胀成
+     * 几十个字段，且每加一个检测就要改三个文件。改成检测自己去问
+     * [optionInt]/[optionDouble]/[optionBoolean]，新增检测只需要在 config.yml
+     * 的 `core.checks.<名字>` 下加键，不必再动管理器。</p>
+     */
+    private val checkSections = ConcurrentHashMap<String, ConfigurationSection>()
+
+    /** 读一个逐检测的整数参数；配置里没写（或整段缺失）就用 [def]。 */
+    fun optionInt(checkConfigName: String, key: String, def: Int): Int =
+        checkSections[checkConfigName]?.getInt(key, def) ?: def
+
+    fun optionDouble(checkConfigName: String, key: String, def: Double): Double =
+        checkSections[checkConfigName]?.getDouble(key, def) ?: def
+
+    fun optionBoolean(checkConfigName: String, key: String, def: Boolean): Boolean =
+        checkSections[checkConfigName]?.getBoolean(key, def) ?: def
+
     fun load() {
         val config = AntiCheatCore.plugin.config
 
@@ -98,6 +120,7 @@ class CoreConfigManager {
         checkEnabledOverride.clear()
         checkDecayOverride.clear()
         checkSetbackOverride.clear()
+        checkSections.clear()
 
         val section = config.getConfigurationSection("core.checks")
         if (section != null) {
@@ -106,6 +129,7 @@ class CoreConfigManager {
                 checkEnabledOverride[name] = child.getBoolean("enabled", true)
                 if (child.contains("decay")) checkDecayOverride[name] = child.getDouble("decay")
                 if (child.contains("setback")) checkSetbackOverride[name] = child.getDouble("setback")
+                checkSections[name] = child
             }
         }
 
@@ -121,6 +145,10 @@ class CoreConfigManager {
             .getPlayer(check.player.uuid)
             ?.hasPermission(EXEMPT_PERMISSION_PREFIX + key.lowercase())
             ?: false
+        // decay / setback 的覆盖项必须真的下发到账本。
+        // 只读不写 = 管理员改了 core.checks.<名字>.decay 却毫无效果，
+        // 正是本项目历史上那类「配置写了但不生效」的静默缺陷。
+        check.applyTuning(checkDecayOverride[key], checkSetbackOverride[key])
     }
 
     fun summary(): String =

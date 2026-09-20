@@ -27,24 +27,36 @@ class AlertManager {
         val config = AntiCheatCore.configManager
         if (!config.alertsEnabled) return false
 
+        // 节流判定留在调用线程（ConcurrentHashMap，天然线程安全）——
+        // 放到主线程去判会让高频检测把任务队列灌满
         val now = System.currentTimeMillis()
         val last = lastAlertAt[player.uuid] ?: 0L
         if (now - last < config.alertMinIntervalMs) return false
         lastAlertAt[player.uuid] = now
 
         val text = buildAlertText(player, check, verbose, config.alertVerbose)
-        AntiCheatCore.configManager.alertPrefix.let { prefix ->
-            AntiCheatCore.platformServer.sendConsoleMessage(prefix + text)
-        }
+        val prefix = config.alertPrefix
+        val permission = config.alertPermission
+
+        // 下发必须回主线程：本方法由收包链路（Netty 线程）调用，
+        // 而 getOnlinePlayers()/sendMessage() 都不是线程安全的 Bukkit API，
+        // 在异步线程上遍历在线玩家是 ConcurrentModificationException 的经典来源。
+        // 已做了每秒一次的节流，因此这里每玩家最多每秒产生一个任务。
+        AntiCheatCore.scheduler.runOnMainThread { dispatch(player, prefix + text, permission) }
+        return true
+    }
+
+    /** 主线程执行的实际下发。 */
+    private fun dispatch(player: PlayerData, text: String, permission: String) {
+        AntiCheatCore.platformServer.sendConsoleMessage(text)
 
         for (id in AntiCheatCore.platformServer.getOnlinePlayerIds()) {
             if (id == player.uuid) continue
             val viewer: PlatformPlayer = AntiCheatCore.platformServer.getPlayer(id) ?: continue
-            if (viewer.hasPermission(config.alertPermission)) {
-                viewer.sendMessage(config.alertPrefix + text)
+            if (viewer.hasPermission(permission)) {
+                viewer.sendMessage(text)
             }
         }
-        return true
     }
 
     /** 玩家离线后清理节流表，避免长期运行下的内存滞留。 */

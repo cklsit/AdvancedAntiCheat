@@ -92,10 +92,15 @@
       "feature": "核心层（Grim 式架构：平台抽象 / 事件总线 / 玩家状态容器 / Check 框架 / PacketEvents 包层）+ 插件主类接线",
       "tests": [
         "com.anticheat.core.check.ViolationDataTest",
+        "com.anticheat.core.check.impl.timer.TimerBalanceTest",
+        "com.anticheat.core.util.math.CoreMathTest",
+        "com.anticheat.core.util.math.DoubleRingTest",
+        "com.anticheat.core.util.math.RateTrackerTest",
         "com.anticheat.core.util.update.UpdateSnapshotTest",
-        "com.anticheat.contract.ConfigContractTest"
+        "com.anticheat.contract.ConfigContractTest",
+        "com.anticheat.contract.CoreCheckContractTest"
       ],
-      "notes": "Kotlin 源码有两处工具扫描盲区，改动核心层时必须手工兜底：① ConfigContractTest.everyConfigPathReadByCodeExists 只扫 .java，core.* 的读取在 CoreConfigManager.kt —— 改配置键必须逐字核对 src/main/resources/config.yml 的 core: 段；② tools/audit_dual_version.py 第 4/5 项（Material 常量 / @EventHandler 事件类型）也只扫 .java —— 核心层新增 Kotlin 代码引用 org.bukkit 类型时需自行确认 1.8.8 存在（审计第 1/2/3 项走字节码，对 Kotlin 同样生效）",
+      "notes": "Kotlin 源码有三处工具扫描盲区，改动核心层时必须手工兜底：① ConfigContractTest.everyConfigPathReadByCodeExists 只扫 .java，core.* 的读取在 CoreConfigManager.kt —— 改配置键必须逐字核对 src/main/resources/config.yml 的 core: 段（CoreCheckContractTest 已把「检测 ↔ core.checks 配置项」双向一致性补上，但 decay/setback/专属参数的默认值仍需手工核对）；② tools/audit_dual_version.py 第 4/5 项（Material 常量 / @EventHandler 事件类型）也只扫 .java —— 核心层新增 Kotlin 代码引用 org.bukkit 类型时需自行确认 1.8.8 存在（审计第 1/2/3 项走字节码，对 Kotlin 同样生效）；③ 包层回调跑在 Netty 线程上，新增检测触碰 Bukkit API 必须先 runOnMainThread",
       "gate": "block"
     },
     {
