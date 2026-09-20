@@ -3,6 +3,7 @@ package com.anticheat.core.manager
 import com.anticheat.core.check.Check
 import com.anticheat.core.check.CoreProcessor
 import com.anticheat.core.check.impl.aim.AimA
+import com.anticheat.core.check.impl.aim.AimB
 import com.anticheat.core.check.impl.autoclicker.AutoClickerA
 import com.anticheat.core.check.impl.autoclicker.AutoClickerB
 import com.anticheat.core.check.impl.autoclicker.AutoClickerC
@@ -106,6 +107,7 @@ class CheckManager(val player: PlayerData) {
         register(AutoClickerC(player))
         // 瞄准
         register(AimA(player))
+        register(AimB(player))
         // 伸手与视线（射线类）
         register(ReachA(player))
         register(ReachB(player))

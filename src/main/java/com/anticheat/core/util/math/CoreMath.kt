@@ -96,5 +96,24 @@ object CoreMath {
         return Math.toDegrees(kotlin.math.acos(clamp(dot, -1.0, 1.0)))
     }
 
+    /**
+     * 视线单位向量的 x 分量。
+     *
+     * <p>与 [angleOffViewDegrees] 用的是同一套换算（yaw 0 面向 +Z、pitch 越大越朝下）。
+     * 单独暴露三个分量而不是返回数组：射线求交（[RayBox]）在主线程每 tick 每目标都会
+     * 调用，返回值数组会带来无谓的分配。</p>
+     */
+    @JvmStatic
+    fun lookX(yawDegrees: Float, pitchDegrees: Float): Double =
+        -kotlin.math.sin(Math.toRadians(yawDegrees.toDouble())) * kotlin.math.cos(Math.toRadians(pitchDegrees.toDouble()))
+
+    @JvmStatic
+    fun lookY(yawDegrees: Float, pitchDegrees: Float): Double =
+        -kotlin.math.sin(Math.toRadians(pitchDegrees.toDouble()))
+
+    @JvmStatic
+    fun lookZ(yawDegrees: Float, pitchDegrees: Float): Double =
+        kotlin.math.cos(Math.toRadians(yawDegrees.toDouble())) * kotlin.math.cos(Math.toRadians(pitchDegrees.toDouble()))
+
     private const val MIN_DIRECTION_LENGTH = 1.0e-6
 }

@@ -60,19 +60,44 @@ class PointHistory(val capacity: Int) {
     }
 
     /**
-     * 本历史里所有点，到 [other] 里所有点所代表盒子（以点为**脚底中心**，
-     * 水平半宽 [halfWidth]、高 [height]）的**最短**距离。
+     * 两份历史之间取"最短的盒距离"，只使用**足够新**的样本。
      *
+     * <p>两份历史由同一个 tick 驱动、容量相同（本项目就是这样：每 tick 向玩家眼睛
+     * 与目标位置各写一个样本），所以"下标越大 = 越新"。</p>
+     *
+     * <h3>为什么必须限制样本年龄（本方法最容易被写错的地方）</h3>
+     * 无条件地"所有点两两比"等价于允许任意时间错位，也就是替玩家假设
+     * "客户端可能看到 8 tick 以前的目标位置"。这会**同时削掉作弊者的实测距离**：
+     * 目标在这 400ms 里靠近过多少，实测距离就被削掉多少——冲刺目标可达 **2.8 格**，
+     * 足以让 4.0 格的 reach 作弊在数据上"看起来合法"
+     * （`ReachCalibrationTest` 把这一现象量化成了表）。
+     *
+     * <p>而客户端能看到的目标位置**最多滞后一个单程延迟**（`d` tick）。
+     * 所以正确口径是：只使用最近 `d + 抖动` 个 tick 的样本，两侧各按自己的年龄限。
+     * 年龄限由 `com.anticheat.core.check.impl.reach.ReachTolerance.maxSampleAgeTicks`
+     * 按 ping 给出。</p>
+     *
+     * @param eyeAgeTicks 眼睛侧允许的最大样本年龄（tick）
+     * @param targetAgeTicks 目标侧允许的最大样本年龄（tick）
      * @return 任一侧为空时返回 [Double.MAX_VALUE]（调用方应据此放弃判定）
      */
-    fun minDistanceToBoxes(other: PointHistory, halfWidth: Double, height: Double): Double {
+    @JvmOverloads
+    fun minDistanceToBoxes(
+        other: PointHistory,
+        halfWidth: Double,
+        height: Double,
+        eyeAgeTicks: Int = NO_AGE_BOUND,
+        targetAgeTicks: Int = NO_AGE_BOUND
+    ): Double {
         if (size == 0 || other.size == 0) return Double.MAX_VALUE
+        val eyeFrom = startIndex(size, eyeAgeTicks)
+        val targetFrom = startIndex(other.size, targetAgeTicks)
         var best = Double.MAX_VALUE
-        for (i in 0 until size) {
+        for (i in eyeFrom until size) {
             val px = x(i)
             val py = y(i)
             val pz = z(i)
-            for (j in 0 until other.size) {
+            for (j in targetFrom until other.size) {
                 val d = distanceToBox(
                     px, py, pz,
                     other.x(j), other.y(j), other.z(j),
@@ -82,6 +107,13 @@ class PointHistory(val capacity: Int) {
             }
         }
         return best
+    }
+
+    /** 由"最大年龄"换算起点下标。 */
+    private fun startIndex(total: Int, maxAgeTicks: Int): Int {
+        if (maxAgeTicks < 0) return 0
+        val from = total - 1 - maxAgeTicks
+        return if (from < 0) 0 else from
     }
 
     /** 到某个固定盒子的最短距离。 */
@@ -96,6 +128,9 @@ class PointHistory(val capacity: Int) {
     }
 
     companion object {
+
+        /** 不限制样本年龄（等价于"所有点两两比"，只应在离线分析里用）。 */
+        const val NO_AGE_BOUND = -1
 
         /**
          * 点到轴对齐盒子的最短距离。

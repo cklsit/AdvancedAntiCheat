@@ -105,8 +105,11 @@ class TargetTracker(player: PlayerData) : CoreProcessor(player) {
                 continue
             }
 
+            // 锚点 = 玩家自己的权威坐标：平台层索引未命中时只在锚点周边
+            // 若干区块里找（反作弊关心的目标必然近在咫尺），不会退化成全量遍历
+            val pos = player.serverPosition
             val snapshot = AntiCheatCore.platformServer
-                .getEntitySnapshot(player.serverWorld, entry.key)
+                .getEntitySnapshot(player.serverWorld, entry.key, pos.x, pos.y, pos.z)
                 ?.takeIf { it.alive }
 
             if (snapshot == null) {

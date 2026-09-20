@@ -12,7 +12,7 @@ import org.bukkit.plugin.Plugin
 class BukkitPlatformLoader(private val plugin: Plugin) : PlatformLoader {
 
     private val scheduler: PlatformScheduler = BukkitScheduler(plugin)
-    private val server: PlatformServer = BukkitPlatformServer()
+    private val server: PlatformServer = BukkitPlatformServer(plugin)
 
     override fun getPlugin(): Plugin = plugin
 

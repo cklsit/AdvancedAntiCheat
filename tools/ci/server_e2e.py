@@ -55,7 +55,18 @@ FATAL_LOG_PATTERNS = [
     ("插件 enable 阶段抛异常（插件会被整体禁用）",
      r"Error occurred while enabling|Could not load .*AdvancedAntiCheat|while enabling AdvancedAntiCheat"),
     ("监听器整类注册失败（1.8 上的静默失效元凶）", r"has failed to register events"),
-    ("事件处理器抛异常", r"Could not pass event"),
+    # 只把「抛给我们插件的监听器」算致命。第三方插件自己的监听器抛异常时，
+    # 栈里同样会出现 org.bukkit.plugin.* 与我们的调用帧（我们可能只是调用链上的路人），
+    # 见 latest.log 里 CrazyCrates 的 WorldLoadEvent 异常。
+    ("监听器抛异常（本插件）", r"Could not pass event[^\n]*to AdvancedAntiCheat"),
+    # 「我们的代码真的抛了」= 异常块/`Caused by` 块的**第一帧**是我们的代码。
+    # 只匹配"第一帧"是为了把"路过"排除掉：调用链上的帧不算我们抛的。
+    ("插件代码抛出异常（源头帧）",
+     r"(?:Exception|Error)[^\n]*\n\s+at\s+(?:[\w.\-]+\.jar//)?com\.anticheat\."
+     r"|Caused by:[^\n]*\n\s+at\s+(?:[\w.\-]+\.jar//)?com\.anticheat\."),
+    # 部署残留旧 jar：同名插件谁被加载取决于文件枚举顺序，
+    # "能不能加载"于是交给文件系统决定（生产日志里已发生过一次）
+    ("插件目录存在同名插件（部署残留）", r"Ambiguous plugin name"),
     ("命令执行抛异常", r"Command exception|An unexpected error occurred trying to execute"),
     ("类加载失败", r"NoClassDefFoundError|ClassNotFoundException"),
     ("方法缺失（跨版本 API 不兼容）", r"NoSuchMethodError"),
@@ -63,14 +74,17 @@ FATAL_LOG_PATTERNS = [
     ("接口/类不一致（InventoryView 那类坑）", r"IncompatibleClassChangeError"),
     ("抽象方法未实现", r"AbstractMethodError"),
     ("字节码版本过高（Java 版本不匹配）", r"UnsupportedClassVersionError"),
-    # 栈帧可能带 jar 前缀（Paper 上是 "at AdvancedAntiCheat-2.1.0.jar//com.anticheat.X"），
-    # 早期只匹配 "^  at com.anticheat." 会漏掉这种最常见的形态
-    ("插件自身栈帧异常", r"^\s+at\s+(?:[\w.\-]+\.jar//)?com\.anticheat\."),
 ]
 
 STARTUP_REQUIRED = [
     ("插件已启用", r"插件已成功启用"),
     ("版本识别正常", r"检测到服务器版本"),
+    # 核心层失败是"降级"不是"崩"：插件照样启用、旧体系照样工作，
+    # 因此只看"插件已启用"根本证明不了核心层起来了（skill 里记过这条）
+    ("核心层已启动", r"\[AAC-Core\] 核心层已启动"),
+    ("PacketEvents 已初始化", r"\[AAC-Core\] PacketEvents 已初始化"),
+    # 实体索引是伸手/视线/命中率类判据的数据源；它没起来时这些检测会全部静默跳过
+    ("实体索引已就绪", r"实体索引已就绪"),
 ]
 
 # 异步启动的子系统：要在「Done」之后继续等，不能立刻判定。
@@ -457,6 +471,41 @@ class Report:
 
 # --------------------------------------------------------------------------- 各阶段
 
+def plugin_descriptors(directory: Path) -> list[tuple[str, str]]:
+    """读出 plugins 目录下每个 jar 的 plugin.yml 里的 (文件名, 插件名)。
+
+    按 plugin.yml 里的 `name` 判断重名，而不是按文件名：部署时给旧 jar 改个名字
+    （例如 original-AdvancedAntiCheat-2.1.0.jar）并不会改变它声明的插件名，
+    Bukkit 仍然会认为这是同一个插件并报 Ambiguous plugin name。
+    """
+    out = []
+    if not directory.is_dir():
+        return out
+    for jar in sorted(directory.glob("*.jar")):
+        try:
+            with zipfile.ZipFile(jar) as zf:
+                if "plugin.yml" not in zf.namelist():
+                    continue
+                text = zf.read("plugin.yml").decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            continue
+        m = re.search(r"^name:\s*(\S+)", text, re.M)
+        if m:
+            out.append((jar.name, m.group(1)))
+    return out
+
+
+def plugin_name_conflicts(directory: Path) -> list[str]:
+    """返回同名插件的说明行（空列表 = 无冲突）。"""
+    by_name: dict[str, list[str]] = {}
+    for filename, name in plugin_descriptors(directory):
+        by_name.setdefault(name.lower(), []).append(filename)
+    return [
+        "%s <- %s" % (name, ", ".join(files))
+        for name, files in sorted(by_name.items()) if len(files) > 1
+    ]
+
+
 def prepare_workdir(args, server_jar: Path, plugin_jar: Path) -> Path:
     server_dir = Path(args.workdir).resolve() / "server"
     if server_dir.exists():
@@ -497,6 +546,15 @@ def prepare_workdir(args, server_jar: Path, plugin_jar: Path) -> Path:
     (server_dir / "server.properties").write_text("\n".join(props) + "\n", encoding="utf-8")
 
     shutil.copy2(plugin_jar, server_dir / "plugins" / plugin_jar.name)
+    # 生产环境同时挂着 ProtocolLib / ViaVersion 等注入型插件，核心层的 PacketEvents
+    # 注入必须与它们共存。用 --extra-plugin 把它们拉进同一个测试服，才算真的测过。
+    for extra in getattr(args, "extra_plugin", []) or []:
+        src = Path(extra).resolve()
+        if src.is_file():
+            shutil.copy2(src, server_dir / "plugins" / src.name)
+            log("    额外插件: %s" % src.name)
+        else:
+            log("    警告：--extra-plugin 指向的文件不存在，已跳过: %s" % src)
     data_dir = server_dir / "plugins" / "AdvancedAntiCheat"
     data_dir.mkdir(parents=True, exist_ok=True)
     cfg = patch_plugin_config(extract_plugin_config(plugin_jar))
@@ -505,7 +563,7 @@ def prepare_workdir(args, server_jar: Path, plugin_jar: Path) -> Path:
     return server_dir
 
 
-def phase_startup(rep: Report, console: ServerConsole, args) -> bool:
+def phase_startup(rep: Report, console: ServerConsole, args, server_dir: Path | None = None) -> bool:
     log("  [1/2] 启动健康度")
     hit = console.wait_pattern(r"Done \(", args.timeout)
     if not rep.add("startup", "服务端启动完成（Done）", bool(hit),
@@ -513,6 +571,23 @@ def phase_startup(rep: Report, console: ServerConsole, args) -> bool:
         return False
 
     logs = console.text()
+
+    # 部署卫生：同名插件必须只存在一个。生产日志里 `Ambiguous plugin name` 就是
+    # 残留的 original-*.jar 造成的，而"哪个 jar 被加载"取决于文件枚举顺序。
+    if server_dir is not None:
+        plugins_dir = server_dir / "plugins"
+        conflicts = plugin_name_conflicts(plugins_dir)
+        rep.add("startup", "插件目录无同名插件", not conflicts,
+                "同名插件（Bukkit 只会加载其中一个，且选择取决于文件枚举顺序）：\n%s"
+                % "\n".join(conflicts))
+        # 每个 jar 都必须真的被加载：jar 在目录里但没进 "Loading" 行，说明它被跳过
+        # （版本不兼容 / 依赖缺失），而这是"静默不生效"最常见的形态
+        for filename, name in plugin_descriptors(plugins_dir):
+            if name.lower() == "packetevents":
+                continue
+            rep.add("startup", "插件已加载: %s" % name,
+                    bool(re.search(r"\[%s\][^\n]*Loading" % re.escape(name), logs)),
+                    "%s 声明插件名 %s，但日志里没有对应的 Loading 行" % (filename, name))
     for name, pattern in STARTUP_REQUIRED:
         rep.add("startup", name, bool(re.search(pattern, logs)),
                 "未在日志中找到 /%s/；最后日志：\n%s" % (pattern, tail(logs)))
@@ -610,6 +685,9 @@ def parse_args(argv=None):
     p.add_argument("--heap", default="1400M")
     p.add_argument("--timeout", type=int, default=420, help="等待服务端启动完成的秒数")
     p.add_argument("--report", default="", help="JSON 报告输出路径")
+    p.add_argument("--extra-plugin", action="append", default=[],
+                   help="额外的第三方插件 jar（可重复）。用于复现生产环境的多插件共存场景，"
+                        "例如 ProtocolLib / ViaVersion 这类注入型插件")
     p.add_argument("--keep", action="store_true", help="结束后保留测试服目录")
     return p.parse_args(argv)
 
@@ -652,7 +730,7 @@ def main(argv=None) -> int:
     fatal = False
     try:
         console.start()
-        if not phase_startup(rep, console, args):
+        if not phase_startup(rep, console, args, server_dir):
             fatal = True
         else:
             phase_console(rep, console)

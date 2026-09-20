@@ -1,5 +1,6 @@
 package com.anticheat.core.manager
 
+import com.anticheat.core.manager.init.EntityIndexInit
 import com.anticheat.core.manager.init.Initable
 import com.anticheat.core.manager.init.LoadableInitable
 import com.anticheat.core.manager.init.PacketEventsInit
@@ -38,6 +39,8 @@ class InitManager(extraInitables: List<Initable> = emptyList()) {
     init {
         distribute(PacketEventsInit())
         distribute(PacketManager())
+        // 必须早于 TickRunner：检测在 onServerTick 里就要查实体位置
+        distribute(EntityIndexInit())
         distribute(TickRunner())
         distribute(TerminatePacketEvents())
         for (extra in extraInitables) distribute(extra)

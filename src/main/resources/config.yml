@@ -543,19 +543,39 @@ core:
     AimA:
       enabled: true
       decay: 0.05
+    # 对准移动目标的长期命中率（瞄准质量）。⚠ experimental：
+    # 必须同时打开 core.experimental-checks 才会参与判定。
+    # 三个门槛必须同时满足：攻击数 >= min-attacks、窗口内目标累计位移 >= min-target-travel、
+    # 命中率 >= min-hit-rate。目标的位移门槛是必需的——打挂机/卡住的对手天然 100% 命中。
+    # min-hit-rate 的合理值取决于你的玩法与玩家水平，无法离线建模：
+    # 请先开只告警模式（core.punishment.enabled: false）观察一到两周的实测分布再决定。
+    AimB:
+      enabled: true
+      decay: 0.05
+      min-attacks: 60
+      min-hit-rate: 1.0
+      min-target-travel: 25.0
 
     # ---- 伸手与视线（射线类）----
     # 攻击距离超限。已做延迟补偿：在玩家与目标各自最近 8 tick 的位置之间取最小距离，
     # 并且只累积证据、不单次判定；骑乘 / 滑翔 / 传送窗口 / 刚登录 / 延迟 >400ms 一律不判。
-    # ⚠ tolerance 是本检测最重要的调参入口。默认 0.85 比理论值（3.0）宽不少，
-    #   目的就是"先不要误报"。上线后先只观察告警里的实测距离，再逐步收紧
-    #   （一次只降 0.1），别一上来就压到 0.2。
+    # 阈值 = max-reach + 有效容差，有效容差按延迟分段（低延迟 0.35 / 400ms 0.80）：
+    #   tolerance  = 低延迟档的基础容差；ping-slack = 高延迟档的额外放宽量（0 = 固定容差）。
+    #   分段而不是用单一常量，是因为"收紧漏判"与"放松误报"在两端各占一半。
+    #   取值不是估的：ReachCalibrationTest 用真实算法复算了静止/冲刺/跳跃/横移等
+    #   场景 × 0~400ms 延迟，标定表里"余量"一栏就是收紧空间（详见该测试的类注释）。
     #   max-reach: 原版生存模式上限，一般不需要改。
+    # calibrate: 标定模式。打开后每 calibrate-interval-seconds 秒打印一次实测距离的
+    #   n/p50/p95/p99/max 与"距阈值还有多远"，用于在真实服务器上核对阈值——
+    #   **改 tolerance 之前请先让标定模式跑几个周期**。
     ReachA:
       enabled: true
       decay: 0.05
       max-reach: 3.0
-      tolerance: 0.85
+      tolerance: 0.40
+      ping-slack: 0.45
+      calibrate: false
+      calibrate-interval-seconds: 300
     # 攻击了完全不在视线内的实体（silent aura / 无视线攻击）。
     # 原版要求准星落在命中盒上（约 10 度），这里默认给到 75 度，
     # 只抓"目标明显在侧面或背后"这类明确作弊，避免把"快速转身瞬间命中"误判。

@@ -467,12 +467,10 @@ public class VersionUtil {
      */
     public static List<Player> safeGetOnlinePlayers() {
         try {
-            Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers called");
             Method method = Bukkit.class.getMethod("getOnlinePlayers");
             Object ret = method.invoke(null);
             List<Player> result = new ArrayList<>();
             if (ret == null) {
-                Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers returning 0 players (null return)");
                 return result;
             }
             if (ret instanceof Collection) {
