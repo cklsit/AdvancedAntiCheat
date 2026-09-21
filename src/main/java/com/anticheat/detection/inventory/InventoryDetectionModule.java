@@ -2,6 +2,7 @@ package com.anticheat.detection.inventory;
 
 import com.anticheat.AdvancedAntiCheat;
 import com.anticheat.detection.ViolationRecord;
+import com.anticheat.profiles.InventoryStateMachine;
 import com.anticheat.utils.VersionUtil;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -9,6 +10,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryOpenEvent;
@@ -133,10 +135,33 @@ public class InventoryDetectionModule implements Listener {
 
         analyzeItemMoveSpeed(player, clicks);
 
+        reportClickTransition(player, event);
+
         // 自动盔甲：受伤后极短时间内点击盔甲槽位
         if (isArmorSlot(event.getSlot())) {
             checkAutoArmor(player, now);
         }
+    }
+
+    /**
+     * 向画像状态机回报一次点击。只记槽位操作类型，不做判定。
+     *
+     * <p>不回报 TOTEM_SWAP：判定副手是否图腾需读 offhand 物品，1.9+ 才有对应 API，
+     * 而本类必须在 1.8 上完整注册成功。
+     */
+    private void reportClickTransition(Player player, InventoryClickEvent event) {
+        ClickType click = event.getClick();
+        InventoryStateMachine.TransitionType type;
+        if (click == ClickType.SHIFT_LEFT || click == ClickType.SHIFT_RIGHT) {
+            type = InventoryStateMachine.TransitionType.SHIFT_CLICK;
+        } else if (click == ClickType.MIDDLE) {
+            type = InventoryStateMachine.TransitionType.MIDDLE_CLICK;
+        } else {
+            type = InventoryStateMachine.TransitionType.CLICK_SLOT;
+        }
+        plugin.getBehaviorTracker().recordInventoryTransition(
+            player.getUniqueId(), type, event.getSlot(), event.getRawSlot(),
+            event.getCurrentItem() == null ? null : event.getCurrentItem().getType().name());
     }
 
     private void analyzeItemMoveSpeed(Player player, Deque<Long> clicks) {
@@ -176,6 +201,7 @@ public class InventoryDetectionModule implements Listener {
 
         openContainerType.put(player.getUniqueId(), event.getInventory().getType().name());
         recordContainerEvent(player);
+        reportContainerTransition(player, InventoryStateMachine.TransitionType.OPEN_CONTAINER);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -186,6 +212,12 @@ public class InventoryDetectionModule implements Listener {
 
         openContainerType.remove(player.getUniqueId());
         recordContainerEvent(player);
+        reportContainerTransition(player, InventoryStateMachine.TransitionType.CLOSE_CONTAINER);
+    }
+
+    private void reportContainerTransition(Player player, InventoryStateMachine.TransitionType type) {
+        plugin.getBehaviorTracker().recordInventoryTransition(
+            player.getUniqueId(), type, -1, -1, null);
     }
 
     private void recordContainerEvent(Player player) {
@@ -222,6 +254,8 @@ public class InventoryDetectionModule implements Listener {
      */
     void handleSwapHandItems(Player player) {
         if (isExempt(player)) return;
+        plugin.getBehaviorTracker().recordInventoryTransition(player.getUniqueId(),
+            InventoryStateMachine.TransitionType.SWAP_HANDS, -1, -1, null);
         checkOffhandSwap(player);
     }
 

@@ -94,6 +94,8 @@ public class CombatDetectionModule implements DetectionModule, Listener {
         long now = System.currentTimeMillis();
         data.lastUpdate = now;
 
+        plugin.getBehaviorTracker().recordAttackHit(uuid);
+
         data.clickTimestamps.add(now);
         while (data.clickTimestamps.size() > MAX_CLICK_HISTORY) {
             data.clickTimestamps.poll();

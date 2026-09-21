@@ -289,6 +289,14 @@ public class BehaviorAnalysisEngine {
                 plugin.getLogger().info("[BehaviorAnalysis] 异常报告:\n" + report);
             }
         }
+
+        BehaviorTracker tracker = plugin.getBehaviorTracker();
+        if (tracker != null) {
+            String digest = tracker.getProfileDigest(uuid);
+            if (digest != null) {
+                plugin.getLogger().info("[BehaviorAnalysis] " + player.getName() + " " + digest);
+            }
+        }
     }
 
     /**

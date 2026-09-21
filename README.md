@@ -209,7 +209,20 @@ flowchart LR
 
 ### 👤 玩家画像（profiles）
 
-每位玩家维护长期档案：移动 / 战斗 / 挖矿 / 背包 / 社交五大行为特征、瞄准平滑度分析、挖矿时间规律、背包状态机、操作节奏（`TimerDetection`）、身份指纹（历史 ID / IP / 客户端版本 / 语言 / 硬件）、账号关联图与风险历史（每小时衰减），为决策中心提供长程上下文，可在游戏内 GUI（`/ac profile`）查看。
+每位玩家维护长期档案：移动 / 战斗 / 挖矿 / 背包 / 社交五大行为特征、身份指纹（历史 ID / IP / 客户端版本 / 语言 / 硬件）、账号关联图与风险历史（每小时衰减），可在游戏内 GUI（`/ac profile`）查看。
+
+另有四个由 `BehaviorTracker` 持有的长程分析器，产出描述性指标并在行为异常日志中输出「画像上下文」：
+
+| 分析器 | 数据来源 | 输出 |
+|--------|----------|------|
+| `AimAnalysis` | `PlayerMoveEvent` 朝向增量 + `CombatDetectionModule` 命中 | 转向平滑度、增量方差、命中数 |
+| `TimerDetection` | `PlayerAnimationEvent` 挥手时刻 | 平均间隔、离散系数 |
+| `MiningPatternAnalyzer` | `BlockDamageEvent`→`BlockBreakEvent` 单次破坏耗时 | 平均耗时、离散系数 |
+| `InventoryStateMachine` | 背包点击 / 容器开关 / 副手切换 | 转移总数与类型分布 |
+
+> ⚠️ **这四个分析器只作上下文展示，不参与违规判定。** 它们的 `isAimbot()` / `isTimerAnomaly()` / `isAutoMiner()` / `isAutoTotem()` 阈值从未在真机标定过，且在样本不足时会朝「命中」方向失效（`stdDev` 缺省 `0.0 < 阈值`，等于新玩家一律被判矿机）。行为由 `ProfileAnalyzerGuardTest` 锁定；接进违规链前必须先过 `hasEnoughData()` 并重新标定阈值。
+
+`InventoryStateMachine` 不回报 `TOTEM_SWAP`：判定副手物品需要 1.9+ 的 offhand API，而 `InventoryDetectionModule` 必须在 1.8 上整体注册成功，因此 `isAutoTotem()` 在当前接线下恒为 `false`。
 
 ### 🧩 验证码系统
 

@@ -11,6 +11,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 
 import java.util.*;
@@ -32,11 +33,14 @@ public class MiningDetectionModule implements Listener {
 
     private final Map<UUID, Deque<Long>> breakTimestamps = new ConcurrentHashMap<>();
     private final Map<UUID, BreakContext> breakContexts = new ConcurrentHashMap<>();
+    /** 本次挖掘的开始时刻与方块坐标，用于向画像回报单次破坏耗时。 */
+    private final Map<UUID, BreakStart> breakStarts = new ConcurrentHashMap<>();
 
     private static final int MAX_BREAK_HISTORY = 100;
     private static final double BREAK_CV_THRESHOLD = 0.12;   // 破坏间隔变异系数阈值
     private static final int MIN_BREAK_SAMPLES = 12;          // 判定所需最小破坏样本
     private static final double MAX_PLACE_DISTANCE = 6.5;     // 最大合法放置距离
+    private static final long MAX_BREAK_DURATION = 60000L;    // 单次破坏耗时上界，超出视为跨方块脏数据
 
     public MiningDetectionModule(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
@@ -44,6 +48,19 @@ public class MiningDetectionModule implements Listener {
     }
 
     // ---------------- 破坏曲线一致性 / 挖掘移动协调 ----------------
+
+    /**
+     * 记录挖掘起点。BlockDamageEvent 在 1.8 / 1.21 均存在。
+     * 直接覆盖而非判空写入：玩家中途换方块时，旧起点即作废。
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockDamageStart(BlockDamageEvent event) {
+        Player player = event.getPlayer();
+        if (isExempt(player)) return;
+        Block block = event.getBlock();
+        breakStarts.put(player.getUniqueId(),
+            new BreakStart(System.currentTimeMillis(), block.getX(), block.getY(), block.getZ()));
+    }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
@@ -53,12 +70,44 @@ public class MiningDetectionModule implements Listener {
         long now = System.currentTimeMillis();
         UUID uuid = player.getUniqueId();
 
+        reportBreakDuration(player, event.getBlock(), now);
+
         Deque<Long> times = breakTimestamps.computeIfAbsent(uuid, k -> new LinkedList<>());
         times.addLast(now);
         while (times.size() > MAX_BREAK_HISTORY) times.removeFirst();
 
         analyzeBreakConsistency(player, times);
         analyzeMiningMovement(player, event.getBlock());
+    }
+
+    /**
+     * 起点方块与被破坏方块一致才认定是同一轮挖掘，否则丢弃（中途切方块 / 没有起点事件）。
+     */
+    private void reportBreakDuration(Player player, Block block, long breakTime) {
+        UUID uuid = player.getUniqueId();
+        BreakStart start = breakStarts.remove(uuid);
+        if (start == null || start.x != block.getX() || start.y != block.getY() || start.z != block.getZ()) {
+            return;
+        }
+
+        long duration = breakTime - start.time;
+        if (duration <= 0 || duration > MAX_BREAK_DURATION) return;
+
+        plugin.getBehaviorTracker().recordBlockBreak(uuid, duration, block.getType().name());
+    }
+
+    private static final class BreakStart {
+        final long time;
+        final int x;
+        final int y;
+        final int z;
+
+        BreakStart(long time, int x, int y, int z) {
+            this.time = time;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
     }
 
     private void analyzeBreakConsistency(Player player, Deque<Long> times) {
