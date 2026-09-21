@@ -1,6 +1,7 @@
 package com.anticheat.core.events.packets
 
 import com.anticheat.core.AntiCheatCore
+import com.anticheat.core.db.DatabaseGlue
 import com.anticheat.core.player.PlayerData
 import com.anticheat.core.util.CoreLog
 import com.github.retrooper.packetevents.event.UserDisconnectEvent
@@ -44,6 +45,7 @@ object PacketPlayerTracker {
         val config = AntiCheatCore.configManager
         val data = PlayerData(user, platformPlayer)
         data.joinTick = AntiCheatCore.tickManager.currentTick
+        data.sessionStartMillis = System.currentTimeMillis()
         data.alertsEnabled = platformPlayer.hasPermission(config.alertPermission)
         data.experimentalChecks = config.experimentalChecks
         data.exempt = platformPlayer.hasPermission(EXEMPT_PERMISSION)
@@ -53,6 +55,9 @@ object PacketPlayerTracker {
         // 立即构建检测实例并下发配置：放到第一个包到达时才建会引入一次可见的判定空窗
         data.checkManager
 
+        // 持久化：建档案 / 记 IP / 查封禁与白名单（内部走异步线程，不阻塞这里）
+        DatabaseGlue.onLogin(data, user.address?.toString())
+
         CoreLog.debug("接入 " + data.name + " 客户端=" + data.clientVersion + " 豁免=" + data.exempt)
     }
 
@@ -61,6 +66,7 @@ object PacketPlayerTracker {
             val uuid = event.user?.uuid ?: return
             val data = AntiCheatCore.playerDataManager.remove(uuid) ?: return
             data.alive = false
+            DatabaseGlue.onLogout(data)
             AntiCheatCore.alertManager.forget(uuid)
             AntiCheatCore.punishmentManager.forget(uuid)
             CoreLog.debug("移除 " + data.name)

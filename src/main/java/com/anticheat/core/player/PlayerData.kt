@@ -181,6 +181,24 @@ class PlayerData(
     @Volatile
     var positionPacketsThisTick: Int = 0
 
+    /**
+     * 最近一次处理的包类型（形如 `INTERACT_ENTITY`）。
+     *
+     * <p>写进违规记录：事后查"这个检测为什么在那一刻触发"时，
+     * 包类型往往比坐标更能说明问题（例如 reach 告警要看是不是攻击包）。</p>
+     */
+    @Volatile
+    var lastPacketType: String? = null
+
+    /**
+     * 本次会话开始时间（墙钟毫秒）。
+     *
+     * <p>用墙钟而不是 tick：在线时长要写进数据库，而 tick 计数在服务器卡顿时会失真；
+     * 而且跨重启的档案需要的正是真实时间。</p>
+     */
+    @Volatile
+    var sessionStartMillis: Long = System.currentTimeMillis()
+
     // ------------------------------------------------------------------ 动作包状态（战斗 / 背包 / 方块）
 
     /** 当前手持槽位（0..8）。由 `HELD_ITEM_CHANGE` 更新。 */

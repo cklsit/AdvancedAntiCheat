@@ -1,5 +1,6 @@
 package com.anticheat.core.manager
 
+import com.anticheat.core.AntiCheatCore
 import com.anticheat.core.check.Check
 import com.anticheat.core.check.CoreProcessor
 import com.anticheat.core.check.impl.aim.AimA
@@ -144,6 +145,14 @@ class CheckManager(val player: PlayerData) {
     @Suppress("UNCHECKED_CAST")
     fun <T : CoreProcessor> get(type: Class<T>): T? = byClass[type] as T?
 
+    /**
+     * 全部**检测**（不含 [TargetTracker] 这类共享状态容器）。
+     *
+     * <p>登记规则、算命中率分母都要用"检测"这一层视图：容器没有 checkName，
+     * 混进来会在库里出现一行名字为 `TargetTracker` 的规则。</p>
+     */
+    fun checks(): List<Check> = byClass.values.filterIsInstance<Check>()
+
     fun reload() {
         for (processor in byClass.values) {
             try {
@@ -159,52 +168,100 @@ class CheckManager(val player: PlayerData) {
     // ------------------------------------------------------------------ 分派
 
     fun onPacketReceive(event: PacketReceiveEvent) {
-        for (listener in packetReceiveListeners) listener.onPacketReceive(event)
+        for (listener in packetReceiveListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onPacketReceive(event)
+        }
     }
 
     fun onPacketSend(event: PacketSendEvent) {
-        for (listener in packetSendListeners) listener.onPacketSend(event)
+        for (listener in packetSendListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onPacketSend(event)
+        }
     }
 
     fun onPositionUpdate(update: PositionUpdate) {
-        for (listener in positionListeners) listener.onPositionUpdate(update)
+        for (listener in positionListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onPositionUpdate(update)
+        }
     }
 
     fun onRotationUpdate(update: RotationUpdate) {
-        for (listener in rotationListeners) listener.onRotationUpdate(update)
+        for (listener in rotationListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onRotationUpdate(update)
+        }
     }
 
     fun onPredictionComplete(complete: PredictionComplete) {
-        for (listener in postPredictionListeners) listener.onPredictionComplete(complete)
+        for (listener in postPredictionListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onPredictionComplete(complete)
+        }
     }
 
     fun onServerTick() {
-        for (listener in serverTickListeners) listener.onServerTick()
+        for (listener in serverTickListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onServerTick()
+        }
     }
 
     // ------------------------------------------------------------------ 动作包分派
 
     fun onAttack(update: AttackUpdate) {
-        for (listener in attackListeners) listener.onAttack(update)
+        for (listener in attackListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onAttack(update)
+        }
     }
 
     fun onSwing(update: SwingUpdate) {
-        for (listener in swingListeners) listener.onSwing(update)
+        for (listener in swingListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onSwing(update)
+        }
     }
 
     fun onInventoryClick(update: InventoryClickUpdate) {
-        for (listener in inventoryClickListeners) listener.onInventoryClick(update)
+        for (listener in inventoryClickListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onInventoryClick(update)
+        }
     }
 
     fun onHeldItemChange(update: HeldItemUpdate) {
-        for (listener in heldItemChangeListeners) listener.onHeldItemChange(update)
+        for (listener in heldItemChangeListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onHeldItemChange(update)
+        }
     }
 
     fun onBlockDig(update: BlockDigUpdate) {
-        for (listener in blockDigListeners) listener.onBlockDig(update)
+        for (listener in blockDigListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onBlockDig(update)
+        }
     }
 
     fun onBlockPlace(update: BlockPlaceUpdate) {
-        for (listener in blockPlaceListeners) listener.onBlockPlace(update)
+        for (listener in blockPlaceListeners) {
+            // 命中率的分母：本次调用即"评估了一次"
+            if (listener is Check) AntiCheatCore.database?.noteCheckEvaluation(listener.checkName)
+            listener.onBlockPlace(update)
+        }
     }
 }

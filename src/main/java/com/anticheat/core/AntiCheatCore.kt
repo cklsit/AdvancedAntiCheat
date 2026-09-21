@@ -12,6 +12,8 @@ import com.anticheat.core.manager.init.Initable
 import com.anticheat.core.manager.player.PlayerDataManager
 import com.anticheat.core.platform.Platform
 import com.anticheat.core.platform.PlatformLoader
+import com.anticheat.core.db.DatabaseGlue
+import com.anticheat.core.db.DatabaseService
 import com.anticheat.core.platform.api.PlatformScheduler
 import com.anticheat.core.platform.api.PlatformServer
 import com.anticheat.core.util.CoreLog
@@ -62,6 +64,18 @@ object AntiCheatCore {
     /** 由 [com.anticheat.core.manager.init.PacketEventsInit] 装载后写入。 */
     @Volatile
     var packetEvents: PacketEventsAPI<*>? = null
+
+    /**
+     * 持久化门面。
+     *
+     * <p>只由 [com.anticheat.core.manager.init.DatabaseInit] 写入；为 null 或
+     * `isReady == false` 时，所有落库调用都会静默跳过（反作弊照常判定与告警）。
+     * 用可空字段而不是"总是有个对象"：这样"没启用数据库"与"连不上"两条路径
+     * 在调用点上是同一种写法，不会出现某一处忘了判空。</p>
+     */
+    @JvmStatic
+    @Volatile
+    var database: DatabaseService? = null
 
     private var initManager: InitManager? = null
 
@@ -121,6 +135,9 @@ object AntiCheatCore {
     @JvmStatic
     fun stop() {
         if (!initialized) return
+        // 先刷残留数据再走正常停止流程
+        runCatching { database?.stop() }
+        database = null
         runCatching { initManager?.stop() }
         playerDataManager.clear()
         alertManager.clear()
@@ -136,6 +153,9 @@ object AntiCheatCore {
     fun reload() {
         if (!initialized) return
         configManager.load()
+        // `load()` 会清空覆盖表，因此必须**重新**把库里的规则灌回去，
+        // 否则热重载会把管理员在数据库里调好的阈值顶回配置文件的默认值
+        runCatching { DatabaseGlue.applyRulesFromDatabase() }
         for (data in playerDataManager.all()) {
             data.checkManager.reload()
         }

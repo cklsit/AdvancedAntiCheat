@@ -1,6 +1,7 @@
 package com.anticheat.core.check
 
 import com.anticheat.core.AntiCheatCore
+import com.anticheat.core.db.DatabaseGlue
 import com.anticheat.core.events.AlertEvent
 import com.anticheat.core.events.FlagEvent
 import com.anticheat.core.player.PlayerData
@@ -81,6 +82,9 @@ abstract class Check(player: PlayerData) : CoreProcessor(player) {
         if (event.cancelled) return false
 
         violationData.flag(amount)
+        // 落库（异步入队，不阻塞收包/主线程）。放在这里而不是各检测里：
+        // 这是唯一的违规入口，也就保证了"记账"与"落库"的口径永远一致。
+        DatabaseGlue.recordFlag(player, this, amount, verbose)
         AntiCheatCore.punishmentManager.handleViolation(player, this)
         return true
     }

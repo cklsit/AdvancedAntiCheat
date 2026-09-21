@@ -1,357 +1,293 @@
 package com.anticheat.managers;
 
 import com.anticheat.AdvancedAntiCheat;
+import com.anticheat.core.AntiCheatCore;
+import com.anticheat.core.db.AuditFilter;
+import com.anticheat.core.db.AuditRow;
+import com.anticheat.core.db.BanRow;
+import com.anticheat.core.db.DatabaseService;
+import com.anticheat.core.db.ProfileRow;
 import com.anticheat.managers.audit.AuditQuery;
 import com.anticheat.managers.audit.AuditRecord;
 import com.anticheat.profiles.PlayerProfile;
-import com.anticheat.repositories.DatabaseRepository;
-import com.anticheat.repositories.impl.MongoRepository;
-import com.anticheat.repositories.impl.RedisRepository;
-import com.anticheat.repositories.impl.SQLRepository;
 import com.anticheat.utils.ProfileSerializer;
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoDatabase;
 import org.bukkit.scheduler.BukkitRunnable;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
 
-import java.io.File;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 旧数据库门面的**薄适配层**（保留旧签名，内部全部转到核心层的 PostgreSQL / H2 实现）。
+ *
+ * <h3>为什么保留这一层，而不是把调用点全部改掉</h3>
+ * 换的是**存储实现**，不是业务语义。`BanManager` / `ProfileManager` / `AuditManager` /
+ * `BehaviorTracker` / `ConfigGUI` 各自带着一整套缓存、合并、UI 逻辑，
+ * 它们依赖的是"给个 uuid 拿一条封禁记录"这种契约，而不是"数据存在哪个引擎里"。
+ * 一次性改掉所有调用点，等于把这次改动的风险面从"数据库"扩大到"封禁/档案/审计/界面"，
+ * 而其中任何一处行为漂移都不会被现有测试发现。
+ *
+ * <p>因此这里刻意做成"零业务逻辑的转发"：不缓存、不重试、不改变线程模型
+ * （旧行为里异步的仍异步、同步的仍同步），只做两件事：</p>
+ * 1. 把旧模型（`BanRecord` / `AuditRecord` / `PlayerProfile`）与新的行模型互相映射；
+ * 2. 在数据库不可用时**安静降级**（返回空/null，而不是抛异常）——
+ *    旧实现里连接失败是抛 `RuntimeException` 出来让 `BanManager` 自己去吞，
+ *    现在统一由 `DatabaseService` 记录状态，调用方只需要处理"没数据"。</p>
+ */
 public class DatabaseManager {
-    
+
     private final AdvancedAntiCheat plugin;
-    private final String databaseType;
-    private final DatabaseRepository repository;
-    
+
+    /**
+     * @deprecated 连接与建表由核心层的 {@code DatabaseInit} 负责，构造这个对象不再触发任何 IO。
+     */
+    @Deprecated
     public DatabaseManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
-        this.databaseType = plugin.getConfig().getString("database.type", "sqlite").toLowerCase();
-        this.repository = createRepository();
-        initializeTables();
     }
-    
-    private DatabaseRepository createRepository() {
-        switch (databaseType) {
-            case "mysql":
-                return new SQLRepository(createMySQLConnection());
-            case "h2":
-                return new SQLRepository(createH2Connection());
-            case "redis":
-                return new RedisRepository(createRedisPool());
-            case "mongodb":
-            case "mongo":
-                return createMongoRepository();
-            case "sqlite":
-            default:
-                return new SQLRepository(createSQLiteConnection());
-        }
-    }
-    
-    private Connection createSQLiteConnection() {
-        try {
-            Class.forName("org.sqlite.JDBC");
-            String path = new File(plugin.getDataFolder(), "anticheat.db").getAbsolutePath();
-            Connection connection = DriverManager.getConnection("jdbc:sqlite:" + path);
-            plugin.getLogger().info("SQLite数据库连接成功！");
-            return connection;
-        } catch (Exception e) {
-            throw new RuntimeException("SQLite数据库连接失败: " + e.getMessage(), e);
-        }
-    }
-    
-    private Connection createH2Connection() {
-        try {
-            Class.forName("org.h2.Driver");
-            String path = new File(plugin.getDataFolder(), "anticheat").getAbsolutePath();
-            Connection connection = DriverManager.getConnection(
-                    "jdbc:h2:file:" + path + ";MODE=MySQL", "sa", "");
-            plugin.getLogger().info("H2数据库连接成功！");
-            return connection;
-        } catch (Exception e) {
-            throw new RuntimeException("H2数据库连接失败: " + e.getMessage(), e);
-        }
-    }
-    
-    private Connection createMySQLConnection() {
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            String host = plugin.getConfig().getString("database.mysql.host", "localhost");
-            int port = plugin.getConfig().getInt("database.mysql.port", 3306);
-            String database = plugin.getConfig().getString("database.mysql.database", "anticheat");
-            String username = plugin.getConfig().getString("database.mysql.username", "root");
-            String password = plugin.getConfig().getString("database.mysql.password", "");
-            String url = "jdbc:mysql://" + host + ":" + port + "/" + database + 
-                        "?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
-            Connection connection = DriverManager.getConnection(url, username, password);
-            plugin.getLogger().info("MySQL数据库连接成功！");
-            return connection;
-        } catch (Exception e) {
-            throw new RuntimeException("MySQL数据库连接失败: " + e.getMessage(), e);
-        }
-    }
-    
-    private JedisPool createRedisPool() {
-        try {
-            String host = plugin.getConfig().getString("database.redis.host", "localhost");
-            int port = plugin.getConfig().getInt("database.redis.port", 6379);
-            String password = plugin.getConfig().getString("database.redis.password", null);
-            
-            JedisPoolConfig poolConfig = new JedisPoolConfig();
-            poolConfig.setMaxTotal(10);
-            poolConfig.setMaxIdle(5);
-            
-            JedisPool jedisPool = new JedisPool(poolConfig, host, port, 0, password);
-            
-            try (redis.clients.jedis.Jedis jedis = jedisPool.getResource()) {
-                jedis.ping();
-            }
-            
-            plugin.getLogger().info("Redis数据库连接成功！");
-            return jedisPool;
-        } catch (Exception e) {
-            throw new RuntimeException("Redis数据库连接失败: " + e.getMessage(), e);
-        }
-    }
-    
-    /**
-     * 创建 MongoDB 仓储。
-     *
-     * <p>MongoClient 必须一并交给仓储：此前它只是本方法的局部变量，返回后引用即丢失，
-     * 使得 MongoRepository.close() 无法释放连接池（插件卸载 / 重载会持续泄漏连接）。</p>
-     */
-    private DatabaseRepository createMongoRepository() {
-        try {
-            String host = plugin.getConfig().getString("database.mongodb.host", "localhost");
-            int port = plugin.getConfig().getInt("database.mongodb.port", 27017);
-            String database = plugin.getConfig().getString("database.mongodb.database", "anticheat");
-            String uri = "mongodb://" + host + ":" + port;
-            
-            MongoClient mongoClient = MongoClients.create(uri);
-            MongoDatabase mongoDatabase = mongoClient.getDatabase(database);
-            
-            plugin.getLogger().info("MongoDB数据库连接成功！");
-            return new MongoRepository(mongoDatabase, mongoClient);
-        } catch (Exception e) {
-            throw new RuntimeException("MongoDB数据库连接失败: " + e.getMessage(), e);
-        }
-    }
-    
-    private void initializeTables() {
-        if (repository instanceof SQLRepository) {
-            try {
-                SQLRepository sqlRepo = (SQLRepository) repository;
-                Connection connection = sqlRepo.getConnection();
-                
-                try (Statement stmt = connection.createStatement()) {
-                    stmt.execute("CREATE TABLE IF NOT EXISTS bans (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                            "player_uuid VARCHAR(36) NOT NULL, " +
-                            "player_name VARCHAR(16) NOT NULL, " +
-                            "reason VARCHAR(255) NOT NULL, " +
-                            "banned_by VARCHAR(16) NOT NULL, " +
-                            "ban_time BIGINT NOT NULL, " +
-                            "expiry_time BIGINT, " +
-                            "server_name VARCHAR(32), " +
-                            "is_active INTEGER DEFAULT 1" +
-                            ")");
-                    stmt.execute("CREATE INDEX IF NOT EXISTS idx_bans_player ON bans(player_uuid)");
-                    stmt.execute("CREATE INDEX IF NOT EXISTS idx_bans_active ON bans(is_active)");
-                    
-                    stmt.execute("CREATE TABLE IF NOT EXISTS player_profiles (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                            "player_uuid VARCHAR(36) NOT NULL UNIQUE, " +
-                            "profile_data TEXT NOT NULL, " +
-                            "last_updated BIGINT NOT NULL" +
-                            ")");
-                    stmt.execute("CREATE INDEX IF NOT EXISTS idx_profiles_player ON player_profiles(player_uuid)");
 
-                    // replay 回放表
-                    stmt.execute("CREATE TABLE IF NOT EXISTS replay_segment (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                            "player_uuid VARCHAR(36) NOT NULL, " +
-                            "player_name VARCHAR(16), " +
-                            "violation_type VARCHAR(32), " +
-                            "violation_level VARCHAR(16), " +
-                            "start_ms BIGINT NOT NULL, " +
-                            "end_ms BIGINT NOT NULL, " +
-                            "violation_offset_ms BIGINT NOT NULL, " +
-                            "created_at BIGINT NOT NULL" +
-                            ")");
-                    stmt.execute("CREATE TABLE IF NOT EXISTS replay_point (" +
-                            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                            "segment_id INTEGER NOT NULL, " +
-                            "time_offset_ms BIGINT NOT NULL, " +
-                            "x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL, " +
-                            "yaw REAL NOT NULL, pitch REAL NOT NULL, " +
-                            "on_ground INTEGER NOT NULL, " +
-                            "game_mode VARCHAR(16), " +
-                            "FOREIGN KEY (segment_id) REFERENCES replay_segment(id) ON DELETE CASCADE" +
-                            ")");
-                    try {
-                        stmt.execute("CREATE INDEX IF NOT EXISTS idx_replay_seg_player ON replay_segment(player_uuid)");
-                        stmt.execute("CREATE INDEX IF NOT EXISTS idx_replay_seg_created ON replay_segment(created_at)");
-                        stmt.execute("CREATE INDEX IF NOT EXISTS idx_replay_point_seg ON replay_point(segment_id)");
-                    } catch (SQLException ignored) {
-                        // 部分方言对 IF NOT EXISTS 不支持，忽略
-                    }
-
-                    plugin.getLogger().info("SQL数据库表初始化完成！");
-                }
-            } catch (SQLException e) {
-                throw new RuntimeException("创建数据库表失败: " + e.getMessage(), e);
-            }
-        }
-        // 统一建审计表（SQL 走 DDL；Mongo/Redis noop）
-        try {
-            repository.ensureAuditTable();
-            plugin.getLogger().info("审计日志表初始化完成！");
-        } catch (Exception e) {
-            plugin.getLogger().warning("审计日志表初始化失败: " + e.getMessage());
-        }
+    private DatabaseService service() {
+        return AntiCheatCore.getDatabase();
     }
-    
-    public void banPlayer(UUID playerUUID, String playerName, String reason, 
-                         String bannedBy, long banTime, long expiryTime, String serverName) {
+
+    private boolean ready() {
+        DatabaseService service = service();
+        return service != null && service.isReady();
+    }
+
+    /** 后端名（`h2` / `postgresql`），未就绪时返回 `disabled`；仅用于界面与日志显示。 */
+    public String getDatabaseType() {
+        DatabaseService service = service();
+        if (service == null) {
+            return "disabled";
+        }
+        if (!service.isReady()) {
+            return service.isEnabled() ? "unavailable" : "disabled";
+        }
+        return service.getSettings().getBackend().name().toLowerCase();
+    }
+
+    /** 一条人类可读的状态行（写进启动日志）。 */
+    public String describe() {
+        DatabaseService service = service();
+        return service == null ? "未初始化" : service.describe();
+    }
+
+    // ------------------------------------------------------------------ 封禁
+
+    public void banPlayer(UUID playerUUID, String playerName, String reason,
+                          String bannedBy, long banTime, long expiryTime, String serverName) {
         new BukkitRunnable() {
             @Override
             public void run() {
-                try {
-                    repository.banPlayer(playerUUID, playerName, reason, bannedBy, 
-                                        banTime, expiryTime, serverName);
-                } catch (Exception e) {
-                    plugin.getLogger().severe("封禁玩家失败: " + e.getMessage());
+                DatabaseService service = service();
+                if (service == null) {
+                    return;
+                }
+                // 旧 API 用 0 表示永久（expiryTime <= 0）
+                Long expiresAt = expiryTime > 0 ? expiryTime : null;
+                Long id = service.banUuid(playerUUID, playerName, reason, bannedBy, expiresAt, banTime, null);
+                if (id == null) {
+                    plugin.getLogger().warning("写入封禁失败（数据库不可用或该玩家已有生效封禁）: " + playerName);
                 }
             }
         }.runTaskAsynchronously(plugin);
     }
-    
+
+    /**
+     * 是否处于生效封禁中（登录路径上的同步判定）。
+     *
+     * <p>顺带把"已过期但状态还没刷"的封禁落状态：旧实现也这么做，
+     * 而这条路径恰好在玩家每次登录时执行，是最自然的清理时机。</p>
+     */
     public boolean isPlayerBanned(UUID playerUUID) {
-        try {
-            return repository.isPlayerBanned(playerUUID);
-        } catch (Exception e) {
-            plugin.getLogger().severe("检查封禁失败: " + e.getMessage());
+        DatabaseService service = service();
+        if (service == null || !service.isReady()) {
             return false;
         }
+        long now = System.currentTimeMillis();
+        BanRow ban = service.findBan(playerUUID, null, now);
+        if (ban == null) {
+            return false;
+        }
+        if (!ban.isEffective(now)) {
+            service.expireOverdue(now);
+            return false;
+        }
+        return true;
     }
-    
+
     public BanManager.BanRecord getBanRecord(UUID playerUUID) {
-        try {
-            return repository.getBanRecord(playerUUID);
-        } catch (Exception e) {
-            plugin.getLogger().severe("获取封禁记录失败: " + e.getMessage());
+        DatabaseService service = service();
+        if (service == null || !service.isReady()) {
             return null;
         }
+        BanRow ban = service.findBan(playerUUID, null, System.currentTimeMillis());
+        if (ban == null || !ban.isEffective(System.currentTimeMillis())) {
+            return null;
+        }
+        return toRecord(ban, playerUUID);
     }
-    
+
     public void unbanPlayer(UUID playerUUID) {
         new BukkitRunnable() {
             @Override
             public void run() {
-                try {
-                    repository.unbanPlayer(playerUUID);
-                } catch (Exception e) {
-                    plugin.getLogger().severe("解封玩家失败: " + e.getMessage());
+                DatabaseService service = service();
+                if (service != null) {
+                    service.unbanUuid(playerUUID, "console", "unban", System.currentTimeMillis());
                 }
             }
         }.runTaskAsynchronously(plugin);
     }
-    
+
     public List<BanManager.BanRecord> getAllBans() {
-        try {
-            return repository.getAllBans();
-        } catch (Exception e) {
-            plugin.getLogger().severe("获取所有封禁失败: " + e.getMessage());
+        DatabaseService service = service();
+        if (service == null || !service.isReady()) {
             return new ArrayList<>();
         }
+        List<BanRow> rows = service.listActiveBans(System.currentTimeMillis(), 500);
+        List<BanManager.BanRecord> out = new ArrayList<>(rows.size());
+        for (BanRow row : rows) {
+            UUID uuid = row.getUuid() != null ? row.getUuid() : uuidOrNull(row);
+            if (uuid != null) {
+                out.add(toRecord(row, uuid));
+            }
+        }
+        return out;
     }
-    
+
+    private UUID uuidOrNull(BanRow row) {
+        try {
+            return UUID.fromString(row.getTarget());
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private BanManager.BanRecord toRecord(BanRow row, UUID uuid) {
+        String name = row.getName();
+        if (name == null) {
+            ProfileRow profile = service() != null ? service().profileOf(uuid) : null;
+            name = profile != null ? profile.getName() : "";
+        }
+        long expiry = row.getExpiresAt() == null ? 0L : row.getExpiresAt();
+        return new BanManager.BanRecord(
+                uuid, name, row.getReason(), row.getOperator(), row.getIssuedAt(), expiry, row.getServerName());
+    }
+
+    // ------------------------------------------------------------------ 玩家档案
+
     public void savePlayerProfile(PlayerProfile profile) {
-        if (profile == null) return;
-        
+        if (profile == null) {
+            return;
+        }
         new BukkitRunnable() {
             @Override
             public void run() {
+                DatabaseService service = service();
+                if (service == null) {
+                    return;
+                }
                 try {
-                    String serialized = ProfileSerializer.serialize(profile);
-                    repository.savePlayerProfile(profile.getPlayerUUID(), serialized);
+                    service.saveProfileBlob(
+                            profile.getPlayerUUID(), profile.getPlayerName(), ProfileSerializer.serialize(profile));
                 } catch (Exception e) {
-                    plugin.getLogger().severe("保存玩家档案失败: " + e.getMessage());
+                    plugin.getLogger().warning("保存玩家档案失败: " + e.getMessage());
                 }
             }
         }.runTaskAsynchronously(plugin);
     }
-    
+
     public PlayerProfile loadPlayerProfile(UUID playerUUID) {
-        if (playerUUID == null) return null;
-        
+        if (playerUUID == null) {
+            return null;
+        }
+        DatabaseService service = service();
+        if (service == null || !service.isReady()) {
+            return null;
+        }
         try {
-            String serialized = repository.loadPlayerProfile(playerUUID);
+            String serialized = service.loadProfileBlob(playerUUID);
             if (serialized != null) {
                 return ProfileSerializer.deserialize(serialized);
             }
         } catch (Exception e) {
-            plugin.getLogger().severe("加载玩家档案失败: " + e.getMessage());
+            // 反序列化失败通常意味着档案格式与当前代码不兼容（旧档案结构变更）：
+            // 报一行警告并当作"没有档案"，而不是让调用方崩在加载流程里
+            plugin.getLogger().warning("加载玩家档案失败（将按新档案处理）: " + playerUUID + " - " + e.getMessage());
         }
         return null;
     }
-    
-    public String getDatabaseType() {
-        return databaseType;
-    }
 
-    public DatabaseRepository getRepository() {
-        return repository;
-    }
+    // ------------------------------------------------------------------ 审计日志
 
-    // ===== 审计日志 =====
-
-    /** 异步保存审计记录（fire-and-forget）。 */
     public void saveAudit(AuditRecord audit) {
+        if (audit == null) {
+            return;
+        }
         new BukkitRunnable() {
             @Override
             public void run() {
-                try {
-                    repository.saveAudit(audit);
-                } catch (Exception e) {
-                    plugin.getLogger().warning("保存审计记录失败: " + e.getMessage());
+                DatabaseService service = service();
+                if (service != null) {
+                    service.saveAudit(new AuditRow(
+                            null, audit.getTimestamp(), audit.getOperator(), audit.getOperatorRole(),
+                            audit.getType(), audit.getTarget(), audit.getIp(), audit.getResult(), audit.getDetail()));
                 }
             }
         }.runTaskAsynchronously(plugin);
     }
 
-    /** 同步查询审计记录（注意：在主线程调用会阻塞主线程，建议在 Web 线程调用）。 */
     public List<AuditRecord> queryAudits(AuditQuery query) {
+        DatabaseService service = service();
+        if (service == null || !service.isReady()) {
+            return new ArrayList<>();
+        }
         try {
-            return repository.queryAudits(query);
+            List<AuditRow> rows = service.queryAudits(toFilter(query));
+            List<AuditRecord> out = new ArrayList<>(rows.size());
+            for (AuditRow row : rows) {
+                AuditRecord record = new AuditRecord(
+                        row.getTimestamp(), row.getOperator(), row.getOperatorRole(), row.getType(),
+                        row.getTarget(), row.getIp(), row.getResult(), row.getDetail());
+                record.setId(row.getId());
+                out.add(record);
+            }
+            return out;
         } catch (Exception e) {
             plugin.getLogger().warning("查询审计记录失败: " + e.getMessage());
             return new ArrayList<>();
         }
     }
 
-    /** 同步统计审计记录总数。 */
     public long countAudits(AuditQuery query) {
+        DatabaseService service = service();
+        if (service == null || !service.isReady()) {
+            return 0L;
+        }
         try {
-            return repository.countAudits(query);
+            return service.countAudits(toFilter(query));
         } catch (Exception e) {
             plugin.getLogger().warning("统计审计记录失败: " + e.getMessage());
-            return 0;
+            return 0L;
         }
     }
 
-    public void close() {
-        try {
-            repository.close();
-        } catch (Exception e) {
-            plugin.getLogger().severe("关闭数据库连接失败: " + e.getMessage());
+    private AuditFilter toFilter(AuditQuery query) {
+        if (query == null) {
+            return new AuditFilter(null, null, null, null, null, 1, 20);
         }
+        return new AuditFilter(
+                query.getType(), query.getResult(), query.getKeyword(),
+                query.getStartTime(), query.getEndTime(), query.getPage(), query.getPageSize());
+    }
+
+    /**
+     * 空实现：连接池的关闭由核心层生命周期负责
+     * （旧实现的 `close()` 从来没有任何调用点，连接因此一直泄漏到 JVM 退出）。
+     */
+    public void close() {
+        // 见方法注释
     }
 }

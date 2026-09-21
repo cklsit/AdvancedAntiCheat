@@ -266,26 +266,76 @@ ban:
   autoTempBanTime: "1h"
 
 database:
-  type: "sqlite"
-  server-name: "Server-1"
-  sqlite:
-    path: "anticheat.db"
+  # 后端二选一：
+  #   h2         = 嵌入式（默认）。零运维，跟着插件数据目录走，适合单服/开局/兜底。
+  #   postgresql = 外置。多服共用一套库、或要直接用 SQL 看板时才需要。
+  #
+  # 两者**共用同一套表结构与 SQL**（时间列都是 BIGINT epoch 毫秒、IP/CIDR 用字符串、
+  # 网段匹配在插件内做），所以切换后端不需要改任何代码，也不会出现"某个后端少列"。
+  #
+  # ⚠ 连接/建表失败**不会**禁用插件：反作弊照常判定与告警，只是不再落库，
+  #   日志出现一条 WARN（只打一次、不刷屏、不打堆栈）。H2 用作保底正是这个原因。
+  type: "h2"
+
   h2:
-    path: "anticheat"
-  mysql:
-    host: "localhost"
-    port: 3306
+    # 库文件放在插件数据目录下：plugins/AdvancedAntiCheat/<path>.mv.db
+    # ⚠ 换了后缀 -v2：旧版本建过的库结构与本次完全不同，另起一个文件
+    #   比"读旧库然后逐列升级"更可靠（反作弊的历史数据没有兼容价值）。
+    path: "anticheat-v2"
+
+  postgres:
+    host: "127.0.0.1"
+    port: 5432
     database: "anticheat"
-    username: "root"
+    username: "anticheat"
     password: ""
-  redis:
-    host: "localhost"
-    port: 6379
-    password: ""
-  mongodb:
-    host: "localhost"
-    port: 27017
-    database: "anticheat"
+    # 连接池：写入是"批量 + 异步"的，池子不需要大；4 个连接足够支撑
+    # 每 5 秒一次批量写入 + 偶发查询
+    pool-size: 4
+    connection-timeout-ms: 5000
+
+  # 建表/升级由插件自己做（schema_version 表记录已执行的版本，幂等）
+  auto-migrate: true
+  # 断开/失败后的重连退避（秒）。失败会按这个间隔重试，不做指数退避以免日志难读
+  reconnect-delay-seconds: 30
+
+  # 写入 ban / violation 的"子服名"（多服共用一套库时用来区分来源）
+  server-name: "Server-1"
+
+  # 违规落库：攒够 batch-size 条或到 flush-interval-ms 就写一次。
+  # queue-capacity 满了直接丢弃并计数——**绝不阻塞主线程或收包线程**。
+  violation:
+    batch-size: 64
+    flush-interval-ms: 5000
+    queue-capacity: 4096
+
+  # 统计与分析
+  stats:
+    # 检查命中率统计桶（写入 check_stat：evaluations/flags）
+    bucket-minutes: 5
+    # 风险评分重算周期（分钟）
+    risk-refresh-minutes: 10
+
+  # 离线 IP 情报：按网段给 ASN / 国家。**不做任何外部查询**（本插件禁止外联）。
+  # 网段匹配按最长前缀优先；没命中就留空。
+  ip-intel:
+    rules:
+      - cidr: "10.0.0.0/8"
+        asn: 0
+        org: "LAN"
+        country: "LAN"
+      - cidr: "192.168.0.0/16"
+        asn: 0
+        org: "LAN"
+        country: "LAN"
+      - cidr: "172.16.0.0/12"
+        asn: 0
+        org: "LAN"
+        country: "LAN"
+      - cidr: "fc00::/7"
+        asn: 0
+        org: "LAN"
+        country: "LAN"
 
 check-client:
   timeout-minutes: 60

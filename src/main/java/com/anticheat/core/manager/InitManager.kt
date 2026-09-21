@@ -1,5 +1,6 @@
 package com.anticheat.core.manager
 
+import com.anticheat.core.manager.init.DatabaseInit
 import com.anticheat.core.manager.init.EntityIndexInit
 import com.anticheat.core.manager.init.Initable
 import com.anticheat.core.manager.init.LoadableInitable
@@ -39,6 +40,9 @@ class InitManager(extraInitables: List<Initable> = emptyList()) {
     init {
         distribute(PacketEventsInit())
         distribute(PacketManager())
+        // 数据库：start 阶段建池/迁移，stop 阶段（逆序时最先）刷残留数据再关池。
+        // 放在 TickRunner 之前只是为了让"启动日志顺序"好看，功能上无依赖
+        distribute(DatabaseInit())
         // 必须早于 TickRunner：检测在 onServerTick 里就要查实体位置
         distribute(EntityIndexInit())
         distribute(TickRunner())

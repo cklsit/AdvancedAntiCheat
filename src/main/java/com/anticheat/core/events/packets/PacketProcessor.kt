@@ -31,6 +31,11 @@ class PacketProcessor : PacketListener {
 
     override fun onPacketReceive(event: PacketReceiveEvent) {
         try {
+            // 记下最近一次包类型（写进违规记录用）。开销是一次字符串读取，
+            // 放在路由之前：即使某个追踪器不认识这个包，它的类型仍然有诊断价值。
+            AntiCheatCore.playerDataManager.getByUser(event.user)?.let { data ->
+                data.lastPacketType = runCatching { event.packetType.name }.getOrNull()
+            }
             // 原始包级监听（PacketReceiveListener）：每包都派发一次。
             // TimerA / TimerB 这类检测只看包类型与到达时间，不需要语义化解析，
             // 但它们必须能看到**每一个**移动包，包括「只带 onGround 的飞行包」——
