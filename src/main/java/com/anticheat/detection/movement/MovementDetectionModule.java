@@ -29,7 +29,7 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * MovementDetectionModule移动检测模块
- * 继承BaseDetectionModule，监听玩家移动事件并检测各种移动作弊
+ * 实现DetectionModule接口，监听玩家移动事件并检测各种移动作弊
  */
 public class MovementDetectionModule implements DetectionModule, Listener {
 

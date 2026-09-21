@@ -1,7 +1,6 @@
 package com.anticheat;
 
 import com.anticheat.commands.*;
-import com.anticheat.compat.CompatManager;
 import com.anticheat.captcha.CaptchaManager;
 import com.anticheat.bounty.BountyManager;
 import com.anticheat.core.AntiCheatCore;

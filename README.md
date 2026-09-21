@@ -157,7 +157,7 @@ flowchart LR
 | 七、蜜罐陷阱 | `x_ray`（幻象诱饵矿石）、`chest_esp`、`player_radar`、`tracer`、`fake_drop`、`fake_escape`（假逃脱重定向沙箱收集情报） |
 | 八、行为分析 | `behavior_anomaly`（个人基线偏离）、`keystroke`（击键动力学）、`anti_recon`（反侦察）、`global_anomaly`（孤立森林全局异常） |
 
-另有独立的 **物理模拟复算**（`PhysicsSimulator`，服务端重放客户端运动学验证位移合法性）与 **关联检测**（小号识别、团队作弊、设备指纹、社交图谱、行为相似度）。
+另有独立的 **物理模拟复算**（`PhysicsSimulator`，服务端重放客户端运动学验证位移合法性）与 **关联检测**（小号识别、团队作弊、社交图谱、行为相似度）。
 
 ### 🧬 核心层（`com.anticheat.core`）—— Grim 式内核
 
@@ -352,7 +352,7 @@ AdvancedAntiCheat/
 │   │   ├── check/                        #   @CheckData 注解驱动 + ViolationData 违规账本
 │   │   └── events/packets/               #   PacketEvents 监听入口（Netty 包层）
 │   ├── detection/                        # 旧检测系统（与 core 并存）
-│   │   ├── core/                         #   模块抽象基座（DetectionModule/DetectionResult/Evidence）
+│   │   ├── core/                         #   模块抽象基座（DetectionModule/Evidence）
 │   │   ├── fusion/                       #   概率融合与决策（贝叶斯 / RCP / 五级处置）
 │   │   └── movement|combat|physics|association|network|
 │   │       behavior|fingerprint|inventory|mining|timer/   # 各专项检测
