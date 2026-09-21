@@ -4,6 +4,7 @@ import com.anticheat.core.AntiCheatCore
 import com.anticheat.core.db.DatabaseGlue
 import com.anticheat.core.db.DatabaseService
 import com.anticheat.core.db.DatabaseSettings
+import com.anticheat.core.manager.CheckManager
 import com.anticheat.core.util.CoreLog
 import org.bukkit.configuration.ConfigurationSection
 
@@ -70,6 +71,20 @@ class DatabaseInit : StartableInitable, StoppableInitable {
             400L,
             400L
         )
+        // 启动后**立刻**做一次维护（一次性异步任务），不等重复定时器的第一次触发。
+        // 理由有两条：
+        // 1. 规则表与过期封禁应该在开服时就正确，而不是"等满一个维护周期"；
+        // 2. 一次性任务与重复任务走的是不同的调度路径，重复定时器在某些多插件环境下的
+        //    首次触发时间不受我们控制（实测生产环境里 20 秒的周期没有按期运行），
+        //    而"开机就把该做的做完"不依赖那个周期。
+        AntiCheatCore.scheduler.runAsync(Runnable { maintenance(database, settings) })
+
+        // 必须把这两条定时器的存在打出来：否则"维护任务有没有跑"在日志里完全不可观测，
+        // 而它负责的正是"过期封禁落状态 / 风险重算 / 规则登记"这三件静默生效的事。
+        CoreLog.info(
+            "数据库定时任务已启动（刷写每 " + settings.violation.flushIntervalMs + "ms / " +
+                "维护每 " + settings.stats.riskRefreshMinutes + " 分钟）"
+        )
     }
 
     override fun stop() {
@@ -110,7 +125,13 @@ class DatabaseInit : StartableInitable, StoppableInitable {
         )
     }
 
-    /** 周期性维护：风险重算 / 过期封禁 / 规则登记。 */
+    /**
+     * 周期性维护：过期封禁落状态 / 风险重算 / 规则登记。
+     *
+     * <p>**每次实际执行都写一行 INFO**：这三件事都是"静默生效"的
+     * （不写日志的话，管理员只能靠"数据库里有没有数据"反推它跑没跑），
+     * 而排查"阈值改了不生效""封禁过期了还生效"时，第一眼看的就是这一行。</p>
+     */
     private fun maintenance(database: DatabaseService, settings: DatabaseSettings) {
         if (!database.isReady) return
         val now = System.currentTimeMillis()
@@ -118,20 +139,24 @@ class DatabaseInit : StartableInitable, StoppableInitable {
         if (now - lastMaintenanceAt < intervalMs) return
         lastMaintenanceAt = now
 
-        runCatching { database.expireOverdue(now) }
-        runCatching { database.refreshRisks(now) }
+        val expired = runCatching { database.expireOverdue(now) }.getOrDefault(-1)
+        val rescored = runCatching { database.refreshRisks(now) }.getOrDefault(-1)
 
-        // 规则登记需要至少一个在线玩家（检测实例是每玩家创建的）。
-        // 用"库里的规则数 != 在线的检测数"当触发条件，只在真的不一致时写库。
-        val online = AntiCheatCore.playerDataManager.all()
-        if (online.isNotEmpty()) {
-            val checks = online.first().checkManager.checks()
-            val known = runCatching { database.loadCheckRules().size }.getOrDefault(0)
-            if (checks.size != known) {
-                val touched = runCatching { DatabaseGlue.syncCheckRules("periodic") }.getOrDefault(0)
-                if (touched > 0) CoreLog.info("已登记 " + touched + " 个检测的规则到数据库")
-            }
+        // 规则登记：用"库里的规则数 != 检测类目录的大小"当触发条件，只在真的不一致时写库。
+        // 刻意**不要求有玩家在线**——检测目录（CheckManager.CHECK_CLASSES）不依赖实例，
+        // 否则空服时管理员没法通过数据库改阈值。
+        val expected = CheckManager.CHECK_CLASSES.size
+        val known = runCatching { database.loadCheckRules().size }.getOrDefault(-1)
+        var registered = 0
+        if (known != expected) {
+            registered = runCatching { DatabaseGlue.syncCheckRules("periodic") }.getOrDefault(-1)
         }
+
+        CoreLog.info(
+            "数据库维护完成：过期封禁 " + expired + " 条 / 风险重算 " + rescored + " 人 / " +
+                "检测规则 " + (if (known < 0) "读取失败" else known.toString() + " 项") +
+                (if (registered > 0) "（本次登记 " + registered + " 项）" else "")
+        )
     }
 
     /** 读 `database:` 段（扁平键值表，解析在 [DatabaseSettings] 里）。 */

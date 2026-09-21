@@ -153,6 +153,42 @@ class CheckManager(val player: PlayerData) {
      */
     fun checks(): List<Check> = byClass.values.filterIsInstance<Check>()
 
+    companion object {
+
+        /**
+         * 检测类目录——**不依赖玩家**的那份名单。
+         *
+         * <p>为什么需要它：检测实例是"每个玩家一份"的（`register(Xxx(player))`），
+         * 于是"把检测登记进数据库的规则表"这件事在**没有玩家在线时做不了**——
+         * 而管理员恰恰可能在开服前就想改阈值。这里用类对象列一份名单，
+         * 元数据从类上的 `@CheckData` 反射读取，不需要构造实例。</p>
+         *
+         * <p>两份名单（实例登记 + 这里）必须一致：`CoreCheckCatalogTest` 会拿它和
+         * `config.yml` 的 `core.checks` 键做双向比对，漏一个就红。</p>
+         */
+        val CHECK_CLASSES: List<Class<out Check>> = listOf(
+            BadPacketsA::class.java,
+            BadPacketsB::class.java,
+            BadPacketsC::class.java,
+            BadPacketsD::class.java,
+            InventoryA::class.java,
+            InventoryB::class.java,
+            TimerA::class.java,
+            TimerB::class.java,
+            AutoClickerA::class.java,
+            AutoClickerB::class.java,
+            AutoClickerC::class.java,
+            AimA::class.java,
+            AimB::class.java,
+            ReachA::class.java,
+            ReachB::class.java,
+            NoSwingA::class.java,
+            ToolSwitchA::class.java,
+            BreakRestartA::class.java,
+            FastPlaceA::class.java
+        )
+    }
+
     fun reload() {
         for (processor in byClass.values) {
             try {

@@ -312,25 +312,84 @@ flowchart LR
 
 ---
 
-## 🗄️ 数据库配置
+## 🗄️ 数据持久化（H2 / PostgreSQL）
 
-在 `config.yml` 中配置数据库（跨服部署时所有节点使用同一后端即自动同步封禁）：
+反作弊的运行时状态全在内存里，**持久化只用于"事后能查"**：玩家档案、IP 记录、封禁、
+违规明细、规则阈值、统计口径。数据库不可用时插件**照常判定与告警**，只是不再落库
+（日志一条 WARN、不打堆栈），并按 `reconnect-delay-seconds` 自动重连。
+
+两个后端，**共用同一套表结构与 SQL**（时间列是 BIGINT epoch 毫秒、IP/CIDR 用字符串、
+网段匹配在插件内做），因此切换后端不需要改任何代码，也不会出现"某个后端少一列"：
+
+| 后端 | 定位 | 说明 |
+|------|------|------|
+| `h2`（默认） | 嵌入式、零运维、保底 | 库文件在 `plugins/AdvancedAntiCheat/anticheat-v2.mv.db` |
+| `postgresql` | 外置、多服共用、可直接用 SQL 看板 | 需要先有 PG 实例（插件只连库，不装库） |
 
 ```yaml
 database:
-  type: "sqlite"  # 支持: sqlite, h2, mysql, mongodb, redis
-  server-name: "Server-1"
-  sqlite:
-    path: "anticheat.db"
-  mysql:
-    host: "localhost"
-    port: 3306
+  type: "h2"                 # h2 | postgresql
+  server-name: "Server-1"    # 写进 ban / violation 的子服名（多服共用一套库时区分来源）
+  h2:
+    path: "anticheat-v2"
+  postgres:
+    host: "127.0.0.1"
+    port: 5432
     database: "anticheat"
-    username: "root"
+    username: "anticheat"
     password: ""
+    pool-size: 4
+  auto-migrate: true         # 建表/升级由插件做（schema_version 记录版本，幂等）
+  violation:                 # 违规是最高频写操作：攒批 + 异步入队，队列满则丢弃并计数
+    batch-size: 64
+    flush-interval-ms: 5000
+    queue-capacity: 4096
+  stats:
+    bucket-minutes: 5        # 检查命中率统计桶
+    risk-refresh-minutes: 10 # 风险分重算周期
+  ip-intel:                  # 离线 IP 情报（按网段给 ASN/国家，插件不做任何外部查询）
+    rules:
+      - cidr: "10.0.0.0/8"
+        asn: 0
+        org: "LAN"
+        country: "LAN"
 ```
 
-审计日志同样持久化到该数据库。**生产环境请勿在 `config.yml` 中明文存放数据库凭据**，建议使用最小权限账号并限制数据库访问来源。
+### 表结构
+
+| 表 | 内容 |
+|----|------|
+| `player_profile` | UUID、当前名、首次/最后登录、最后 IP、会话数、在线时长、风险分、近 24h/7d 违规数、行为画像 blob |
+| `player_name` | 用户名历史（可按旧名反查账号，小号识别的基本手段） |
+| `player_ip` | 玩家用过的每个地址：地址族、归并网段（IPv4 /24、IPv6 /64）、ASN、国家、首末时间、登录次数 |
+| `ban` | UUID / IP / CIDR 封禁 × 临时 / 永久 × `active` / `expired` / `revoked`，含原因、执行者、时间、过期、撤销信息 |
+| `violation` | 检测名、VL、增量、严重度、时间、子服、世界、坐标、ping、TPS、客户端版本、包类型、verbose |
+| `check_rule` / `punishment_ladder` / `whitelist_entry` | 各检测阈值、惩罚阶梯、白名单（带到期时间） |
+| `check_stat` / `risk_snapshot` | 检查命中率（真实的 flags/evaluations 桶）、风险分历史 |
+| `audit_log` | 审计日志（查询口径与旧实现保持一致） |
+
+视图：`v_violation_trend`（按天 × 检测）、`v_check_hit_rate`（真实的 flags/evaluations）、
+`v_player_risk`。三类视图都不含时间函数，所以两个后端共用同一份定义；
+"当前生效的封禁"要走仓储（带时间参数的查询），不在视图里表达。
+
+### 规则以数据库为权威
+
+`check_rule` 在启动时登记**代码里的事实**（描述、是否实验性）与首次的默认阈值；
+之后 `enabled` / `decay` / `setback` / `thresholds` **由数据库说了算**——直接改库即可生效，
+`/ac reload` 会重新回灌，不会被 `config.yml` 顶回去（否则管理员调好的阈值会在重启后
+被悄悄改掉，且不报错）。
+
+### 建表与升级
+
+插件自己跑版本化迁移：`schema_version` 记录已执行版本与校验和，重复启动幂等；
+迁移被改过会告警"库结构与代码可能不一致"。`auto-migrate: false` 可关掉自动建表
+（由 DBA 先行执行）。
+
+> ⚠️ **PostgreSQL 是全新实例时**需要先建库与角色，并允许本机 TCP ——
+> `pg_hba.conf` 加一行 `host anticheat anticheat 127.0.0.1/32 md5` 后
+> `SELECT pg_reload_conf();`。插件只连库，不负责安装或初始化 PG 实例。
+>
+> ⚠️ 生产环境请勿在 `config.yml` 中明文存放数据库凭据，建议最小权限账号并限制访问来源。
 
 ## 📝 自定义查端配置
 

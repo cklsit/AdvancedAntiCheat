@@ -2,6 +2,8 @@ package com.anticheat.core.db
 
 import com.anticheat.core.AntiCheatCore
 import com.anticheat.core.check.Check
+import com.anticheat.core.check.CheckData
+import com.anticheat.core.manager.CheckManager
 import com.anticheat.core.player.PlayerData
 import com.anticheat.core.util.CoreLog
 
@@ -99,8 +101,16 @@ object DatabaseGlue {
     fun syncCheckRules(by: String = "startup"): Int {
         val database = AntiCheatCore.database ?: return 0
         if (!database.isReady) return 0
-        val checks = AntiCheatCore.playerDataManager.all().firstOrNull()?.checkManager?.checks() ?: emptyList()
-        val seeds = checks.map { check ->
+        val seeds = seedsFromOnlinePlayers() ?: seedsFromCatalog()
+        return database.syncCheckRules(seeds, by)
+    }
+
+    /** 有在线玩家时用真实实例（值最准：decay/setback 已被配置下发过）。 */
+    private fun seedsFromOnlinePlayers(): List<RuleRepository.CheckSeed>? {
+        val checkManager = AntiCheatCore.playerDataManager.all().firstOrNull()?.checkManager ?: return null
+        val checks = checkManager.checks()
+        if (checks.isEmpty()) return null
+        return checks.map { check ->
             RuleRepository.CheckSeed(
                 checkName = check.checkName,
                 enabled = check.isEnabled,
@@ -111,7 +121,28 @@ object DatabaseGlue {
                 thresholds = AntiCheatCore.configManager.thresholdsOf(check.configName)
             )
         }
-        return database.syncCheckRules(seeds, by)
+    }
+
+    /**
+     * 没有玩家在线时的兜底：从 [CheckManager.CHECK_CLASSES] 反射读元数据。
+     *
+     * <p>开服前（或空服时）也能把规则表填好，管理员不需要"等有人进来"才能改阈值。</p>
+     */
+    private fun seedsFromCatalog(): List<RuleRepository.CheckSeed> {
+        val config = AntiCheatCore.configManager
+        return CheckManager.CHECK_CLASSES.mapNotNull { type ->
+            val data = type.getAnnotation(CheckData::class.java) ?: return@mapNotNull null
+            val configName = data.configName.takeIf { it.isNotEmpty() && it != "DEFAULT" } ?: data.name
+            RuleRepository.CheckSeed(
+                checkName = data.name,
+                enabled = config.isCheckEnabled(configName),
+                decay = data.decay,
+                setback = data.setback,
+                experimental = data.experimental,
+                description = data.description,
+                thresholds = config.thresholdsOf(configName)
+            )
+        }
     }
 
     /**

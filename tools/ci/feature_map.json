@@ -5,7 +5,9 @@
   "rules": [
     {
       "id": "ai-core",
-      "paths": ["src/main/java/com/anticheat/ai/**"],
+      "paths": [
+        "src/main/java/com/anticheat/ai/**"
+      ],
       "feature": "AI 实验室（特征 / 基线 / 孤立森林 / 监督模型 / 集群 / 自适应阈值）",
       "tests": [
         "com.anticheat.ai.AiMathTest",
@@ -19,68 +21,109 @@
     },
     {
       "id": "captcha",
-      "paths": ["src/main/java/com/anticheat/captcha/**"],
+      "paths": [
+        "src/main/java/com/anticheat/captcha/**"
+      ],
       "feature": "验证码（出题 / 输入分段 / DTW 判定）",
-      "tests": ["com.anticheat.captcha.dtw.DtwMatcherTest"],
+      "tests": [
+        "com.anticheat.captcha.dtw.DtwMatcherTest"
+      ],
       "gate": "block"
     },
     {
       "id": "detection",
-      "paths": ["src/main/java/com/anticheat/detection/**"],
+      "paths": [
+        "src/main/java/com/anticheat/detection/**"
+      ],
       "feature": "检测模块（移动 / 战斗 / 背包 / 世界 / 玩家）+ 融合决策",
-      "tests": ["com.anticheat.detection.fusion.DecisionActionCenterTest"],
+      "tests": [
+        "com.anticheat.detection.fusion.DecisionActionCenterTest"
+      ],
       "notes": "跨版本陷阱由 tools/audit_dual_version.py 第 1/2/3/5 项兜底；真机加载由 E2E startup 断言兜底",
       "gate": "block"
     },
     {
       "id": "listeners",
-      "paths": ["src/main/java/com/anticheat/listeners/**"],
+      "paths": [
+        "src/main/java/com/anticheat/listeners/**"
+      ],
       "feature": "事件监听层（含配置开关联动）",
-      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "tests": [
+        "com.anticheat.contract.ConfigContractTest"
+      ],
       "notes": "新增 @EventHandler 事件类型必须过审计第 5 项（1.8 不存在的事件会导致整类静默失效）",
       "gate": "block"
     },
     {
       "id": "gui",
-      "paths": ["src/main/java/com/anticheat/gui/**"],
+      "paths": [
+        "src/main/java/com/anticheat/gui/**"
+      ],
       "feature": "游戏内菜单（槽位规范 / 跨版本材质 / InventoryHolder）",
-      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "tests": [
+        "com.anticheat.contract.ConfigContractTest"
+      ],
       "gate": "block"
     },
     {
       "id": "utils",
-      "paths": ["src/main/java/com/anticheat/utils/**"],
+      "paths": [
+        "src/main/java/com/anticheat/utils/**"
+      ],
       "feature": "工具层（版本适配 / 序列化 / 命令注册）",
-      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "tests": [
+        "com.anticheat.contract.ConfigContractTest"
+      ],
       "gate": "block"
     },
     {
       "id": "commands",
-      "paths": ["src/main/java/com/anticheat/commands/**"],
+      "paths": [
+        "src/main/java/com/anticheat/commands/**"
+      ],
       "feature": "指令体系",
-      "tests": ["com.anticheat.contract.PluginYmlContractTest"],
-      "commands": ["/ac help", "/ac stats", "/ac reports", "/ac reload"],
+      "tests": [
+        "com.anticheat.contract.PluginYmlContractTest"
+      ],
+      "commands": [
+        "/ac help",
+        "/ac stats",
+        "/ac reports",
+        "/ac reload"
+      ],
       "gate": "block"
     },
     {
       "id": "managers",
-      "paths": ["src/main/java/com/anticheat/managers/**"],
+      "paths": [
+        "src/main/java/com/anticheat/managers/**"
+      ],
       "feature": "管理器层（举报 / 画像 / 封禁 / 白名单 / 审计 / 通知）",
-      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "tests": [
+        "com.anticheat.contract.ConfigContractTest"
+      ],
       "gate": "block"
     },
     {
       "id": "config-yml",
-      "paths": ["src/main/resources/config.yml"],
+      "paths": [
+        "src/main/resources/config.yml"
+      ],
       "feature": "配置项（键名 / 结构 / 材质枚举）",
-      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "tests": [
+        "com.anticheat.contract.ConfigContractTest"
+      ],
       "gate": "block"
     },
     {
       "id": "plugin-yml",
-      "paths": ["plugin.yml"],
+      "paths": [
+        "plugin.yml"
+      ],
       "feature": "插件描述符（命令 / 权限注册）",
-      "tests": ["com.anticheat.contract.PluginYmlContractTest"],
+      "tests": [
+        "com.anticheat.contract.PluginYmlContractTest"
+      ],
       "gate": "block"
     },
     {
@@ -115,25 +158,51 @@
     },
     {
       "id": "compat",
-      "paths": ["src/main/java/com/anticheat/compat/**"],
+      "paths": [
+        "src/main/java/com/anticheat/compat/**"
+      ],
       "feature": "跨版本适配层（聊天 / 标题 / 音效 / 材质）",
-      "tests": ["com.anticheat.contract.ConfigContractTest"],
+      "tests": [
+        "com.anticheat.contract.ConfigContractTest"
+      ],
       "notes": "聊天走 BungeeCord chat API（1.8.8 与 1.21 均内置）；禁止使用 net.kyori.adventure —— 它会被 shade 重定位，运行时把影子 Component 交给 Paper 会 NoSuchMethodError",
       "gate": "block"
     },
     {
       "id": "build",
-      "paths": ["pom.xml", ".github/workflows/**", "tools/**"],
+      "paths": [
+        "pom.xml",
+        ".github/workflows/**",
+        "tools/**"
+      ],
       "feature": "构建与 CI 基础设施",
       "tests": [],
       "gate": "warn"
     },
     {
       "id": "docs",
-      "paths": ["**/*.md", "docs/**"],
+      "paths": [
+        "**/*.md",
+        "docs/**"
+      ],
       "feature": "文档",
       "tests": [],
       "gate": "skip"
+    },
+    {
+      "id": "database",
+      "paths": [
+        "src/main/java/com/anticheat/core/db/",
+        "src/main/java/com/anticheat/managers/DatabaseManager.java",
+        "src/main/resources/config.yml"
+      ],
+      "feature": "数据持久化（H2 默认 / PostgreSQL 可选）：档案、IP、封禁、违规、规则、统计",
+      "tests": [
+        "com.anticheat.core.db.DatabaseLayerTest",
+        "com.anticheat.core.db.DatabaseLogicTest"
+      ],
+      "notes": "改 SQL / schema 前必须知道四件事：① 两个后端共用同一套 SQL（可移植子集约定见 core/db/Sql.kt 类注释）；② DatabaseLayerTest 跑在内存 H2 上，任何 DDL/查询改动都会在那里被立刻验证，不要只改 PostgreSQL 侧；③ 迁移一旦执行过就不能再改（schema_version 的校验和会告警），要改用新版本号；④ 新增表/列后 E2E 会断言「数据库结构已就绪」与「数据库已就绪（h2:」两条日志。",
+      "gate": "block"
     }
   ]
 }

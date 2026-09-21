@@ -118,6 +118,10 @@ class CoreConfigManager {
      * <p>把 config.yml 里 `core.checks.<名字>` 下除 enabled/decay/setback 之外的键
      * 原样带过去——它们是"这个检测的可调参数"，正是管理员需要在库里看到并调整的东西。</p>
      */
+    /** 某个检测当前是否启用（规则登记时需要，避免为一个不存在的检测写一行 enabled=true）。 */
+    fun isCheckEnabled(checkConfigName: String): Boolean =
+        checkEnabledOverride[checkConfigName] ?: true
+
     fun thresholdsOf(checkConfigName: String): Map<String, Any?> {
         val section = checkSections[checkConfigName] ?: return emptyMap()
         val out = LinkedHashMap<String, Any?>()
