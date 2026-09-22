@@ -15,9 +15,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 
 public class VersionUtil {
+
+    /**
+     * 反射失败只告警一次。
+     *
+     * <p>[#safeGetOnlinePlayers()] 是热点路径（服务端线程频繁调用）。原实现在**成功路径**
+     * 也写一行 INFO，实测占了生产 {@code latest.log} 的 52%（228 行里 119 行是它）——
+     * 把日志淹成噪声，真正的问题反而看不见。失败路径的 WARN 也只在首次出现有意义，
+     * 同一条告警重复上千遍不提供额外信息。</p>
+     */
+    private static final AtomicBoolean REFLECT_WARNED = new AtomicBoolean(false);
 
     private static String version;
     private static boolean is1_8;
@@ -487,17 +498,18 @@ public class VersionUtil {
                     // result 保持空
                 }
             }
-            Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers called, returning " + result.size() + " players (type=" + result.getClass().getSimpleName() + ")");
+            // 成功路径刻意不写日志：这是热点路径，正常返回不是"事件"。
             return result;
         } catch (Throwable t) {
-            Bukkit.getLogger().log(Level.WARNING, "[VersionUtil] safeGetOnlinePlayers 反射失败: " + t.getMessage());
+            if (REFLECT_WARNED.compareAndSet(false, true)) {
+                Bukkit.getLogger().log(Level.WARNING, "[VersionUtil] safeGetOnlinePlayers 反射失败（只报一次）: " + t.getMessage());
+            }
             // 兜底（在编译目标为 Paper 的 JAR 上可用；若 1.8 上又出错，返回空）
             try {
-                List<Player> result = new ArrayList<>(Bukkit.getOnlinePlayers());
-                Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers (fallback) returning " + result.size() + " players");
-                return result;
+                return new ArrayList<>(Bukkit.getOnlinePlayers());
             } catch (Throwable ignored2) {
-                Bukkit.getLogger().info("[VersionUtil] safeGetOnlinePlayers returning 0 players (all fallbacks failed)");
+                // 两条路都失败：返回空表，调用方本来就按"没有在线玩家"处理。
+                // 这里不再记录——上面的 WARN 已经说明反射失效，重复记只会刷屏。
                 return new ArrayList<>();
             }
         }
