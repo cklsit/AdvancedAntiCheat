@@ -22,16 +22,25 @@ import com.anticheat.core.util.CoreLog
 object DatabaseGlue {
 
     /** 从一次 flag 生成落库记录。所有字段取**判定那一刻**的值（事后无法重建）。 */
-    fun recordFlag(player: PlayerData, check: Check, amount: Double, verbose: String) {
+    fun recordFlag(
+        player: PlayerData,
+        check: Check,
+        amount: Double,
+        verbose: String,
+        /** `PunishmentManager.handleViolation` 的真实返回值（null = 本次未处罚）。 */
+        punishAction: String? = null
+    ) {
         val database = AntiCheatCore.database ?: return
         if (!database.isReady) return
 
         // 命中率统计（分母在 CheckManager 每 tick 记，分子在这里记）
         database.noteCheckFlag(check.checkName, amount, player.uuid)
 
-        val config = AntiCheatCore.configManager
         val position = player.serverPosition
-        val punished = config.punishmentEnabled && check.violations >= config.punishmentThreshold
+        // punished 取**真实决策**，不再用
+        // "enabled && vl >= threshold && config.action" 推断——开启惩罚阶梯后，
+        // 实际动作由档位决定（可能是 ban 7d），推断出来的值会与实际执行的动作不一致。
+        val punished = punishAction != null
         val input = ViolationInput(
             uuid = player.uuid,
             name = player.name,
@@ -54,7 +63,7 @@ object DatabaseGlue {
             detail = verbose.take(JSON_DETAIL_LIMIT),
             experimental = check.experimental,
             punished = punished,
-            punishAction = if (punished) config.punishmentAction else null
+            punishAction = punishAction
         )
         database.onViolation(input)
     }
@@ -72,6 +81,10 @@ object DatabaseGlue {
         val now = System.currentTimeMillis()
         AntiCheatCore.scheduler.runAsync {
             val info = database.onSessionStart(player.uuid, player.name, rawIp, now) ?: return@runAsync
+            // 历史被处罚次数：惩罚阶梯靠它升档（VL 不跨会话，只看 VL 升不上去）。
+            // 取自 violation.punished 的条数：每次处罚会把触发它的那条违规标记为 punished。
+            player.punishmentCount = database.countPunished(player.uuid)
+
             if (info.whitelisted && !player.exempt) {
                 player.exempt = true
                 CoreLog.debug("数据库白名单命中，已豁免: " + player.name)

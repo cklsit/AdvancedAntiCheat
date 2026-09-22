@@ -444,12 +444,48 @@ class DatabaseLayerTest {
         assertEquals(3, rules.countWhitelist(now));
     }
 
+    @Test
+    @DisplayName("违规记录：punished/punish_action 写真实动作；历史被处罚次数可按玩家统计（阶梯升档靠它）")
+    void punishedViolationRoundTrip() {
+        ViolationRepository repo = new ViolationRepository(pool);
+        long now = System.currentTimeMillis();
+        long bucket = Sql.dayBucket(now);
+        UUID uuid = UUID.randomUUID();
+
+        repo.insertBatch(Arrays.asList(
+                violation(uuid, "Bob", "ReachA", 12.0, 1.0, 2, now, bucket),
+                punishedViolation(uuid, "Bob", "ReachA", 14.0, 2.0, 3, now, bucket, "ban"),
+                violation(UUID.randomUUID(), "Other", "AimB", 5.0, 1.0, 1, now, bucket)));
+
+        assertEquals(1, repo.countPunished(uuid), "只数被处罚过的那条");
+        assertEquals(0, repo.countPunished(UUID.randomUUID()), "没人被抓过就是 0（登录时读它决定升档）");
+
+        String action = pool.withConnection(connection -> {
+            try (java.sql.Statement statement = connection.createStatement();
+                 java.sql.ResultSet rows =
+                         statement.executeQuery("SELECT punish_action FROM violation WHERE punished = TRUE")) {
+                return rows.next() ? rows.getString(1) : null;
+            } catch (java.sql.SQLException e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        assertEquals("ban", action, "punish_action 必须是**真实动作**（不是配置里的默认动作）");
+    }
+
     // ------------------------------------------------------------------ 辅助
+
 
     private static ViolationInput violation(UUID uuid, String name, String check, double vl, double delta,
                                             int severity, long at, long dayBucket) {
         return new ViolationInput(uuid, name, check, "raytrace", vl, delta, severity, at, dayBucket,
                 "Server-1", "world", 10.0, 64.0, -3.0, 42, 19.8f, "V_1_8", "INTERACT_ENTITY",
                 "verbose", false, false, null);
+    }
+
+    private static ViolationInput punishedViolation(UUID uuid, String name, String check, double vl, double delta,
+                                                    int severity, long at, long dayBucket, String action) {
+        return new ViolationInput(uuid, name, check, "raytrace", vl, delta, severity, at, dayBucket,
+                "Server-1", "world", 10.0, 64.0, -3.0, 42, 19.8f, "V_1_8", "INTERACT_ENTITY",
+                "verbose", false, true, action);
     }
 }

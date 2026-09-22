@@ -368,6 +368,14 @@ class DatabaseService(
 
     // ------------------------------------------------------------------ 审计
 
+    /** 该玩家历史上被处罚过的条数（惩罚阶梯升档的依据）。 */
+    fun countPunished(uuid: UUID): Int {
+        if (!isReady) return 0
+        return runCatching { violations!!.countPunished(uuid) }
+            .onFailure { warnOnce("统计历史处罚数失败", it) }
+            .getOrDefault(0)
+    }
+
     fun saveAudit(row: AuditRow): Long? {
         if (!isReady) return null
         return runCatching { audits!!.insert(row) }

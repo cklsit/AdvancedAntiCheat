@@ -2,6 +2,7 @@ package com.anticheat.core.manager
 
 import com.anticheat.core.AntiCheatCore
 import com.anticheat.core.check.Check
+import com.anticheat.core.db.AuditRow
 import com.anticheat.core.db.LadderStep
 import com.anticheat.core.events.FlagEvent
 import com.anticheat.core.player.PlayerData
@@ -15,26 +16,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * 违规后的处罚决策中心。对齐 Grim 的 `PunishmentManager`。
  *
- * <p>设计上**默认只告警、不处罚**（`core.punishment.enabled: false`）：
- * 骨架阶段的检测阈值还没经过真机标定，直接开踢/开封会造成批量误伤。</p>
- *
- * <h3>分档</h3>
- * 处罚动作由**惩罚阶梯**决定：取 `punishment_ladder` 里满足 `min-vl <= 当前 VL` 的最高一档。
- * 没有阶梯、或 VL 还没到最低档时，回落到 `core.punishment.threshold` +
- * `core.punishment.action`（扁平配置，用于"不想分档"的部署）。
- *
- * <p>阶梯缓存在内存里（[updateLadder] 由 `DatabaseGlue.syncPolicy` 在启动/重载/维护时刷新）：
- * 本类的方法可能跑在 **Netty 线程**上，违规路径上查库会阻塞收包线程。</p>
+ * <h3>分档依据是"第几次被抓"，不是 VL</h3>
+ * 违规分（VL）是**会话内**的量：被踢下线后重连，检测实例重建、VL 归零。
+ * 若按 VL 分档，只要"踢"这一档比"封"低，被踢的人重连后 VL 归零 →
+ * **永远到不了封禁档**（踢—重连—再踢的死循环）。所以升档依据是跨会话的
+ * [PlayerData.punishmentCount]（登录时从库里数被处罚过的违规条数），
+ * 而 `min-vl` 退化为**该档的证据门槛**：越重的处罚要求越高的 VL。
  *
  * <h3>幂等</h3>
  * 门控用的是「(玩家, 检测) 维度的执行冷却表」，且**故意不随玩家离线清空**——
  * 清掉就变成「重登即可绕过处罚」，这是本项目在旧架构上已经踩过的坑。
+ *
+ * <h3>两条落库链路</h3>
+ * - **违规行**：本方法返回真实动作，由 `Check.flag` 转交 `DatabaseGlue.recordFlag`
+ *   写进 `violation.punished` / `punish_action`（不再靠阈值推断）；
+ * - **审计**：处罚动作本身写一条 `audit_log`（谁被罚、依据哪条检测、什么动作）。
  */
 class PunishmentManager {
 
     private val lastActionAt = ConcurrentHashMap<String, Long>()
 
-    /** 当前生效的惩罚阶梯（启动/重载/维护时刷新）。空 = 不分档。 */
+    /** 当前生效的惩罚阶梯（启动/重载/维护时刷新）。空 = 不分档，退回扁平配置。 */
     @Volatile
     private var ladder: List<LadderStep> = emptyList()
 
@@ -49,31 +51,49 @@ class PunishmentManager {
     /** 当前阶梯（供命令/日志展示，让"库里到底几档、各档什么动作"不必去翻数据库）。 */
     fun currentLadder(): List<LadderStep> = ladder
 
-    fun handleViolation(player: PlayerData, check: Check) {
-        if (player.exempt) return
+    /**
+     * 处理一次违规。
+     *
+     * @return 本次实际执行的处罚动作（`kick` / `ban` / `command`），
+     *   null = 没处罚（未开启、豁免、额度不够、冷却中、或只告警档）。
+     *   返回值会被写进触发它的那条 `violation` 记录，所以必须如实反映"真的做了什么"。
+     */
+    fun handleViolation(player: PlayerData, check: Check): String? {
+        if (player.exempt) return null
 
         AntiCheatCore.alertManager.handleAlert(player, check, "")
 
         val config = AntiCheatCore.configManager
-        if (!config.punishmentEnabled) return
+        if (!config.punishmentEnabled) return null
 
-        val step = LadderPolicy.selectStep(ladder, check.violations)
-        // 配了阶梯就以阶梯为准；没命中任何一档则回落扁平阈值
-        val floor = step?.minVl ?: config.punishmentThreshold
-        if (check.violations < floor) return
+        // 第几次被抓 = 历史被处罚次数 + 本会话已处罚次数
+        val offenseIndex = player.punishmentCount + 1
+        val step = LadderPolicy.selectStep(ladder, check.violations, offenseIndex)
 
-        val action = (step?.action ?: config.punishmentAction).lowercase(Locale.ROOT)
-        // 只告警这一档**不占冷却键**：否则 VL 后来涨到更高档时，
+        val action: String = if (ladder.isEmpty()) {
+            // 没配阶梯：退回扁平配置（兼容"不想分档"的部署）
+            if (check.violations < config.punishmentThreshold) return null
+            config.punishmentAction.lowercase(Locale.ROOT)
+        } else {
+            // 配了阶梯：VL 没到这一档的证据门槛 → 本次不处罚（不够格就不给处罚）
+            step ?: return null
+            step.action.lowercase(Locale.ROOT)
+        }
+
+        // 只告警这一档**不占冷却键**：否则 VL 后来涨上去、次数再增加时，
         // 会被前面那次"什么都没做"的冷却挡住，阶梯就升不上去了。
-        if (action == ACTION_ALERT) return
+        if (action == ACTION_ALERT) return null
 
         val key = player.uuid.toString() + ":" + check.configName
         val now = System.currentTimeMillis()
         val last = lastActionAt[key] ?: 0L
-        if (now - last < config.punishmentCooldownMs) return
+        if (now - last < config.punishmentCooldownMs) return null
         lastActionAt[key] = now
 
-        execute(player, check, step, action)
+        execute(player, check, step, action, offenseIndex)
+        // 本会话内再被抓就升一档
+        player.punishmentCount = offenseIndex
+        return action
     }
 
     /** flag 被外部模块否决时的钩子（当前只记 debug）。 */
@@ -95,7 +115,7 @@ class PunishmentManager {
         lastActionAt.clear()
     }
 
-    private fun execute(player: PlayerData, check: Check, step: LadderStep?, action: String) {
+    private fun execute(player: PlayerData, check: Check, step: LadderStep?, action: String, offenseIndex: Int) {
         val config = AntiCheatCore.configManager
         val reason = LadderPolicy.expandTemplate(
             step?.reason ?: config.punishmentKickMessage,
@@ -143,8 +163,10 @@ class PunishmentManager {
             config.alertPrefix + "处罚 " + player.name +
                 " check=" + check.checkName +
                 " VL=" + String.format(Locale.ROOT, "%.2f", check.violations) +
-                " action=" + action
+                " action=" + action +
+                " 第" + offenseIndex + "次"
         )
+        writeAudit(player, check, action, step?.duration, offenseIndex)
     }
 
     /**
@@ -171,6 +193,41 @@ class PunishmentManager {
         AntiCheatCore.scheduler.runOnMainThread { player.platformPlayer.kick(reason) }
     }
 
+    /**
+     * 处罚留痕（`audit_log`）。
+     *
+     * <p>为什么不写不行：`violation` 表回答"检测到了什么"，`audit_log` 回答
+     * **"谁在什么时候对谁做了什么动作"**。核心层的处罚原本只打一行控制台消息，
+     * 关服后就没有任何地方能查"这个玩家是因为哪条检测、第几次被踢/被封的"。</p>
+     *
+     * <p>口径与旧 `AuditManager` 经适配层写入的行保持一致（`operator=AntiCheat`、
+     * `operator_role=0`）：`type` 固定 `anticheat_punish`、`result` 是实际动作，
+     * 便于按动作筛选。</p>
+     */
+    private fun writeAudit(player: PlayerData, check: Check, action: String, duration: String?, offenseIndex: Int) {
+        val database = AntiCheatCore.database ?: return
+        val detail = "check=" + check.checkName +
+            " VL=" + String.format(Locale.ROOT, "%.2f", check.violations) +
+            (if (duration != null) " duration=" + LadderPolicy.describeDuration(duration) else "") +
+            " 第" + offenseIndex + "次"
+        // 审计写库是 IO，放异步（处罚已经执行完，审计写失败不能反过来影响处罚）
+        AntiCheatCore.scheduler.runAsync {
+            database.saveAudit(
+                AuditRow(
+                    id = null,
+                    timestamp = System.currentTimeMillis(),
+                    operator = OPERATOR,
+                    operatorRole = 0,
+                    type = AUDIT_TYPE,
+                    target = player.name,
+                    ip = null,
+                    result = action,
+                    detail = detail
+                )
+            )
+        }
+    }
+
     companion object {
         /** 只告警、不做动作。 */
         const val ACTION_ALERT = "alert"
@@ -183,5 +240,11 @@ class PunishmentManager {
 
         /** 执行 `core.punishment.command-template`。 */
         const val ACTION_COMMAND = "command"
+
+        /** 审计行里的 operator（与旧 AuditManager 的口径一致）。 */
+        const val OPERATOR = "AntiCheat"
+
+        /** 审计行的 type：按动作筛处罚记录时用 `type = 'anticheat_punish'`。 */
+        const val AUDIT_TYPE = "anticheat_punish"
     }
 }

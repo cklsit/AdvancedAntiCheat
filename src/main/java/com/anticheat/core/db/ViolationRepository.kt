@@ -107,6 +107,22 @@ class ViolationRepository(private val pool: JdbcPool) {
         }
     }
 
+    /**
+     * 该玩家**历史上被处罚过**的违规条数。
+     *
+     * <p>惩罚阶梯的升档依据就是它（而不是 VL）：每次处罚只会把触发它的
+     * 那一条违规标为 `punished`，所以条数 ≈ 历史被处罚次数（不新建计数表：
+     * 再加一份计数就多一个会不一致的地方）。</p>
+     */
+    fun countPunished(uuid: UUID): Int = pool.withConnection { connection ->
+        connection.prepareStatement(
+            "SELECT count(*) FROM violation WHERE uuid = ? AND punished = TRUE"
+        ).use { statement ->
+            statement.setObject(1, uuid)
+            statement.executeQuery().use { rows -> if (rows.next()) rows.getInt(1) else 0 }
+        }
+    }
+
     fun countSince(sinceMillis: Long): Long = pool.withConnection { connection ->
         connection.prepareStatement("SELECT count(*) FROM violation WHERE created_at > ?").use { statement ->
             statement.setLong(1, sinceMillis)

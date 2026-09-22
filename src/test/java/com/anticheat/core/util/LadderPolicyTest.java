@@ -102,43 +102,40 @@ class LadderPolicyTest {
     // ------------------------------------------------------------------ 选档
 
     @Test
-    @DisplayName("选档：等于 min-vl 算命中；取最高一档；比最低档低返回 null；乱序输入也要选对")
+    @DisplayName("选档：第几次被抓决定上限，VL 决定够不够格；证据不足退回较轻档，超档数封顶")
     void selectStep() {
+        // 第 1 次踢 / 第 2 次封 1 天 / 第 3 次封 7 天；min-vl 是各档的证据门槛
         List<LadderStep> steps = Arrays.asList(
-                new LadderStep(1, 20.0, "kick", null, null),
-                new LadderStep(2, 50.0, "ban", "7d", null),
-                new LadderStep(3, 100.0, "ban", "perm", null));
+                new LadderStep(1, 8.0, "kick", null, null),
+                new LadderStep(2, 10.0, "ban", "1d", null),
+                new LadderStep(3, 12.0, "ban", "7d", null));
 
-        assertNull(LadderPolicy.selectStep(steps, 19.99), "还没到最低档 → null（调用方回落扁平阈值）");
-        assertEquals(20.0, LadderPolicy.selectStep(steps, 20.0).getMinVl(), 1e-9,
-                "等于 min-vl 必须命中（写成 > 会永远差一档）");
-        assertEquals(20.0, LadderPolicy.selectStep(steps, 49.9).getMinVl(), 1e-9);
-        assertEquals(50.0, LadderPolicy.selectStep(steps, 50.0).getMinVl(), 1e-9);
-        assertEquals(100.0, LadderPolicy.selectStep(steps, 9_999.0).getMinVl(), 1e-9, "超最高档取最高档");
+        assertNull(LadderPolicy.selectStep(steps, 7.9, 1), "VL 未达最低档门槛 → 不处罚");
+        assertEquals("kick", LadderPolicy.selectStep(steps, 8.0, 1).getAction(), "等于门槛必须命中");
+        assertEquals("kick", LadderPolicy.selectStep(steps, 99.0, 1).getAction(),
+                "第 1 次被抓最多只到第 1 档：VL 再高也不能凭一次就越级封禁");
+        assertEquals("ban", LadderPolicy.selectStep(steps, 11.0, 2).getAction(), "第 2 次 → 第 2 档");
+        assertEquals("7d", LadderPolicy.selectStep(steps, 20.0, 3).getDuration(), "第 3 次 → 第 3 档");
+        assertEquals("7d", LadderPolicy.selectStep(steps, 20.0, 9).getDuration(),
+                "被抓次数超过档数 → 封顶在最后一档（不能返回 null 把人放走）");
+        assertEquals("kick", LadderPolicy.selectStep(steps, 9.0, 3).getAction(),
+                "第 3 次但 VL 只到第 1 档的门槛 → 退回第 1 档（证据不够就不给重刑）");
 
-        // 乱序 / 未排序输入：实现必须"取最大 min-vl"，不能假设输入有序
-        List<LadderStep> shuffled = Arrays.asList(
-                new LadderStep(3, 100.0, "ban", "perm", null),
-                new LadderStep(1, 20.0, "kick", null, null),
-                new LadderStep(2, 50.0, "ban", "7d", null));
-        assertEquals(50.0, LadderPolicy.selectStep(shuffled, 60.0).getMinVl(), 1e-9,
-                "乱序输入下选出的档位也必须是 VL 真正落在的那一档");
-
-        assertNull(LadderPolicy.selectStep(null, 100.0));
-        assertNull(LadderPolicy.selectStep(Collections.<LadderStep>emptyList(), 100.0));
+        assertNull(LadderPolicy.selectStep(null, 100.0, 1));
+        assertNull(LadderPolicy.selectStep(Collections.<LadderStep>emptyList(), 100.0, 1));
     }
 
     @Test
     @DisplayName("描述：把档位与动作写成人能读的一行（日志要靠它证明阶梯真的生效）")
     void describe() {
         List<LadderStep> steps = Arrays.asList(
-                new LadderStep(1, 20.0, "kick", null, null),
-                new LadderStep(2, 50.0, "ban", "7d", null),
-                new LadderStep(3, 100.0, "ban", "perm", null));
+                new LadderStep(1, 8.0, "kick", null, null),
+                new LadderStep(2, 10.0, "ban", "1d", null),
+                new LadderStep(3, 12.0, "ban", "7d", null));
         String text = LadderPolicy.describe(steps);
-        assertTrue(text.contains("20.0→kick"), text);
-        assertTrue(text.contains("50.0→ban(7d)"), text);
-        assertTrue(text.contains("100.0→ban(永久)"), text);
+        assertTrue(text.contains("第1次(8.0)→kick"), text);
+        assertTrue(text.contains("第2次(10.0)→ban(1d)"), text);
+        assertTrue(text.contains("第3次(12.0)→ban(7d)"), text);
         assertTrue(LadderPolicy.describe(null).contains("无"));
     }
 

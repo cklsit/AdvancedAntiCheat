@@ -82,10 +82,14 @@ abstract class Check(player: PlayerData) : CoreProcessor(player) {
         if (event.cancelled) return false
 
         violationData.flag(amount)
+        // **先决定处罚、再落库**：违规行要如实记下"这条违规导致了什么处罚"
+        // （violation.punished / punish_action）。处罚判定与这次 flag 在**同一条调用链**上
+        // （不是异步），放在前面就能在落库时一次写对；反过来做只能在异步队列
+        // 或已落库的行上回头补标记，两条路径都要维护，而队列随时可能已刷出去。
+        val punishAction = AntiCheatCore.punishmentManager.handleViolation(player, this)
         // 落库（异步入队，不阻塞收包/主线程）。放在这里而不是各检测里：
         // 这是唯一的违规入口，也就保证了"记账"与"落库"的口径永远一致。
-        DatabaseGlue.recordFlag(player, this, amount, verbose)
-        AntiCheatCore.punishmentManager.handleViolation(player, this)
+        DatabaseGlue.recordFlag(player, this, amount, verbose, punishAction)
         return true
     }
 

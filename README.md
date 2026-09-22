@@ -391,21 +391,40 @@ database:
 | `punishment_ladder` | **config.yml 是播种源**；库里非空则以库为准 | 空表时用 `core.punishment.ladder` 播种。想让 config 重新覆盖：清空该表后 `/ac reload` |
 | `whitelist_entry` | config 是**补充声明**、库是存储 | 启动/重载把 config 里缺失的条目补进去；已存在的**不动、不删**。撤销要在库里删行，或用 `expires-in` 让它自然过期 |
 
-惩罚阶梯按"单人单检测"的 VL 取**满足 `min-vl <= VL` 的最高一档**，动作四选一：
+**升档依据是"第几次被抓"，不是 VL。** 违规分（VL）是会话内的量：被踢下线后重连，
+检测实例重建、VL 归零。若按 VL 分档，只要"踢"这一档比"封"低，被踢的人重连后 VL 归零
+→ **永远到不了封禁档**（踢—重连—再踢的死循环），阶梯就成了摆设。
+所以升档依据是跨会话的计数（`PlayerData.punishmentCount`，登录时数 `violation.punished`
+的条数），而 `min-vl` 退化为**该档的证据门槛**：越重的处罚要求越高的 VL。
 
-- `alert` —— 只告警。**不占处罚冷却**，否则 VL 后来涨到更高档时会被上一次"什么都没做"挡住；
-- `kick` —— 踢出；
-- `ban` —— 写库封禁 + 踢出，`duration` 支持 `30s` / `10m` / `2h` / `7d` / `1w` / `perm`（省略 = 永久）。写错会在日志里报"配置写错"并按永久处理；
-- `command` —— 执行 `core.punishment.command-template`（支持 `%player%` / `%check%` / `%vl%` / `%duration%`）。
+`LadderPolicy.selectStep(阶梯, VL, 第几次被抓)` 的规则：
 
-没有阶梯、或 VL 未达最低档时回落到 `core.punishment.threshold` + `core.punishment.action`。
+1. 只在**前 N 档**里找（N = 第几次被抓；超过档数封顶最后一档）；
+2. 在这些档里取"VL 够格"（`VL >= min-vl`）的最高一档；
+3. 一档都不够格 → 本次**不处罚**（证据不够就不给处罚）。
+
+所以"第 3 次被抓但 VL 只有 9"会退回第 1 档的动作，而不是凭空给重罚。
+
+动作四选一：`alert`（只告警，且**不占处罚冷却**，否则后面更高档会被前面那次
+"什么都没做"挡住）、`kick`、`ban`（写库封禁 + 踢出，`duration` 支持
+`30s/10m/2h/7d/1w/perm`）、`command`（执行 `core.punishment.command-template`）。
+没有阶梯、或 VL 未达任何档的门槛时回落到 `core.punishment.threshold` + `action`。
+
+**默认不带 `perm`（永久）档**：自动永久封一旦误判就是不可逆的损失，需要永久封请人工处理。
+
+### 处罚的两条落库链路
+
+| 落库 | 内容 | 为什么 |
+|------|------|--------|
+| `violation.punished` / `punish_action` | **真实动作**（`PunishmentManager.handleViolation` 的返回值） | 之前是用 `enabled && VL >= threshold && config.action` **推断**的，开启分档后必然与实际不符。为此把 `Check.flag` 改成"先处罚、再落库"——同一条调用链上就能一次写对，不必回头改异步队列或已落库的行 |
+| `audit_log`（`type = 'anticheat_punish'`） | 谁、什么时候、因为哪条检测、第几次、什么动作（`result` = 动作） | `violation` 表回答"检测到了什么"，审计表回答"对谁做了什么动作"。核心层的处罚原本只打一行控制台消息，关服后没地方能查 |
 
 > ⚠️ **`ban` 必须"写库 + 踢人"两件事都做**：只写库不踢人，玩家会一直玩到下次重连；
 > 只踢人不写库，重连就回来了。"重连也进不来"由**登录路径**保证——查到生效封禁直接踢。
 >
 > ⚠️ 白名单条目**过期后**的唯一键占位会被维护任务释放（`active_key` 置 `NULL`）。
 > 不释放的话同一目标**永远**加不回来：唯一约束被那条过期记录永久占着，`INSERT` 直接失败。
-> 这一条是本轮被测试真的撞出来的。
+
 
 ### 建表与升级
 

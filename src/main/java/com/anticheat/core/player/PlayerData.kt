@@ -158,6 +158,15 @@ class PlayerData(
     @Volatile
     var experimentalChecks: Boolean = false
 
+    /**
+     * 历史被本插件处罚过的次数（登录时从库里数），
+     * 加上本次会话内已处罚过的次数。惩罚阶梯按它升档
+     * （第 1 次踢、第 2 次封 1 天…）——VL 是会话内的量，重连即归零，
+     * 只看 VL 的话永远升不到重档。
+     */
+    @Volatile
+    var punishmentCount: Int = 0
+
     @Volatile
     var joinTick: Long = 0L
 

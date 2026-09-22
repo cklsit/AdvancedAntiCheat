@@ -57,7 +57,7 @@ class CoreConfigManager {
     // ---------------- 处罚 ----------------
 
     @Volatile
-    var punishmentEnabled: Boolean = false
+    var punishmentEnabled: Boolean = true
         private set
 
     @Volatile
@@ -187,7 +187,7 @@ class CoreConfigManager {
         alertPrefix = config.getString("core.alerts.prefix", DEFAULT_ALERT_PREFIX) ?: DEFAULT_ALERT_PREFIX
         alertVerbose = config.getBoolean("core.alerts.verbose", false)
 
-        punishmentEnabled = config.getBoolean("core.punishment.enabled", false)
+        punishmentEnabled = config.getBoolean("core.punishment.enabled", true)
         punishmentThreshold = config.getDouble("core.punishment.threshold", 20.0)
         punishmentAction = config.getString("core.punishment.action", "kick") ?: "kick"
         punishmentCooldownMs = config.getLong("core.punishment.cooldown-ms", 30000L)

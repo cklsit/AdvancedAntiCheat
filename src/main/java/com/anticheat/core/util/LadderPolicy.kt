@@ -97,20 +97,29 @@ object LadderPolicy {
     }
 
     /**
-     * 选出当前 VL 适用的一档：**满足 `minVl <= vl` 的最高一档**。
+     * 选出这次该用哪一档：**第几次被抓决定上限，VL 决定够不够格**。
      *
-     * <p>写成"取最大 minVl"而不是"按顺序第一个命中"：后者依赖输入有序，
-     * 一旦调用方传进来的是没排序的表（例如直接来自 `loadLadder()` 的库顺序变化），
-     * 就会静默选错档。</p>
+     * <h3>为什么不能按"VL 落在哪个区间"分档</h3>
+     * VL 是**会话内**的量：玩家被踢下线后重连，检测实例重建、VL 归零。
+     * 若按 VL 分档，只要"踢"这一档比"封"低，被踢的人重连后 VL 归零
+     * → **永远到不了封禁档**，阶梯成了摆设（踢—重连—再踢的死循环）。
+     * 所以升档依据必须是**跨会话的计数**，由 `PlayerData.punishmentCount` 给出。
      *
-     * @return 比最低档还低时返回 null，调用方回落到 `core.punishment.threshold`
+     * <p>`min-vl` 退化为**该档的证据门槛**：越重的处罚要求越高的 VL。
+     * 第 N 次被抓时只在**前 N 档**里挑"VL 够格"的最高一档——
+     * 所以第 3 次被抓但 VL 只有 9 时会退回第 1 档，而不是凭空给重罚。</p>
+     *
+     * @param offenseIndex 这是该玩家第几次被抓（从 1 开始）；超过档数时封顶在最后一档
+     * @return null = 本次不够格处罚（VL 未达任何一档的门槛）
      */
     @JvmStatic
-    fun selectStep(steps: List<LadderStep>?, vl: Double): LadderStep? {
+    fun selectStep(steps: List<LadderStep>?, vl: Double, offenseIndex: Int): LadderStep? {
         if (steps.isNullOrEmpty()) return null
+        val ordered = steps.sortedBy { it.step }
+        val capped = offenseIndex.coerceIn(1, ordered.size)
         var best: LadderStep? = null
-        for (step in steps) {
-            if (vl >= step.minVl && (best == null || step.minVl > best.minVl)) {
+        for (step in ordered.take(capped)) {
+            if (vl >= step.minVl && (best == null || step.step > best.step)) {
                 best = step
             }
         }
@@ -136,9 +145,10 @@ object LadderPolicy {
     fun describe(steps: List<LadderStep>?): String {
         if (steps.isNullOrEmpty()) return "无（超阈值即按 punishment.action 处理）"
         val builder = StringBuilder()
-        for (step in steps.sortedBy { it.minVl }) {
+        for (step in steps.sortedBy { it.step }) {
             if (builder.isNotEmpty()) builder.append(" > ")
-            builder.append(String.format(Locale.ROOT, "%.1f", step.minVl)).append("→").append(step.action)
+            builder.append("第").append(step.step).append("次(")
+                .append(String.format(Locale.ROOT, "%.1f", step.minVl)).append(")→").append(step.action)
             if (step.action == "ban") {
                 builder.append("(").append(describeDuration(step.duration)).append(")")
             }
@@ -150,7 +160,7 @@ object LadderPolicy {
 /**
  * config 里声明的一条白名单（由字符串或映射解析而来）。
  *
- * [uuid] 与 [name] 可能同时为空？不会——解析时至少有一个非空，否则整条丢弃。
+ * [uuid] 与 [name] 至少有一个非空——解析时两者都取不到就整条丢弃。
  */
 class WhitelistSeed(
     val uuid: UUID?,

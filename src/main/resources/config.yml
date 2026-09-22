@@ -515,31 +515,38 @@ core:
 
   # ---------------- 处罚 ----------------
   punishment:
-    enabled: false                   # 总开关。false = 只告警不处罚（默认，先观察再开）
-    threshold: 20.0                  # 单人单检测违规分（VL）累计到该值才触发处罚
+    enabled: true                    # 总开关。true = 按下面的阶梯真处罚（2026-09-22 按服主要求开启）
+    threshold: 20.0                  # 仅在**没配阶梯**（ladder 为空）时生效：VL 到该值即按 action 处理
     action: "kick"                   # 处罚动作：kick / ban / command（command 需在命令模板里用 %player%）
     cooldown-ms: 30000               # 同一玩家两次处罚的最小间隔（毫秒）
     kick-message: "§c反作弊检测到异常行为（%check% VL=%vl%）"   # 支持 %check% / %vl% / %player% 占位符
     # action=command 时执行的命令（不带斜杠）。支持 %player% / %check% / %vl% / %duration%
     command-template: "ban %player% 反作弊检测：%check% VL=%vl%"
 
-    # 惩罚阶梯：按“单人单检测”的 VL 分档，命中满足 min-vl <= VL 的最高一档。
-    #   动作：alert（只告警）/ kick / ban（写库封禁 + 踢出）/ command（执行上面的命令模板）
+    # 惩罚阶梯：按“这是该玩家第几次被抓”逐级升档（第 1 次踢、第 2 次封 1 天…）。
+    #   min-vl 是**该档的证据门槛**：越重的处罚要求越高的违规分（VL）。
+    #   第 N 次被抓时只在**前 N 档**里挑“VL 够格”的最高一档：第 3 次被抓但 VL 只有 9 时退回第 1 档，
+    #   不会凭空给重罚（证据不够就不给重刑）。
+    #   ⚠ 为什么按次数而不按 VL 分档：VL 是**会话内**的量，被踢下线重连即归零。
+    #     若按 VL 分档，“踢”一触发玩家就走了，后面的封禁档永远到不了（踢—重连—再踢）。
+    #   动作：alert（只告警）/ kick / ban（写库封禁 + 踢出）/ command（执行下面的命令模板）
     #   duration 只在 ban 时用：30s / 10m / 2h / 7d / 1w，或 perm（省略 = 永久）；写错会在日志里报“配置写错”并按永久处理
     #   空列表 = 不分档：超 threshold 就按上面的 action 处理
     #   ⚠ 启动时若数据库里的阶梯为空，会用这份播种；之后以数据库为准。
     #     想让 config 重新覆盖：清空 punishment_ladder 表后执行 /ac reload。
+    #   ⚠ 不配 perm（永久）档：自动永久封一旦误判就是不可逆的损失，需要永久封请人工处理。
     ladder:
-      - min-vl: 20.0
+      - min-vl: 8.0
         action: "kick"
-      - min-vl: 50.0
+        reason: "反作弊检测到异常行为（%check% VL=%vl%）"
+      - min-vl: 10.0
+        action: "ban"
+        duration: "1d"
+        reason: "反作弊检测到异常行为（%check% VL=%vl%），第 2 次：封禁 1 天"
+      - min-vl: 12.0
         action: "ban"
         duration: "7d"
-        reason: "反作弊检测到异常行为（%check% VL=%vl%），封禁 7 天"
-      - min-vl: 100.0
-        action: "ban"
-        reason: "反作弊检测到异常行为（%check% VL=%vl%），永久封禁"
-
+        reason: "反作弊检测到异常行为（%check% VL=%vl%），第 3 次：封禁 7 天"
   # ---------------- 白名单 ----------------
   # 命中白名单的玩家豁免全部检测（不记违规、不处罚）；登录时查数据库。
   # 这里是声明式白名单：启动 / /ac reload 时把库里缺失的条目补进去，
