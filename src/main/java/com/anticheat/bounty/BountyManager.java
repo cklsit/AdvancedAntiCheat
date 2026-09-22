@@ -64,7 +64,12 @@ public class BountyManager {
     private static final long MIN_SESSION_SECONDS = 60L;
 
     private final AdvancedAntiCheat plugin;
-    private final BountyWorld bountyWorld;
+    /**
+     * 沙箱世界。**懒建**：`bounty.enabled: false` 的服不该凭空多出一个世界
+     * （那会白占内存与磁盘，而这个世界的唯一用途就是赏金）。启用时在构造末尾先建好，
+     * 这样第一次 `/bounty enter` 不会在玩家面前卡一下。
+     */
+    private BountyWorld bountyWorld;
 
     private final Map<UUID, BountySession> activeSessions = new ConcurrentHashMap<>();
     private final Map<UUID, Location> pendingRespawnBackup = new ConcurrentHashMap<>();
@@ -99,8 +104,11 @@ public class BountyManager {
 
     public BountyManager(AdvancedAntiCheat plugin) {
         this.plugin = plugin;
-        this.bountyWorld = new BountyWorld(plugin);
         loadConfig();
+        // 启用就先建好（首访无卡顿）；关闭则完全不碰
+        if (enabled) {
+            getBountyWorld();
+        }
     }
 
     // ------------------------------------------------------------------ 配置
@@ -185,7 +193,14 @@ public class BountyManager {
     }
 
     public BountyWorld getBountyWorld() {
-        return bountyWorld;
+        BountyWorld current = bountyWorld;
+        if (current != null) return current;
+        synchronized (this) {
+            if (bountyWorld == null) {
+                bountyWorld = new BountyWorld(plugin);
+            }
+            return bountyWorld;
+        }
     }
 
     // ------------------------------------------------------------------ 生命周期
@@ -244,7 +259,9 @@ public class BountyManager {
             if (tracked >= baselineMaxTrackedPlayers) break;
             UUID uuid = player.getUniqueId();
             if (activeSessions.containsKey(uuid)) continue;      // 沙箱玩家不进基线
-            if (bountyWorld.getWorld() != null && bountyWorld.getWorld().equals(player.getWorld())) continue;
+            BountyWorld sandbox = bountyWorld;
+            if (sandbox != null && sandbox.getWorld() != null
+                    && sandbox.getWorld().equals(player.getWorld())) continue;
             tracked++;
 
             long seq = baselineSeq.merge(uuid, 1L, Long::sum);
