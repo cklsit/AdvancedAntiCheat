@@ -28,14 +28,19 @@ commands:
     description: 解封玩家（支持数据库同步）
     usage: /unban <玩家>
     permission: anticheat.unban
+  # 命令级权限用 anticheat.command（default: true）而不是 anticheat.admin：
+  # /ac ranking 是"所有玩家可用"的只读子命令（文档要求），而 Bukkit 会在进入
+  # executor 之前就用命令级权限拦掉普通玩家。管理子命令的权限校验在
+  # AntiCheatCommand.onCommand 里**逐条**执行，所以降低命令级权限不会让
+  # 任何管理功能对普通玩家开放；PluginYmlContractTest 也要求每个命令都声明权限。
   anticheat:
     description: 反作弊插件主指令
-    usage: /anticheat <reload|stats|profile|config|help>
-    permission: anticheat.admin
+    usage: /anticheat <reload|stats|profile|config|ranking|help>
+    permission: anticheat.command
   ac:
-    description: 反作弊插件快捷指令
-    usage: /ac <reload|stats|profile|config|help>
-    permission: anticheat.admin
+    description: 反作弊插件快捷指令（ranking 对所有玩家开放）
+    usage: /ac <reload|stats|profile|config|ranking|help>
+    permission: anticheat.command
   checkclient:
     description: 对玩家进行客户端检查
     usage: /checkclient <玩家> <QQ号>
@@ -50,7 +55,7 @@ commands:
     permission: anticheat.captcha
   bounty:
     description: 漏洞赏金计划命令
-    usage: /bounty <enter|leave|invite|report|lb|start|complete>
+    usage: /bounty <enter|leave|board|shop|start|status|rank|cases|report|pending|accept|reject|invite|help>
     permission: anticheat.bounty
 
 permissions:
@@ -78,6 +83,11 @@ permissions:
   anticheat.captcha:
     description: 允许使用验证码功能
     default: op
+  # 命令入口权限：允许执行 /ac 与 /anticheat 的**公开**子命令（目前只有 ranking）。
+  # 管理子命令由 AntiCheatCommand 内部按 anticheat.admin 逐条校验。
+  anticheat.command:
+    description: 允许使用 /ac 的公开子命令（赏金排行等）
+    default: true
   anticheat.bounty:
     description: 允许使用漏洞赏金计划功能
     default: true

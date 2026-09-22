@@ -1,6 +1,7 @@
 package com.anticheat.core.check
 
 import com.anticheat.core.AntiCheatCore
+import com.anticheat.core.bounty.BountyHooks
 import com.anticheat.core.db.DatabaseGlue
 import com.anticheat.core.events.AlertEvent
 import com.anticheat.core.events.FlagEvent
@@ -82,6 +83,14 @@ abstract class Check(player: PlayerData) : CoreProcessor(player) {
         if (event.cancelled) return false
 
         violationData.flag(amount)
+        if (player.sandbox) {
+            // 赏金沙箱：检测照常评分，但既不处罚也不落生产库。
+            // 沙箱里的违规若写进 violation 表，会污染风险评分与命中率统计
+            // （文档第六节要求的"特征库污染防护"）；所以只把命中交给赏金模块，
+            // 由它记入案例与证据包。
+            BountyHooks.onSandboxFlag(player, configName, violations, amount)
+            return true
+        }
         // **先决定处罚、再落库**：违规行要如实记下"这条违规导致了什么处罚"
         // （violation.punished / punish_action）。处罚判定与这次 flag 在**同一条调用链**上
         // （不是异步），放在前面就能在落库时一次写对；反过来做只能在异步队列
@@ -133,6 +142,9 @@ abstract class Check(player: PlayerData) : CoreProcessor(player) {
     // ------------------------------------------------------------------ setback / 告警
 
     fun setbackIfAboveSetbackVl(): Boolean {
+        // 沙箱内不拉回：拉回是"干预性"动作，会把正在测试飞行的玩家拽回地面，
+        // 使沙箱无法使用；它与"沙箱只记录不干预"的定位也直接矛盾。
+        if (player.sandbox) return false
         if (!violationData.shouldSetback()) return false
         return player.setbackUtil.executeViolationSetback()
     }

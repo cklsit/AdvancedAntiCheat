@@ -18,6 +18,18 @@ import java.util.List;
 
 public class AntiCheatCommand implements TabExecutor {
 
+    /**
+     * 命令入口权限，与 plugin.yml 里 `ac`/`anticheat` 的 `permission` 字段同名。
+     *
+     * <p>写成常量而不是内联字符串：`PluginYmlContractTest.permissionsAreReferenced`
+     * 要求 plugin.yml 声明的权限节点必须在源码里真的被检查过——这条护栏防的正是
+     * "声明了一个权限却没有任何代码用它"。同时也让这里的检查与 plugin.yml 一眼可对。</p>
+     */
+    private static final String COMMAND_PERMISSION = "anticheat.command";
+
+    /** 管理子命令的权限。 */
+    private static final String ADMIN_PERMISSION = "anticheat.admin";
+
     private final AdvancedAntiCheat plugin;
 
     public AntiCheatCommand(AdvancedAntiCheat plugin) {
@@ -26,7 +38,27 @@ public class AntiCheatCommand implements TabExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!sender.hasPermission("anticheat.admin")) {
+        // 命令入口：公开权限与管理员权限任一成立即可。
+        // 两者是"或"而不是"与"：只授予 anticheat.admin 而不给 anticheat.command 的权限配置
+        // 很常见（default: true 被权限插件整体关掉时），用"与"会把管理员锁在门外。
+        if (!sender.hasPermission(COMMAND_PERMISSION) && !sender.hasPermission(ADMIN_PERMISSION)) {
+            sender.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
+            return true;
+        }
+
+        // 「所有玩家均可访问」的只读子命令：必须在**管理员**权限门之前处理。
+        // 文档明确要求 /ac ranking 对所有玩家开放（排行榜本身就是激励手段）。
+        String first = args.length > 0 ? args[0].toLowerCase() : "";
+        if (first.equals("ranking") || first.equals("rank")) {
+            if (sender instanceof Player) {
+                plugin.getBountyManager().showLeaderboard((Player) sender);
+            } else {
+                sender.sendMessage("§c该命令只能由玩家执行");
+            }
+            return true;
+        }
+
+        if (!sender.hasPermission(ADMIN_PERMISSION)) {
             sender.sendMessage(plugin.getConfigManager().getMessage("commands.no-permission"));
             return true;
         }
@@ -42,6 +74,10 @@ public class AntiCheatCommand implements TabExecutor {
             plugin.getConfigManager().reloadMessagesConfig();
             // 核心层：重载阈值并把新配置下发到每个在线玩家的检测实例（未启用时自身 no-op）
             com.anticheat.core.AntiCheatCore.reload();
+            // 赏金模块：重读每日额度/判定阈值/白名单（监听器向它查询，所以只需这一句）
+            if (plugin.getBountyManager() != null) {
+                plugin.getBountyManager().reload();
+            }
             sender.sendMessage("§a[AntiCheat] 配置和消息文件已重新加载！");
         } else if (subCommand.equals("stats")) {
             showStats(sender);
@@ -156,11 +192,15 @@ public class AntiCheatCommand implements TabExecutor {
         sender.sendMessage(" §6§l[漏洞赏金] §8(/bounty)");
         sender.sendMessage(" §a" + pad("/bounty enter", 34) + "§8» §7进入漏洞赏金沙箱");
         sender.sendMessage(" §a" + pad("/bounty leave", 34) + "§8» §7离开漏洞赏金沙箱");
-        sender.sendMessage(" §a" + pad("/bounty invite <玩家>", 34) + "§8» §7邀请玩家加入沙箱");
-        sender.sendMessage(" §a" + pad("/bounty start <任务>", 34) + "§8» §7开始赏金任务");
+        sender.sendMessage(" §a" + pad("/bounty board", 34) + "§8» §7打开任务板（点击接任务）");
+        sender.sendMessage(" §a" + pad("/bounty start <任务>", 34) + "§8» §7直接开始任务");
+        sender.sendMessage(" §a" + pad("/bounty shop", 34) + "§8» §7赏金商城（称号/特效，不卖战力）");
+        sender.sendMessage(" §a" + pad("/ac ranking", 34) + "§8» §7赏金猎人排行（所有玩家可用）");
+        sender.sendMessage(" §a" + pad("/bounty status", 34) + "§8» §7沙箱状态与今日额度");
         sender.sendMessage(" §a" + pad("/bounty report <描述>", 34) + "§8» §7报告发现的漏洞");
-        sender.sendMessage(" §a" + pad("/bounty lb", 34) + "§8» §7查看赏金排行榜");
-        sender.sendMessage(" §a" + pad("/bounty complete", 34) + "§8» §7完成当前赏金任务");
+        sender.sendMessage(" §a" + pad("/bounty pending", 34) + "§8» §7待复核案例（管理员）");
+        sender.sendMessage(" §a" + pad("/bounty accept|reject <ID>", 34) + "§8» §7审核案例（管理员）");
+        sender.sendMessage(" §a" + pad("/bounty invite <玩家>", 34) + "§8» §7邀请玩家加入沙箱");
         sender.sendMessage("");
 
         sender.sendMessage("§8════════════════════════════════════════════════════");

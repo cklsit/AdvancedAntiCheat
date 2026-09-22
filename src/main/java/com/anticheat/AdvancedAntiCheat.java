@@ -211,6 +211,12 @@ public class AdvancedAntiCheat extends JavaPlugin {
         configGUIListener = new com.anticheat.listeners.ConfigGUIListener(this);
         getServer().getPluginManager().registerEvents(configGUIListener, this);
 
+        // 赏金沙箱：调度采样任务 + （尽力）载入人类基线。
+        // 放在最后：它依赖世界、事件与命令都已就绪。
+        if (bountyManager != null) {
+            bountyManager.start();
+        }
+
         if (VersionUtil.isHighVersion()) {
             getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
             getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord", new BungeeCordMessageListener(this));
@@ -230,7 +236,9 @@ public class AdvancedAntiCheat extends JavaPlugin {
         getCommand("checkclient").setExecutor(new CheckClientCommand(this));
         getCommand("checkdone").setExecutor(new CheckDoneCommand(this));
         getCommand("captcha").setExecutor(new CaptchaCommand(this));
-        getCommand("bounty").setExecutor(new BountyCommand(this));
+        BountyCommand bountyCommand = new BountyCommand(this);
+        getCommand("bounty").setExecutor(bountyCommand);
+        getCommand("bounty").setTabCompleter(bountyCommand);
     }
 
     public BanManager getBanManager() {

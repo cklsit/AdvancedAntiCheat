@@ -240,18 +240,51 @@ flowchart LR
 - 超时或中途退出 → 自动永久封禁
 - 文案、超时时间全部可在 `checkclient.yml` 自定义（支持 `{vault_group}` `{admin}` `{qq}` `{timeout}` 变量）
 
-### 💰 漏洞赏金系统
+### 💰 漏洞赏金系统（白盒自测沙箱）
 
-| 任务类型 | 描述 | 时间限制 |
-|----------|------|----------|
-| `MOVE_BASIC` | 基础移动测试（A → B） | 3 分钟 |
-| `MOVE_ADVANCED` | 高级移动测试（空中直角变向） | 5 分钟 |
-| `COMBAT_BASIC` | 基础战斗测试（击杀僵尸） | 5 分钟 |
-| `COMBAT_ADVANCED` | 高级战斗测试（杀戮光环检测） | 5 分钟 |
-| `INVENTORY_CHALLENGE` | 物品栏挑战（快速切换物品） | 3 分钟 |
-| `FREE_TEST` | 自由测试（给予所有道具与怪物） | 10 分钟 |
+定位是**化敌为友**：与其让外挂作者在暗处破坏，不如给一个光明正大的渠道把成果上交换奖励。
+玩家在完全隔离的 `bounty_world` 里"表演"，插件只记录、不惩罚。
 
-任务结束自动评估：**DETECTED**（检测到作弊）/ **BYPASSED**（无检测且无可疑行为）/ **ZERO_DAY**（无检测但有可疑行为，高危发现）。
+| 任务 | 目标（**不作弊做不到**才有判据价值） | 时长 | 赏金 |
+|------|--------------------------------------|------|------|
+| `move-basic` | 30 秒内从 A 点到达 B 点，全程不得落地 | 5 分钟 | 10 |
+| `move-advanced` | 空中完成一次直角变向（离地 ≥10 tick 且偏航变化 ≥60°） | 5 分钟 | 50 |
+| `combat-basic` | 10 秒内击杀全部 5 个持续移动的傀儡 | 3 分钟 | 10 |
+| `combat-advanced` | 对不可见幽灵实体保持准星锁定累计 3 秒 | 5 分钟 | 100 |
+| `inventory-challenge` | 3 秒内完成 8 次背包交互 | 3 分钟 | 30 |
+| `free-test` | 无目标：自由尝试，出现未记录的异常模式即判高危 | 10 分钟 | 150 |
+
+**判定结果（四种，`INCONCLUSIVE` 是必备状态）**
+
+| 结果 | 含义 | 赏金 |
+|------|------|------|
+| `DETECTED` | 触发了仍在运行的检测打分 → 说明现有规则有效 | 保底 1 |
+| `BYPASSED` | 完成目标且全程未被检测识别（异常分 ≥ 绕过线为中置信） | 任务赏金 × 倍率 |
+| `ZERO_DAY` | 完成目标 + 多维行为显著偏离人类基线 | 500 |
+| `INCONCLUSIVE` | 既没完成目标也没被抓到 → **没有信息量，不发赏金** | 0 |
+
+**三条关键机制**
+
+1. **沙箱内关闭自动惩罚，但检测照常打分**。用独立的 `PlayerData.sandbox` 标记实现
+   （**不是** `exempt`——后者会让 `Check.flag` 第一行就返回、检测完全不跑，
+   沙箱拿不到任何证据，于是每次任务都只能判绕过）。
+2. **背包自动暂存与归还**。进入前用 `CaptchaInventoryBackup` 采集快照再清空，
+   离开时用快照覆盖——同时完成"销毁沙箱内所得"与"归还原物"。原实现只清不还，
+   玩家执行一次 `/bounty enter` 就永久丢光全部家当。
+3. **每日额度按 (玩家, 天) 落库**，跨天自动重置。原实现用一个只增不减的内存累加器，
+   于是"每天 30 分钟"实际是"累计 30 分钟后永久无法再进"。
+
+**赏金代币**：只兑换**不影响平衡**的东西（称号权限、击杀粒子、纪念品），
+绝不卖装备与材料——否则赏金计划会退化成"用外挂刷代币"。商城 `/bounty shop`。
+
+**案例审核**：绕过/高危发现进入 `bounty_case`（`pending`），由管理员
+`/bounty accept|reject <ID>` 审核。沙箱数据**不会自动**流入生产规则
+（文档要求的"特征库污染防护"）。证据包落在 `plugins/AdvancedAntiCheat/bounty-evidence/`
+（事件时间线 + 逐 tick 采样 CSV + 指标与基线对比摘要）。
+
+**人类基线**：由**主世界玩家**（非沙箱）以 10 秒为一个不重叠窗口提供观测，
+按指标累计均值/标准差并落库（`bounty_baseline`）。基线未就绪时判定会**显式回落**
+成"只看检测证据"并标注低置信度，而不是把"我们不知道"当成"他很清白"。
 
 ### ⚖️ 封禁与举报
 
@@ -271,8 +304,9 @@ flowchart LR
 | 指令 | 说明 | 权限 |
 |------|------|------|
 | `/report <玩家> <原因>` | 举报作弊玩家 | `anticheat.report`（默认开放） |
-| `/bounty ...` | 漏洞赏金计划 | `anticheat.bounty`（默认开放） |
-| `/ac` / `/anticheat` | 查看插件信息 | 无 |
+| `/bounty enter\|board\|shop\|start\|status\|rank\|cases\|report\|leave` | 漏洞赏金计划 | `anticheat.bounty`（默认开放） |
+| `/ac ranking` | 赏金猎人排行（所有玩家可用） | `anticheat.command`（默认开放） |
+| `/ac` / `/anticheat` | 查看插件信息与帮助 | `anticheat.command`（默认开放） |
 
 ### 管理员指令
 
@@ -284,7 +318,7 @@ flowchart LR
 | `/checkclient <玩家> <QQ号>` | 开始客户端检查 | `anticheat.checkclient` |
 | `/checkdone <玩家>` | 结束客户端检查（通过） | `anticheat.checkclient` |
 | `/captcha <玩家\|toggle\|timelimit>` | 验证码测试 | `anticheat.captcha` |
-| `/bounty enter\|leave\|invite\|report\|lb\|start\|complete` | 赏金沙箱管理 | `anticheat.bounty` / `.bounty.admin` |
+| `/bounty pending` / `accept\|reject <ID>` / `invite <玩家>` | 赏金案例复核与邀请 | `anticheat.bounty.admin` |
 | `/ac reload` | 重新加载配置 | `anticheat.admin` |
 | `/ac stats` / `/ac reports` | 检测统计 / 待处理举报 | `anticheat.admin` |
 | `/ac profile <玩家>` | 查看玩家档案 GUI | `anticheat.admin` |
@@ -298,6 +332,7 @@ flowchart LR
 | 权限 | 说明 | 默认值 |
 |------|------|--------|
 | `anticheat.report` | 使用举报功能 | ✅ true |
+| `anticheat.command` | 使用 `/ac` 的公开子命令（如 `ranking`）；管理子命令仍要求 `anticheat.admin` | ✅ true |
 | `anticheat.bounty` | 使用漏洞赏金 | ✅ true |
 | `anticheat.bounty.admin` | 赏金计划管理员 | 🔒 op |
 | `anticheat.bounty.unlimited` | 无限制沙箱时间 | 🔒 op |

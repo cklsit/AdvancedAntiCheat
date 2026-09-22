@@ -64,6 +64,8 @@ class DatabaseService(
 
     private var stats: StatsRepository? = null
 
+    private var bounties: BountyRepository? = null
+
     private var recorder: ViolationRecorder? = null
 
     /** 当前的检查统计桶起点（_bucket-minutes_ 对齐）。 */
@@ -137,6 +139,7 @@ class DatabaseService(
             rules = ruleRepo
             audits = AuditRepository(created)
             stats = StatsRepository(created)
+            bounties = BountyRepository(created)
             recorder = newRecorder
             pool = created
             currentBucket = newRecorder.bucketMillis(System.currentTimeMillis())
@@ -155,6 +158,7 @@ class DatabaseService(
             rules = null
             audits = null
             stats = null
+            bounties = null
             recorder = null
             state = State.FAILED
             lastError = (t.javaClass.simpleName + ": " + (t.message ?: "")).take(200)
@@ -178,6 +182,7 @@ class DatabaseService(
         rules = null
         audits = null
         stats = null
+        bounties = null
         recorder = null
         state = if (settings.enabled) State.CONNECTING else State.DISABLED
     }
@@ -525,6 +530,104 @@ class DatabaseService(
     fun summary(): String {
         if (!isReady) return describe()
         return runCatching { stats!!.summary() }.getOrDefault("无数据")
+    }
+
+    // ------------------------------------------------------------------ 赏金沙箱
+
+    /**
+     * 赏金仓储的统一调用包装。
+     *
+     * <p>把"未就绪 → 返回缺省值、失败 → 打一条 WARN 并返回缺省值"这三件事收在一处。
+     * 赏金是**游戏玩法**而不是检测：库不可用时它必须退化成"沙箱还能进、只是不记账"，
+     * 而不是抛异常把交互打断。</p>
+     */
+    private fun <T> bounty(default: T, action: String, block: (BountyRepository) -> T): T {
+        val repository = bounties
+        if (repository == null || !isReady) return default
+        return runCatching { block(repository) }
+            .onFailure { warnOnce(action, it) }
+            .getOrDefault(default)
+    }
+
+    fun bountyWallet(uuid: UUID): BountyWalletRow? =
+        bounty(null, "读取赏金钱包失败") { it.findWallet(uuid) }
+
+    /** 发放代币；@return 发放后的余额（库不可用时返回 0，调用方据此提示"未记账"）。 */
+    fun bountyAddTokens(uuid: UUID, name: String, amount: Long): Long =
+        bounty(0L, "发放赏金代币失败") { it.addTokens(uuid, name, amount, System.currentTimeMillis()) }
+
+    fun bountyTop(limit: Int): List<BountyRankRow> =
+        bounty(emptyList(), "查询赏金排行榜失败") { it.topWallets(limit) }
+
+    fun bountyInsertCase(
+        uuid: UUID,
+        name: String,
+        task: String,
+        verdict: String,
+        confidence: String,
+        tokens: Long,
+        flags: Int,
+        maxVl: Double,
+        anomalyScore: Double,
+        baselineReady: Boolean,
+        samples: Int,
+        reason: String?,
+        summary: String?,
+        evidencePath: String?,
+        status: String
+    ): Long = bounty(-1L, "写入赏金案例失败") {
+        it.insertCase(
+            uuid, name, task, verdict, confidence, tokens, flags, maxVl, anomalyScore,
+            baselineReady, samples, reason, summary, evidencePath, status, System.currentTimeMillis()
+        )
+    }
+
+    fun bountyCase(id: Long): BountyCaseRow? =
+        bounty(null, "读取赏金案例失败") { it.findCase(id) }
+
+    fun bountyCases(status: String, limit: Int = 20): List<BountyCaseRow> =
+        bounty(emptyList(), "查询赏金案例失败") { it.listCases(status, limit) }
+
+    fun bountyCasesOf(uuid: UUID, limit: Int = 10): List<BountyCaseRow> =
+        bounty(emptyList(), "查询玩家赏金案例失败") { it.listCasesOf(uuid, limit) }
+
+    fun bountyCountCases(status: String): Long =
+        bounty(0L, "统计赏金案例失败") { it.countCases(status) }
+
+    /** @return 实际改动的行数；0 = 案例不存在或已被审核过（幂等）。 */
+    fun bountyReviewCase(id: Long, status: String, by: String): Int =
+        bounty(0, "审核赏金案例失败") { it.reviewCase(id, status, by, System.currentTimeMillis()) }
+
+    fun bountySecondsUsed(uuid: UUID, dayMillis: Long): Long =
+        bounty(0L, "读取沙箱每日时长失败") { it.secondsUsed(uuid, dayMillis) }
+
+    fun bountyAddSessionSeconds(uuid: UUID, dayMillis: Long, seconds: Long) {
+        bounty(false, "累计沙箱每日时长失败") {
+            it.addSessionSeconds(uuid, dayMillis, seconds, System.currentTimeMillis())
+            true
+        }
+    }
+
+    fun bountyPruneDailyBefore(dayMillis: Long): Int =
+        bounty(0, "清理过期沙箱时长失败") { it.pruneDailyBefore(dayMillis) }
+
+    /** 兑换；@return true = 扣款与记录都成功（同一个事务）。 */
+    fun bountyPurchase(uuid: UUID, name: String, itemId: String, cost: Long, oneTime: Boolean): Boolean =
+        bounty(false, "赏金商城兑换失败") {
+            it.purchase(uuid, name, itemId, cost, oneTime, System.currentTimeMillis())
+        }
+
+    fun bountyHasPurchased(uuid: UUID, itemId: String): Boolean =
+        bounty(false, "查询兑换记录失败") { it.hasPurchased(uuid, itemId) }
+
+    fun bountyLoadBaselines(): List<BountyBaselineRow> =
+        bounty(emptyList(), "读取人类基线失败") { it.loadBaselines() }
+
+    fun bountySaveBaselines(rows: List<BountyBaselineRow>) {
+        bounty(false, "写入人类基线失败") {
+            it.saveBaselines(rows, System.currentTimeMillis())
+            true
+        }
     }
 
     // ------------------------------------------------------------------ 排障

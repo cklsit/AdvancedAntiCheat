@@ -148,9 +148,20 @@ class PlayerData(
     @Volatile
     var ping: Int = 0
 
-    /** 命中白名单/绕过权限：检测照常跑，但不处罚、不告警。 */
+    /** 命中白名单/绕过权限：**检测完全不跑**（`Check.flag` 第一行就返回）、不处罚、不告警。 */
     @Volatile
     var exempt: Boolean = false
+
+    /**
+     * 是否处于赏金沙箱。
+     *
+     * <p>与 [exempt] 的关键区别：`exempt` 让 [com.anticheat.core.check.Check.flag]
+     * 直接返回、检测**根本不跑**；而沙箱需要"检测照常打分，只是不处罚、不落库、不拉回"。
+     * 用 exempt 实现沙箱会得到"没有任何证据的沙箱"，于是每次任务都只能判绕过。
+     * 见 [com.anticheat.core.bounty.BountyHooks] 的类注释。</p>
+     */
+    @Volatile
+    var sandbox: Boolean = false
 
     @Volatile
     var alertsEnabled: Boolean = false

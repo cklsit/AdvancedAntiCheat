@@ -59,7 +59,9 @@ class PunishmentManager {
      *   返回值会被写进触发它的那条 `violation` 记录，所以必须如实反映"真的做了什么"。
      */
     fun handleViolation(player: PlayerData, check: Check): String? {
-        if (player.exempt) return null
+        // sandbox 一并拦在这里（纵深防御）：Check.flag 已经不对沙箱玩家调用本方法，
+        // 但将来任何新增的处罚调用点都不该绕过这条约束。
+        if (player.exempt || player.sandbox) return null
 
         AntiCheatCore.alertManager.handleAlert(player, check, "")
 

@@ -340,9 +340,75 @@ database:
 check-client:
   timeout-minutes: 60
 
+# ============ 漏洞赏金沙箱（bounty）============
+# 定位是"化敌为友"：与其让外挂作者在暗处破坏，不如给他们一个光明正大的渠道
+# 把成果上交换奖励。沙箱内**关闭自动惩罚**，但检测照常运行并打分——
+# 没有检测证据的沙箱等于没有意义（那会让每次任务都只能判"绕过成功"）。
 bounty:
   enabled: true
+  # 每个玩家每天的沙箱额度（秒）。跨天自动重置（按 (玩家, 天) 落库，不是内存计数）。
+  daily-limit-seconds: 1800
+  # 兼容旧键：daily-limit-seconds 缺省时回退到它（分钟）
   default-time-limit-minutes: 30
+  # 进入沙箱后自动打开任务板
+  board-on-enter: true
+  # 聊天隔离：沙箱内玩家只看到沙箱内的消息（主世界也看不到沙箱发言）
+  isolate-chat: true
+  # 沙箱内允许执行的命令（其余一律拦截，防止 op/ban/reload 等被注入执行）
+  allowed-commands:
+    - bounty
+    - help
+    - list
+    - msg
+    - tell
+    - r
+    - reply
+    - who
+
+  # ---------------- 判定参数 ----------------
+  tuning:
+    # 判定"被检测到"所需的最低 VL。默认与惩罚阶梯首档的证据门槛一致(8.0)，
+    # 避免出现"惩罚认它、赏金不认它"这种自相矛盾的口径。
+    detected-min-vl: 8.0
+    # 多维异常分（0~100）达到多少算"绕过"（中置信）
+    bypass-anomaly: 55.0
+    # 达到多少算"高危零日发现"
+    zero-day-anomaly: 80.0
+
+  reward:
+    # 被检测到时的保底赏金（证明现有规则有效）
+    base: 1
+    # 绕过档 = 任务名义赏金 × 该倍率
+    bypass-multiplier: 1.0
+    # 高危档固定赏金
+    zero-day: 500
+
+  # ---------------- 人类基线 ----------------
+  # 基线由**主世界玩家**（非沙箱）提供，用来回答"这个人的多维行为是否偏离人类"。
+  # ⚠ 这是统计判据：基线未就绪时判定会回落成"只看检测证据"并标注低置信度，
+  #   而**不会**把"我们不知道"当成"他很清白"。上线初期建议先只观察 /bounty pending。
+  baseline:
+    enabled: true
+    # 单个指标参与判定所需的最少观测数（攒够之前基线视为"未就绪"）
+    min-samples: 200
+    # 至少要有这么多个指标可用，才认为基线就绪
+    min-ready-metrics: 2
+    # 采样间隔（tick）。20 = 每秒一次
+    sample-interval-ticks: 20
+    # 每个玩家的统计窗口（tick）。攒满算一组指标后清空重攒——
+    # 不重叠窗口是为了样本独立（滚动窗口会让"样本数"虚高而信息量不变）
+    window-ticks: 200
+    # 基线落库间隔（秒）
+    save-interval-seconds: 300
+    # 最多同时跟踪多少个玩家的窗口
+    max-tracked-players: 40
+    # 惊奇度累计到多少算异常分满格（≈ 3 个指标各自 p≈1e-4 的联合）
+    full-scale-surprise: 12.0
+
+  world:
+    # 服务器重启时是否删除并重建 bounty_world。
+    # false（默认）= 复用；无论哪种情况，启动时都会清空该世界的非玩家实体。
+    reset-on-start: false
 
 # ============ 蜜罐与陷阱（第七大类 5 项检测） ============
 honeypot:

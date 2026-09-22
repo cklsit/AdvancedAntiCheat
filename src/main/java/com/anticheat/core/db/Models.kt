@@ -301,3 +301,93 @@ class PlayerCheckStatRow(
     val maxVl: Double,
     val lastAt: Long
 )
+
+// ======================================================================
+// 赏金沙箱（bounty）
+// ======================================================================
+
+/**
+ * 赏金钱包（`bounty_wallet`）。
+ *
+ * <p>余额与"累计获得/累计消费"分成三列：只存余额的话，事后无法回答
+ * "这个人到底贡献过多少"——而排行榜与称号发放用的正是累计值。</p>
+ */
+class BountyWalletRow(
+    val uuid: UUID,
+    val name: String,
+    val tokens: Long,
+    val earned: Long,
+    val spent: Long,
+    val updatedAt: Long
+)
+
+/**
+ * 一条赏金案例（`bounty_case`）。
+ *
+ * <p>把判定时的**全部输入**（flags / maxVl / 异常分 / 基线是否就绪 / 采样数）
+ * 一起存下来：判定是可复算的，但基线会随时间变化，只存结论的话
+ * 事后永远说不清"当时为什么判它是绕过"。</p>
+ *
+ * @param status `pending`（待人工复核）/ `accepted`（特征已采纳）/ `rejected`（驳回）
+ */
+class BountyCaseRow(
+    val id: Long,
+    val uuid: UUID,
+    val name: String,
+    val task: String,
+    val verdict: String,
+    val confidence: String,
+    val tokens: Long,
+    val flags: Int,
+    val maxVl: Double,
+    val anomalyScore: Double,
+    val baselineReady: Boolean,
+    val samples: Int,
+    val reason: String?,
+    val summary: String?,
+    val evidencePath: String?,
+    val status: String,
+    val createdAt: Long,
+    val reviewedBy: String?,
+    val reviewedAt: Long?
+)
+
+/** 每日沙箱时长（`bounty_daily`），主键 = (玩家, 天)。 */
+class BountyDailyRow(
+    val uuid: UUID,
+    val dayMillis: Long,
+    val seconds: Long,
+    val sessions: Int
+)
+
+/**
+ * 商城兑换记录（`bounty_purchase`）。
+ *
+ * <p>`one_time` 的条目靠 `purchase_key` 的唯一约束保证"只能兑换一次"——
+ * 这也是"可空唯一键"这个惯用法的又一次应用（见 `Sql` 的类注释）。</p>
+ */
+class BountyPurchaseRow(
+    val id: Long,
+    val uuid: UUID,
+    val name: String,
+    val itemId: String,
+    val cost: Long,
+    val createdAt: Long
+)
+
+/** 人类基线的一行（`bounty_baseline`）。 */
+class BountyBaselineRow(
+    val metricKey: String,
+    val mean: Double,
+    val sd: Double,
+    val samples: Long,
+    val direction: String
+)
+
+/** 赏金排行榜一行。 */
+class BountyRankRow(
+    val uuid: UUID,
+    val name: String,
+    val tokens: Long,
+    val earned: Long
+)

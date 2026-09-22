@@ -58,13 +58,14 @@ class DatabaseLayerTest {
     @DisplayName("迁移：首次执行建全部结构，重复执行幂等（只跳过）")
     void migrationsAreIdempotent() {
         // 首次迁移已在 @BeforeEach 里做过（每个用例一个干净的库）
-        assertEquals(Arrays.asList(1, 2), initialMigration.getApplied(),
-                "首次应执行两个迁移: " + initialMigration.describe());
+        assertEquals(Arrays.asList(1, 2, 3), initialMigration.getApplied(),
+                "首次应执行三个迁移: " + initialMigration.describe());
         assertEquals(Migrations.latestVersion(), initialMigration.getLatestVersion());
+        assertEquals(3, Migrations.latestVersion(), "当前最新版本是 V003（赏金沙箱）");
 
         MigrationResult second = new Migrator(pool).migrate();
         assertTrue(second.getApplied().isEmpty(), "重复执行不应再跑任何迁移");
-        assertEquals(2, second.getSkipped());
+        assertEquals(3, second.getSkipped());
         assertTrue(second.getChecksumMismatches().isEmpty(), "校验和必须一致（没有人改过已执行的迁移）");
     }
 
@@ -470,6 +471,171 @@ class DatabaseLayerTest {
             }
         });
         assertEquals("ban", action, "punish_action 必须是**真实动作**（不是配置里的默认动作）");
+    }
+
+    // ------------------------------------------------------------------ 赏金沙箱
+
+    @Test
+    @DisplayName("赏金钱包：发放累计 earned，扣减用条件更新（余额不足扣不动）")
+    void bountyWalletAccounting() {
+        BountyRepository bounty = new BountyRepository(pool);
+        UUID uuid = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+
+        assertEquals(0L, bounty.addTokens(uuid, "Alice", 0, now), "发放 0 不该建出钱包");
+        assertNull(bounty.findWallet(uuid));
+
+        assertEquals(100L, bounty.addTokens(uuid, "Alice", 100, now));
+        assertEquals(160L, bounty.addTokens(uuid, "Alice", 60, now));
+        BountyWalletRow wallet = bounty.findWallet(uuid);
+        assertNotNull(wallet);
+        assertEquals(160L, wallet.getTokens());
+        assertEquals(160L, wallet.getEarned(), "earned 只累加发放额");
+        assertEquals(0L, wallet.getSpent());
+
+        assertTrue(bounty.spend(uuid, 60, now));
+        assertEquals(100L, bounty.findWallet(uuid).getTokens());
+        assertEquals(60L, bounty.findWallet(uuid).getSpent());
+
+        // 余额不足：条件更新一行都不改，钱不会被扣成负数
+        assertFalse(bounty.spend(uuid, 101, now), "余额不足必须失败");
+        assertEquals(100L, bounty.findWallet(uuid).getTokens(), "失败的扣减不能改余额");
+    }
+
+    @Test
+    @DisplayName("赏金排行：按累计获得排序（余额会被消费，看不出贡献）")
+    void bountyLeaderboardUsesEarned() {
+        BountyRepository bounty = new BountyRepository(pool);
+        long now = System.currentTimeMillis();
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        bounty.addTokens(a, "Alice", 500, now);
+        bounty.addTokens(b, "Bob", 300, now);
+        bounty.spend(b, 100, now);
+        bounty.addTokens(b, "Bob", 400, now);   // Bob: 累计 700，余额 300-100+400=600
+
+        List<BountyRankRow> top = bounty.topWallets(10);
+        assertEquals(2, top.size());
+        assertEquals("Bob", top.get(0).getName(), "Bob 累计 700 > Alice 500");
+        assertEquals(600L, top.get(0).getTokens(), "余额是净额（发 700 花 100）");
+        assertEquals(700L, top.get(0).getEarned(), "排行按累计获得排序，不是余额");
+        assertEquals("Alice", top.get(1).getName());
+    }
+
+    @Test
+    @DisplayName("沙箱每日时长：按 (玩家, 天) 隔离，跨天不累加")
+    void bountyDailySecondsArePerDay() {
+        BountyRepository bounty = new BountyRepository(pool);
+        UUID uuid = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+        long today = Sql.dayBucket(now);
+        long tomorrow = today + 86_400_000L;
+
+        assertEquals(0L, bounty.secondsUsed(uuid, today));
+        bounty.addSessionSeconds(uuid, today, 600, now);
+        bounty.addSessionSeconds(uuid, today, 300, now);
+        assertEquals(900L, bounty.secondsUsed(uuid, today), "同一天内的两次会话应累加");
+        assertEquals(0L, bounty.secondsUsed(uuid, tomorrow),
+                "跨天必须是新的额度——原实现用一个只增不减的累加器，于是变成'一辈子 30 分钟'");
+
+        // 清理：只保留最近一天
+        assertEquals(1, bounty.pruneDailyBefore(tomorrow));
+        assertEquals(0L, bounty.secondsUsed(uuid, today));
+    }
+
+    @Test
+    @DisplayName("赏金案例：写入后可查、审核幂等（第二次不改行）")
+    void bountyCaseLifecycleAndIdempotentReview() {
+        BountyRepository bounty = new BountyRepository(pool);
+        UUID uuid = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+
+        long id = bounty.insertCase(uuid, "Alice", "move-basic", "BYPASSED", "LOW",
+                50L, 0, 2.5, 61.3, true, 900, "完成目标且未被检测识别", "摘要", "bounty-evidence/x",
+                BountyRepository.STATUS_PENDING, now);
+        assertTrue(id > 0, "应返回自增主键");
+
+        BountyCaseRow row = bounty.findCase(id);
+        assertNotNull(row);
+        assertEquals("BYPASSED", row.getVerdict());
+        assertEquals(50L, row.getTokens());
+        assertEquals(61.3, row.getAnomalyScore(), 1e-6);
+        assertTrue(row.getBaselineReady());
+        assertEquals(BountyRepository.STATUS_PENDING, row.getStatus());
+        assertNull(row.getReviewedAt());
+
+        assertEquals(1, bounty.countCases(BountyRepository.STATUS_PENDING));
+        assertEquals(1, bounty.listCases(BountyRepository.STATUS_PENDING, 10).size());
+        assertEquals(1, bounty.listCasesOf(uuid, 10).size());
+
+        assertEquals(1, bounty.reviewCase(id, BountyRepository.STATUS_ACCEPTED, "admin", now));
+        assertEquals(BountyRepository.STATUS_ACCEPTED, bounty.findCase(id).getStatus());
+        assertNotNull(bounty.findCase(id).getReviewedBy());
+
+        assertEquals(0, bounty.reviewCase(id, BountyRepository.STATUS_REJECTED, "admin2", now),
+                "已审核过的案例不能再被改状态（避免同一特征被采纳两次 / 被翻案）");
+        assertEquals(BountyRepository.STATUS_ACCEPTED, bounty.findCase(id).getStatus());
+        assertEquals(0, bounty.countCases(BountyRepository.STATUS_PENDING));
+    }
+
+    @Test
+    @DisplayName("赏金商城：一次性条目只能兑换一次且不重复扣款；余额不足整体回滚")
+    void bountyPurchaseIsAtomicAndOneTimeAware() {
+        BountyRepository bounty = new BountyRepository(pool);
+        UUID uuid = UUID.randomUUID();
+        long now = System.currentTimeMillis();
+        bounty.addTokens(uuid, "Alice", 1000, now);
+
+        // 一次性：第一次成功
+        assertTrue(bounty.purchase(uuid, "Alice", "title-elite", 300, true, now));
+        assertEquals(700L, bounty.findWallet(uuid).getTokens());
+        assertTrue(bounty.hasPurchased(uuid, "title-elite"));
+
+        // 第二次：拒绝，且**不再扣款**
+        assertFalse(bounty.purchase(uuid, "Alice", "title-elite", 300, true, now));
+        assertEquals(700L, bounty.findWallet(uuid).getTokens(), "被拒的兑换不能扣钱");
+        assertEquals(1, bounty.listPurchases(uuid).size());
+
+        // 可重复购买：能买多次
+        assertTrue(bounty.purchase(uuid, "Alice", "particle-flame", 100, false, now));
+        assertTrue(bounty.purchase(uuid, "Alice", "particle-flame", 100, false, now));
+        assertEquals(500L, bounty.findWallet(uuid).getTokens());
+        assertEquals(3, bounty.listPurchases(uuid).size());
+
+        // 余额不足：必须失败，且不留下流水
+        assertEquals(500L, bounty.findWallet(uuid).getTokens());
+        assertFalse(bounty.purchase(uuid, "Alice", "title-master", 9999, true, now));
+        assertEquals(500L, bounty.findWallet(uuid).getTokens(), "失败的兑换不能扣钱");
+        assertFalse(bounty.hasPurchased(uuid, "title-master"), "失败的兑换不能留下已购记录");
+    }
+
+    @Test
+    @DisplayName("人类基线：覆盖式写入与读回（样本数决定是否可用于判定）")
+    void bountyBaselineRoundTrip() {
+        BountyRepository bounty = new BountyRepository(pool);
+        long now = System.currentTimeMillis();
+
+        assertTrue(bounty.loadBaselines().isEmpty());
+
+        bounty.saveBaselines(Arrays.asList(
+                new BountyBaselineRow("move-jitter", 0.0512, 0.0098, 480L, "LOWER_SUSPICIOUS"),
+                new BountyBaselineRow("turn-entropy", 0.8031, 0.0420, 480L, "LOWER_SUSPICIOUS")), now);
+
+        List<BountyBaselineRow> loaded = bounty.loadBaselines();
+        assertEquals(2, loaded.size());
+        Map<String, BountyBaselineRow> byKey = new HashMap<>();
+        for (BountyBaselineRow row : loaded) byKey.put(row.getMetricKey(), row);
+        assertEquals(0.0512, byKey.get("move-jitter").getMean(), 1e-9);
+        assertEquals(480L, byKey.get("turn-entropy").getSamples());
+
+        // 再次写入同一个指标 → 覆盖而不是新增
+        bounty.saveBaselines(Collections.singletonList(
+                new BountyBaselineRow("move-jitter", 0.0600, 0.0110, 900L, "LOWER_SUSPICIOUS")), now);
+        assertEquals(2, bounty.loadBaselines().size(), "同一指标应被覆盖，不该出现第二行");
+        Map<String, BountyBaselineRow> again = new HashMap<>();
+        for (BountyBaselineRow row : bounty.loadBaselines()) again.put(row.getMetricKey(), row);
+        assertEquals(900L, again.get("move-jitter").getSamples());
+        assertEquals(0.0600, again.get("move-jitter").getMean(), 1e-9);
     }
 
     // ------------------------------------------------------------------ 辅助
