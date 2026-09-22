@@ -219,12 +219,98 @@ class RuleRepository(private val pool: JdbcPool) {
     fun isWhitelisted(uuid: UUID, name: String?, nowMillis: Long): Boolean = pool.withConnection { connection ->
         connection.prepareStatement(
             "SELECT 1 FROM whitelist_entry WHERE (expires_at IS NULL OR expires_at > ?) " +
-                "AND (uuid = ? OR name = ?) LIMIT 1"
+                "AND (uuid = ? OR lower(name) = lower(?)) LIMIT 1"
         ).use { statement ->
             statement.setLong(1, nowMillis)
             statement.setObject(2, uuid)
             statement.setString(3, name ?: "")
             statement.executeQuery().use { rows -> rows.next() }
+        }
+    }
+
+    /**
+     * 补齐一条白名单（仅当目标下没有**仍生效**的条目时才插入）。
+     *
+     * <p>为什么不直接调 [addWhitelist]：那会在同一线程里**嵌套借连接**。
+     * 池子是有上限的，配置成小池时嵌套借连接会在等待里死锁（等的就是自己持有的那个）。
+     * 因此插入写在同一个连接上完成。</p>
+     *
+     * <p>已存在时不更新 reason、不延长 expires_at：声明式配置的语义是“补齐缺失项”，
+     * 不是“以 config 覆盖库里的人工修改”。</p>
+     *
+     * @return true = 本次真的插入了
+     */
+    fun ensureWhitelist(
+        uuid: UUID?,
+        name: String?,
+        reason: String?,
+        addedBy: String,
+        nowMillis: Long,
+        expiresAt: Long?
+    ): Boolean = pool.withConnection { connection ->
+        var exists = false
+        connection.prepareStatement(
+            "SELECT id FROM whitelist_entry WHERE (expires_at IS NULL OR expires_at > ?) " +
+                "AND ((uuid IS NOT NULL AND uuid = ?) OR (name IS NOT NULL AND lower(name) = lower(?))) LIMIT 1"
+        ).use { statement ->
+            statement.setLong(1, nowMillis)
+            if (uuid == null) statement.setNull(2, java.sql.Types.OTHER) else statement.setObject(2, uuid)
+            statement.setString(3, name ?: "")
+            statement.executeQuery().use { rows -> exists = rows.next() }
+        }
+        if (exists) {
+            false
+        } else {
+            Sql.insertReturningId(
+                connection,
+                "INSERT INTO whitelist_entry (uuid, name, reason, added_by, added_at, expires_at, active_key) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)"
+            ) { statement ->
+                if (uuid == null) statement.setNull(1, java.sql.Types.OTHER) else statement.setObject(1, uuid)
+                Sql.setString(statement, 2, name)
+                Sql.setString(statement, 3, reason)
+                statement.setString(4, addedBy)
+                statement.setLong(5, nowMillis)
+                Sql.setLong(statement, 6, expiresAt)
+                statement.setString(
+                    7,
+                    if (uuid != null) "uuid:" + uuid else "name:" + (name ?: "").lowercase()
+                )
+            }
+            true
+        }
+    }
+
+    /**
+     * 释放**已过期**条目占的唯一键占位（`active_key = NULL`）。
+     *
+     * <h3>为什么退役不能只靠判定时过滤</h3>
+     * `whitelist_entry` 用**可空唯一键** `active_key` 表达“同一目标只能有一条生效”。
+     * 但过期只是“判定时不生效”：行还在、键还占着，于是同一目标**再也加不回来**
+     * （插入直接违反唯一约束）——这是本轮被测试真的撞出来的。
+     *
+     * <p>释放成 NULL 后，多条历史行可以共存（两个引擎的唯一索引都允许多个 NULL），
+     * 而“最多一条生效”仍然由唯一键保证。</p>
+     *
+     * @return 本次释放的条数（写进维护日志）
+     */
+    fun expireWhitelist(nowMillis: Long): Int = pool.withConnection { connection ->
+        connection.prepareStatement(
+            "UPDATE whitelist_entry SET active_key = NULL " +
+                "WHERE active_key IS NOT NULL AND expires_at IS NOT NULL AND expires_at <= ?"
+        ).use { statement ->
+            statement.setLong(1, nowMillis)
+            statement.executeUpdate()
+        }
+    }
+
+    /** 当前**仍生效**的白名单条数（写进日志，让“库里到底有没有数据”可见）。 */
+    fun countWhitelist(nowMillis: Long): Int = pool.withConnection { connection ->
+        connection.prepareStatement(
+            "SELECT count(*) FROM whitelist_entry WHERE (expires_at IS NULL OR expires_at > ?)"
+        ).use { statement ->
+            statement.setLong(1, nowMillis)
+            statement.executeQuery().use { rows -> if (rows.next()) rows.getInt(1) else 0 }
         }
     }
 

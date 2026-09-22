@@ -520,6 +520,39 @@ core:
     action: "kick"                   # 处罚动作：kick / ban / command（command 需在命令模板里用 %player%）
     cooldown-ms: 30000               # 同一玩家两次处罚的最小间隔（毫秒）
     kick-message: "§c反作弊检测到异常行为（%check% VL=%vl%）"   # 支持 %check% / %vl% / %player% 占位符
+    # action=command 时执行的命令（不带斜杠）。支持 %player% / %check% / %vl% / %duration%
+    command-template: "ban %player% 反作弊检测：%check% VL=%vl%"
+
+    # 惩罚阶梯：按“单人单检测”的 VL 分档，命中满足 min-vl <= VL 的最高一档。
+    #   动作：alert（只告警）/ kick / ban（写库封禁 + 踢出）/ command（执行上面的命令模板）
+    #   duration 只在 ban 时用：30s / 10m / 2h / 7d / 1w，或 perm（省略 = 永久）；写错会在日志里报“配置写错”并按永久处理
+    #   空列表 = 不分档：超 threshold 就按上面的 action 处理
+    #   ⚠ 启动时若数据库里的阶梯为空，会用这份播种；之后以数据库为准。
+    #     想让 config 重新覆盖：清空 punishment_ladder 表后执行 /ac reload。
+    ladder:
+      - min-vl: 20.0
+        action: "kick"
+      - min-vl: 50.0
+        action: "ban"
+        duration: "7d"
+        reason: "反作弊检测到异常行为（%check% VL=%vl%），封禁 7 天"
+      - min-vl: 100.0
+        action: "ban"
+        reason: "反作弊检测到异常行为（%check% VL=%vl%），永久封禁"
+
+  # ---------------- 白名单 ----------------
+  # 命中白名单的玩家豁免全部检测（不记违规、不处罚）；登录时查数据库。
+  # 这里是声明式白名单：启动 / /ac reload 时把库里缺失的条目补进去，
+  # 已存在的不重复、不修改、不删除（要撤销请在库里删行，或用 expires-in 让它自然过期）。
+  # 两种写法可混用：
+  whitelist: []
+  # 例：
+  # whitelist:
+  #   - "Notch"                                        # 名字
+  #   - "069a79f4-44e9-4726-a5be-fca90e38aaf5"         # UUID
+  #   - name: "Builder"
+  #     reason: "建筑组"
+  #     expires-in: "30d"                              # 省略 = 永久
 
   # ---------------- 逐检测覆盖 ----------------
   # 键名 = @CheckData 的 name。enabled=false 可单独关掉某项；

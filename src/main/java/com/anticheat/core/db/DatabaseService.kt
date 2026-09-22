@@ -420,6 +420,32 @@ class DatabaseService(
             .getOrNull()
     }
 
+    /**
+     * 补齐一条白名单（已存在且仍生效则不动）。
+     *
+     * @return true = 本次真的新增了一条
+     */
+    fun ensureWhitelist(uuid: UUID?, name: String?, reason: String?, by: String, expiresAt: Long?): Boolean {
+        if (!isReady) return false
+        return runCatching { rules!!.ensureWhitelist(uuid, name, reason, by, System.currentTimeMillis(), expiresAt) }
+            .onFailure { warnOnce("补白名单失败", it) }
+            .getOrDefault(false)
+    }
+
+    /** 释放已过期白名单条目的唯一键占位（不释放就无法重新加白）。 */
+    fun expireWhitelist(nowMillis: Long): Int {
+        if (!isReady) return 0
+        return runCatching { rules!!.expireWhitelist(nowMillis) }
+            .onFailure { warnOnce("释放过期白名单占位失败", it) }
+            .getOrDefault(0)
+    }
+
+    /** 当前仍生效的白名单条数。 */
+    fun countWhitelist(): Int {
+        if (!isReady) return 0
+        return runCatching { rules!!.countWhitelist(System.currentTimeMillis()) }.getOrDefault(0)
+    }
+
     fun removeWhitelist(target: String): Int {
         if (!isReady) return 0
         return runCatching { rules!!.removeWhitelist(target) }.getOrDefault(0)

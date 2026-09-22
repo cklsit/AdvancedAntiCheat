@@ -22,6 +22,15 @@ interface PlatformServer {
     fun sendConsoleMessage(message: String)
 
     /**
+     * 以控制台身份执行一条命令（不带斜杠）。
+     *
+     * <p>**调用方负责在主线程调用**（命令分发会读世界与玩家状态）。
+     * 实现必须只降级不抛异常：这是惩罚阶梯 `command` 动作的出口，
+     * 它坏掉不该影响踢人/封禁这些真正拦人的动作。</p>
+     */
+    fun dispatchConsoleCommand(command: String)
+
+    /**
      * 让平台层开始维护「实体位置」的索引。
      *
      * <p>为什么由核心层显式驱动而不是平台自己"第一次用时顺手开始"：

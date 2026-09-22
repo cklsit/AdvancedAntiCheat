@@ -3,7 +3,11 @@ package com.anticheat.core.manager.config
 import com.anticheat.core.AntiCheatCore
 import com.anticheat.core.check.Check
 import com.anticheat.core.db.CheckRuleRow
+import com.anticheat.core.db.LadderStep
 import com.anticheat.core.util.CoreLog
+import com.anticheat.core.util.LadderPolicy
+import com.anticheat.core.util.WhitelistPolicy
+import com.anticheat.core.util.WhitelistSeed
 import org.bukkit.configuration.ConfigurationSection
 import java.util.concurrent.ConcurrentHashMap
 
@@ -70,6 +74,27 @@ class CoreConfigManager {
 
     @Volatile
     var punishmentKickMessage: String = "\u00a7c反作弊检测到异常行为（%check% VL=%vl%）"
+        private set
+
+    /**
+     * 惩罚阶梯（`core.punishment.ladder`）。空列表 = 不分档：
+     * 超 [punishmentThreshold] 就按 [punishmentAction] 处理。
+     *
+     * <p>这里只是“播种源”：启动时若库里的阶梯为空会用它写入数据库，
+     * 之后判定读的是库（改库即生效）。</p>
+     */
+    @Volatile
+    var punishmentLadder: List<LadderStep> = emptyList()
+        private set
+
+    /** `action=command` 时执行的命令模板（`core.punishment.command-template`）。 */
+    @Volatile
+    var punishmentCommandTemplate: String = DEFAULT_COMMAND_TEMPLATE
+        private set
+
+    /** 声明式白名单（`core.whitelist`）：启动/重载时把缺失的条目补进数据库。 */
+    @Volatile
+    var whitelistSeeds: List<WhitelistSeed> = emptyList()
         private set
 
     /** 每检测的覆盖项，键为 checkName。 */
@@ -168,6 +193,12 @@ class CoreConfigManager {
         punishmentCooldownMs = config.getLong("core.punishment.cooldown-ms", 30000L)
         punishmentKickMessage =
             config.getString("core.punishment.kick-message", DEFAULT_KICK_MESSAGE) ?: DEFAULT_KICK_MESSAGE
+        punishmentLadder = LadderPolicy.parseSteps(config.getMapList("core.punishment.ladder"))
+        punishmentCommandTemplate =
+            config.getString("core.punishment.command-template", DEFAULT_COMMAND_TEMPLATE) ?: DEFAULT_COMMAND_TEMPLATE
+        // expires-in 相对于“本次读取时间”计算，所以 /ac reload 会把未过期的条目续期。
+        // 这是刻意的：配置里写 30d 表示“从现在起 30 天”，而不是“自安装那天起 30 天”。
+        whitelistSeeds = WhitelistPolicy.parse(config.getList("core.whitelist"), System.currentTimeMillis())
 
         checkEnabledOverride.clear()
         checkDecayOverride.clear()
@@ -211,6 +242,7 @@ class CoreConfigManager {
         const val DEFAULT_ALERT_PERMISSION = "anticheat.notify"
         const val DEFAULT_ALERT_PREFIX = "\u00a78[\u00a7cAAC\u00a78] \u00a77"
         const val DEFAULT_KICK_MESSAGE = "\u00a7c反作弊检测到异常行为（%check% VL=%vl%）"
+        const val DEFAULT_COMMAND_TEMPLATE = "ban %player% 反作弊检测：%check% VL=%vl%"
         const val EXEMPT_PERMISSION_PREFIX = "anticheat.exempt."
     }
 }

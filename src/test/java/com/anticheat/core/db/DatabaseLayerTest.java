@@ -384,6 +384,66 @@ class DatabaseLayerTest {
         assertTrue(recorder.describe().contains("丢弃="), "必须能报出丢弃数：" + recorder.describe());
     }
 
+    @Test
+    @DisplayName("惩罚阶梯：整体替换后按 step 读回；再次替换是清空重写（旧档不会残留）")
+    void punishmentLadderRoundTrip() {
+        RuleRepository rules = new RuleRepository(pool);
+        long now = System.currentTimeMillis();
+
+        rules.replaceLadder(Arrays.asList(
+                new LadderStep(1, 20.0, "kick", null, null),
+                new LadderStep(2, 50.0, "ban", "7d", "封禁 7 天"),
+                new LadderStep(3, 100.0, "ban", "perm", "永久封禁")), now);
+
+        List<LadderStep> first = rules.loadLadder();
+        assertEquals(3, first.size());
+        assertEquals(1, first.get(0).getStep());
+        assertEquals(20.0, first.get(0).getMinVl(), 1e-9);
+        assertEquals("kick", first.get(0).getAction());
+        assertNull(first.get(0).getDuration(), "没写时长要读回 null（不是空串，也不是 0）");
+        assertEquals("7d", first.get(1).getDuration());
+        assertEquals("永久封禁", first.get(2).getReason());
+
+        // 换成只剩一档：旧两档必须消失。否则"改小阶梯"会变成"阶梯越改越多"，
+        // 而多出来的档位照样会被 selectStep 选中 —— 静默改变处罚力度。
+        rules.replaceLadder(Collections.singletonList(new LadderStep(1, 30.0, "alert", null, null)), now);
+        List<LadderStep> second = rules.loadLadder();
+        assertEquals(1, second.size());
+        assertEquals(30.0, second.get(0).getMinVl(), 1e-9);
+        assertEquals("alert", second.get(0).getAction());
+    }
+
+    @Test
+    @DisplayName("白名单补齐：生效的不重复加、名字大小写算同一条、过期占位必须释放后才能重加")
+    void whitelistEnsureIsIdempotent() {
+        RuleRepository rules = new RuleRepository(pool);
+        long now = System.currentTimeMillis();
+        UUID uuid = UUID.randomUUID();
+
+        assertTrue(rules.ensureWhitelist(uuid, "Cklsit", "config.yml", "config.yml", now, null),
+                "首次补齐应当真的插入");
+        assertFalse(rules.ensureWhitelist(uuid, "Cklsit", "config.yml", "config.yml", now, null),
+                "同目标再补一次不能多出一条：声明式配置每次启动/重载都会跑一遍");
+        assertFalse(rules.ensureWhitelist(uuid, "cklsit", "另一份理由", "config.yml", now, null),
+                "大小写不同仍算同一条：否则 config 里换个大小写就多出一条白名单");
+        assertEquals(1, rules.countWhitelist(now));
+
+        // 只有名字没有 uuid 的情形（还没进服的玩家）也必须能加白并被命中
+        UUID other = UUID.randomUUID();
+        assertTrue(rules.ensureWhitelist(null, "Builder", "建筑组", "config.yml", now, null));
+        assertTrue(rules.isWhitelisted(other, "builder", now), "按名字匹配同样要大小写不敏感");
+        assertEquals(2, rules.countWhitelist(now));
+
+        // 过期条目：不参与计数；且**必须先释放它的唯一键占位**，否则同一目标永远加不回来
+        UUID temp = UUID.randomUUID();
+        assertTrue(rules.ensureWhitelist(temp, "TempGuy", null, "config.yml", now, now - 1_000L));
+        assertEquals(2, rules.countWhitelist(now), "已过期的条目不参与计数");
+        assertEquals(1, rules.expireWhitelist(now), "应当释放 1 个过期占位");
+        assertTrue(rules.ensureWhitelist(temp, "TempGuy", null, "config.yml", now, null),
+                "释放占位后要能重新加白（否则 config 里的永久条目会被一条过期记录永久挡住）");
+        assertEquals(3, rules.countWhitelist(now));
+    }
+
     // ------------------------------------------------------------------ 辅助
 
     private static ViolationInput violation(UUID uuid, String name, String check, double vl, double delta,

@@ -364,7 +364,9 @@ database:
 | `player_ip` | 玩家用过的每个地址：地址族、归并网段（IPv4 /24、IPv6 /64）、ASN、国家、首末时间、登录次数 |
 | `ban` | UUID / IP / CIDR 封禁 × 临时 / 永久 × `active` / `expired` / `revoked`，含原因、执行者、时间、过期、撤销信息 |
 | `violation` | 检测名、VL、增量、严重度、时间、子服、世界、坐标、ping、TPS、客户端版本、包类型、verbose |
-| `check_rule` / `punishment_ladder` / `whitelist_entry` | 各检测阈值、惩罚阶梯、白名单（带到期时间） |
+| `check_rule` | 各检测的开关 / 衰减 / setback / 专属阈值（**库为权威**） |
+| `punishment_ladder` | 惩罚阶梯：按 VL 分档的动作（`alert` / `kick` / `ban` / `command`）与时长 |
+| `whitelist_entry` | 白名单（命中即豁免检测），支持按 UUID 或名字匹配（**大小写不敏感**），可带到期时间 |
 | `check_stat` / `risk_snapshot` | 检查命中率（真实的 flags/evaluations 桶）、风险分历史 |
 | `audit_log` | 审计日志（查询口径与旧实现保持一致） |
 
@@ -378,6 +380,32 @@ database:
 之后 `enabled` / `decay` / `setback` / `thresholds` **由数据库说了算**——直接改库即可生效，
 `/ac reload` 会重新回灌，不会被 `config.yml` 顶回去（否则管理员调好的阈值会在重启后
 被悄悄改掉，且不报错）。
+
+### 惩罚阶梯与白名单
+
+这两张表的口径与 `check_rule` **刻意不同** —— 它们的"权威来源"不一样，混成一个套路会出事：
+
+| 表 | 来源 | 语义 |
+|----|------|------|
+| `check_rule` | 代码是事实、**库是权威** | 只补缺失项；`enabled`/`decay`/`setback`/`thresholds` 永不回写 |
+| `punishment_ladder` | **config.yml 是播种源**；库里非空则以库为准 | 空表时用 `core.punishment.ladder` 播种。想让 config 重新覆盖：清空该表后 `/ac reload` |
+| `whitelist_entry` | config 是**补充声明**、库是存储 | 启动/重载把 config 里缺失的条目补进去；已存在的**不动、不删**。撤销要在库里删行，或用 `expires-in` 让它自然过期 |
+
+惩罚阶梯按"单人单检测"的 VL 取**满足 `min-vl <= VL` 的最高一档**，动作四选一：
+
+- `alert` —— 只告警。**不占处罚冷却**，否则 VL 后来涨到更高档时会被上一次"什么都没做"挡住；
+- `kick` —— 踢出；
+- `ban` —— 写库封禁 + 踢出，`duration` 支持 `30s` / `10m` / `2h` / `7d` / `1w` / `perm`（省略 = 永久）。写错会在日志里报"配置写错"并按永久处理；
+- `command` —— 执行 `core.punishment.command-template`（支持 `%player%` / `%check%` / `%vl%` / `%duration%`）。
+
+没有阶梯、或 VL 未达最低档时回落到 `core.punishment.threshold` + `core.punishment.action`。
+
+> ⚠️ **`ban` 必须"写库 + 踢人"两件事都做**：只写库不踢人，玩家会一直玩到下次重连；
+> 只踢人不写库，重连就回来了。"重连也进不来"由**登录路径**保证——查到生效封禁直接踢。
+>
+> ⚠️ 白名单条目**过期后**的唯一键占位会被维护任务释放（`active_key` 置 `NULL`）。
+> 不释放的话同一目标**永远**加不回来：唯一约束被那条过期记录永久占着，`INSERT` 直接失败。
+> 这一条是本轮被测试真的撞出来的。
 
 ### 建表与升级
 

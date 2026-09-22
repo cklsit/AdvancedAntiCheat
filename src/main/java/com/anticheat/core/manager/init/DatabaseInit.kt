@@ -152,10 +152,15 @@ class DatabaseInit : StartableInitable, StoppableInitable {
             registered = runCatching { DatabaseGlue.syncCheckRules("periodic") }.getOrDefault(-1)
         }
 
+        // 策略数据（惩罚阶梯 / 白名单）也在这里同步：它们同样是“静默生效”的，
+        // 放在这一行里才能在一条日志里看到“三张表到底有没有数据”。
+        val policy = runCatching { DatabaseGlue.syncPolicy() }.getOrDefault("同步失败")
+
         CoreLog.info(
             "数据库维护完成：过期封禁 " + expired + " 条 / 风险重算 " + rescored + " 人 / " +
                 "检测规则 " + (if (known < 0) "读取失败" else known.toString() + " 项") +
-                (if (registered > 0) "（本次登记 " + registered + " 项）" else "")
+                (if (registered > 0) "（本次登记 " + registered + " 项）" else "") +
+                " / " + policy
         )
     }
 

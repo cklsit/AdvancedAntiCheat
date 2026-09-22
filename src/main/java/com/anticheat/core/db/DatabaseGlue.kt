@@ -82,6 +82,15 @@ object DatabaseGlue {
                     AntiCheatCore.configManager.alertPrefix + "数据库记录显示 " + player.name +
                         " 处于生效封禁中: " + BanRepository.describe(ban)
                 )
+                // **必须真的挡住人**：只发一句控制台提示等于“封禁只是一条记录”——
+                // 惩罚阶梯的 ban 动作写完库就踢人，但如果登录不拦，玩家重连就回来了。
+                // 踢人回主线程（本方法已在异步线程上跑）。
+                AntiCheatCore.scheduler.runOnMainThread {
+                    val online = AntiCheatCore.platformServer.getPlayer(player.uuid)
+                    if (online != null && online.isOnline()) {
+                        online.kick(BanRepository.describe(ban))
+                    }
+                }
             }
         }
     }
@@ -158,6 +167,51 @@ object DatabaseGlue {
         if (rules.isEmpty()) return 0
         AntiCheatCore.configManager.applyDatabaseRules(rules)
         return rules.size
+    }
+
+    /**
+     * 把 config.yml 里的**策略数据**（惩罚阶梯 / 白名单）同步进数据库，
+     * 并刷新运行时的阶梯缓存。
+     *
+     * <p>两边的语义**刻意不同**，不要按一个套路理解（两条都写进启动/维护日志，免得变成“静默生效”）：</p>
+     * - **阶梯**：只在库里为空时播种，之后库是权威（改库即生效）。
+     *   想让 config 重新覆盖：清空 `punishment_ladder` 后 `/ac reload`。
+     * - **白名单**：把 config 里缺失的条目补进去（已存在的不动、不删）。
+     *   撤销要在库里删行，或用 `expires-in` 让它自然过期。
+     *
+     * @return 一句话摘要（写进日志）
+     */
+    fun syncPolicy(): String {
+        val database = AntiCheatCore.database ?: return "数据库未就绪"
+        if (!database.isReady) return "数据库未就绪"
+        val config = AntiCheatCore.configManager
+
+        val seeded = if (database.loadLadder().isEmpty() && config.punishmentLadder.isNotEmpty()) {
+            database.saveLadder(config.punishmentLadder)
+            config.punishmentLadder.size
+        } else {
+            0
+        }
+        val ladder = database.loadLadder()
+        // 违规路径（可能在 Netty 线程）只读内存里的阶梯，不查库
+        AntiCheatCore.punishmentManager.updateLadder(ladder)
+
+        // 先释放过期条目占的唯一键，否则 config 里的同名条目在上一条过期后
+        // 永远补不回来（插入会违反唯一约束）。
+        val released = runCatching { database.expireWhitelist(System.currentTimeMillis()) }.getOrDefault(0)
+
+        var added = 0
+        for (seed in config.whitelistSeeds) {
+            if (database.ensureWhitelist(seed.uuid, seed.name, seed.reason, "config.yml", seed.expiresAt)) {
+                added++
+            }
+        }
+        val total = database.countWhitelist()
+        return "惩罚阶梯 " + ladder.size + " 档" +
+            (if (seeded > 0) "（本次播种 " + seeded + " 档）" else "") +
+            " / 白名单 " + total + " 条" +
+            (if (added > 0) "（本次新增 " + added + " 条）" else "") +
+            (if (released > 0) "（释放过期占位 " + released + " 条）" else "")
     }
 
     /** 检测名 → 分组（落库的 `check_group`，看板按它聚合）。 */

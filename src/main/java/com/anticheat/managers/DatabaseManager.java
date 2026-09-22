@@ -59,7 +59,10 @@ public class DatabaseManager {
     public String getDatabaseType() {
         DatabaseService service = service();
         if (service == null) {
-            return "disabled";
+            // 核心层还没起来（BanManager 的初始化早于 initializeCore）：
+            // 这时要报**配置里选的后端**，而不是 "disabled"——
+            // 否则启动日志会出现"使用类型: disabled"，让人以为持久化被关了。
+            return plugin.getConfig().getString("database.type", "h2").toLowerCase();
         }
         if (!service.isReady()) {
             return service.isEnabled() ? "unavailable" : "disabled";

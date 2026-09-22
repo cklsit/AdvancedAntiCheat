@@ -37,6 +37,14 @@ class BukkitPlatformServer(private val plugin: Plugin) : PlatformServer {
         runCatching { Bukkit.getConsoleSender().sendMessage(message) }
     }
 
+    /**
+     * 控制台执行命令。调用方保证主线程；失败只降级（返回值
+     * 表示命令是否被认识，在这里不关心：我们无法代替服主判断“未知命令”是否应该告警）。
+     */
+    override fun dispatchConsoleCommand(command: String) {
+        runCatching { Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command) }
+    }
+
     override fun beginEntityTracking() {
         runCatching { entityIndex.start() }
     }

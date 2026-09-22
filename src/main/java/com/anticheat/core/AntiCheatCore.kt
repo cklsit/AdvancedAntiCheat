@@ -156,6 +156,9 @@ object AntiCheatCore {
         // `load()` 会清空覆盖表，因此必须**重新**把库里的规则灌回去，
         // 否则热重载会把管理员在数据库里调好的阈值顶回配置文件的默认值
         runCatching { DatabaseGlue.applyRulesFromDatabase() }
+        // 阶梯与白名单也要重新同步：否则清空了 punishment_ladder 也没办法用
+        // config 重新覆盖（阶梯的库优先是“非空才优先”，空表就回到 config）。
+        runCatching { DatabaseGlue.syncPolicy() }
         for (data in playerDataManager.all()) {
             data.checkManager.reload()
         }
