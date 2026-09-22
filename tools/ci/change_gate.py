@@ -103,11 +103,20 @@ def parse_diff(diff: str) -> dict[str, list[str]]:
 
 
 def surefire_results(dirpath: Path) -> dict[str, dict]:
-    """返回 {测试类全名: {tests, failures, errors, skipped}}。"""
+    """返回 {测试类全名: {tests, failures, errors, skipped}}。
+
+    <p>两个刻意的选择：</p>
+    1. **递归扫描**（`rglob`）：报告可能被放在
+       `target/surefire-reports/<artifact>/TEST-*.xml` 这种多一级的目录里
+       （按 profile 分目录下载产物时的自然结果），非递归 glob 会一个都读不到 ——
+       而"一个都读不到"与"这个测试没跑"在下游是同一条报错，很难排查。
+    2. **XML 与 .txt 取并集**（`.txt` 只补 XML 里没有的那个类）：原来写成
+       "XML 有内容就完全不用 txt"，于是只要**某一个** XML 没读到，它就永远没有兜底。
+    """
     out: dict[str, dict] = {}
     if not dirpath.exists():
         return out
-    for xml in dirpath.glob("TEST-*.xml"):
+    for xml in dirpath.rglob("TEST-*.xml"):
         try:
             root = ET.parse(xml).getroot()
         except ET.ParseError:
@@ -119,10 +128,9 @@ def surefire_results(dirpath: Path) -> dict[str, dict]:
             "errors": int(root.get("errors") or 0),
             "skipped": int(root.get("skipped") or 0),
         }
-    if out:
-        return out
-    # 退化到 .txt 汇总
-    for txt in dirpath.glob("*.txt"):
+    for txt in dirpath.rglob("*.txt"):
+        if txt.stem in out:
+            continue
         text = txt.read_text(encoding="utf-8", errors="replace")
         m = re.search(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)", text)
         if m:
@@ -230,7 +238,9 @@ def main(argv=None) -> int:
                 continue
             res = results.get(fqn) or results.get(fqn.split(".")[-1])
             if res is None:
-                msg = "[%s] 测试 %s 本次未运行（surefire 无结果）；测试步骤需在门禁之前完成" % (fid, fqn)
+                msg = ("[%s] 测试 %s 本次未运行（surefire 只读到 %d 个报告）；"
+                       "报告数明显少于测试类数时先查报告的收集/合并环节（丢文件），"
+                       "否则才是测试步骤没跑到" % (fid, fqn, len(results)))
                 violations.append(msg) if gate == "block" else warnings.append(msg)
                 log("    ✗ 未运行: %s" % fqn)
             elif res["failures"] or res["errors"]:

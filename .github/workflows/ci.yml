@@ -344,9 +344,42 @@ jobs:
         uses: actions/download-artifact@v5
         continue-on-error: true
         with:
+          # 每个 profile 的产物各自落到 _surefire/<artifact 名>/ 下。
+          # **不要用 merge-multiple 直接合到同一个目录**：两个 profile 的
+          # `TEST-*.xml` 是同名文件，实测该下载器在这种情况下会**随机丢文件**
+          # （两次 CI 分别丢了 UpdateSnapshotTest 与 ReachCalibrationTest），
+          # 而门禁把"某测试没有报告"当成硬阻断 —— 于是表现为随机红、无法复现。
           pattern: surefire-*
-          path: target/surefire-reports
-          merge-multiple: true
+          path: _surefire
+
+      - name: Merge surefire reports (with completeness check)
+        run: |
+          set -e
+          mkdir -p target/surefire-reports
+          for dir in _surefire/*/; do
+            echo "=== 合并 $dir ==="
+            cp -f "$dir"* target/surefire-reports/ 2>/dev/null || true
+          done
+          PAPER=$(ls -1 _surefire/surefire-paper/TEST-*.xml 2>/dev/null | wc -l)
+          SPIGOT=$(ls -1 _surefire/surefire-spigot/TEST-*.xml 2>/dev/null | wc -l)
+          MERGED=$(ls -1 target/surefire-reports/TEST-*.xml 2>/dev/null | wc -l)
+          echo "paper=$PAPER spigot=$SPIGOT merged=$MERGED"
+          if [ "$PAPER" -eq 0 ] || [ "$SPIGOT" -eq 0 ]; then
+            echo "::error::缺少某一侧的 surefire 报告（paper=$PAPER spigot=$SPIGOT）——测试作业可能失败或产物未上传"
+            exit 1
+          fi
+          if [ "$MERGED" -lt "$PAPER" ] || [ "$MERGED" -lt "$SPIGOT" ]; then
+            echo "::error::合并后报告数少于单侧（merged=$MERGED paper=$PAPER spigot=$SPIGOT）——合并过程丢文件"
+            exit 1
+          fi
+          # 两侧的测试类集合应当一致（同一份代码在两种 API 下跑同一批测试）
+          ls -1 _surefire/surefire-paper/TEST-*.xml | xargs -n1 basename | sort > /tmp/paper.txt
+          ls -1 _surefire/surefire-spigot/TEST-*.xml | xargs -n1 basename | sort > /tmp/spigot.txt
+          if ! diff -q /tmp/paper.txt /tmp/spigot.txt >/dev/null; then
+            echo "::error::两个 profile 的测试类集合不一致："
+            diff /tmp/paper.txt /tmp/spigot.txt || true
+            exit 1
+          fi
 
       - name: Download E2E reports
         uses: actions/download-artifact@v5
