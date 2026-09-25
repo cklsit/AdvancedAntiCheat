@@ -221,6 +221,14 @@ class SpeedB(player: PlayerData) : Check(player), PositionListener {
 
         const val VIOLATION_WEIGHT = 1.0
 
+        /**
+         * 自动调参的硬下限（格/tick）。
+         *
+         * <p>与 `MovementCheckThresholdsTest` 的断言同源：阈值不得低于 1.2，
+         * 否则会压到冰道交通与攒包噪声所在的合法区间。</p>
+         */
+        const val AUTO_TUNE_FLOOR = 1.2
+
         /** 标定汇总的默认间隔（秒）。与 SpeedA / ReachA 一致。 */
         const val DEFAULT_CALIBRATE_INTERVAL_SECONDS = 300
 

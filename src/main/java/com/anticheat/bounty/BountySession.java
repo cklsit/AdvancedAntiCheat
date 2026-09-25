@@ -492,7 +492,8 @@ public class BountySession implements BountyHooks.SandboxDetectionListener {
         evidence = new BountyEvidence();
         manager.persistTaskResult(new BountyManager.TaskOutcome(
                 uuid, player.getName(), task, result, anomaly, metrics,
-                baselineText(model, metrics), detectionFlags, maxVl, samples.size(), finished));
+                baselineText(model, metrics), detectionFlags, maxVl, samples.size(),
+                taskSamples(taskStartTick), finished));
 
         announce(task, result);
         // 清理现场
@@ -513,6 +514,21 @@ public class BountySession implements BountyHooks.SandboxDetectionListener {
         detectionFlags = 0;
         maxVl = 0.0;
         detectedChecks.clear();
+    }
+
+    /**
+     * 裁出**任务期间**的采样，供自动调参的归因使用。
+     *
+     * <p>会话里的采样覆盖整个沙箱停留时间（含开始任务前闲逛的部分），
+     * 而归因只该看任务期间的行为——把闲逛的位移与转向算进去，
+     * 各判据的得分会凭空变化，归因就会指着错误的检测。</p>
+     */
+    private java.util.List<com.anticheat.core.bounty.BountySample> taskSamples(long startSeq) {
+        java.util.List<com.anticheat.core.bounty.BountySample> out = new java.util.ArrayList<>();
+        for (com.anticheat.core.bounty.BountySample sample : samples) {
+            if (sample.getSeq() >= startSeq) out.add(sample);
+        }
+        return out;
     }
 
     private void announce(BountyTaskType task, JudgeResult result) {

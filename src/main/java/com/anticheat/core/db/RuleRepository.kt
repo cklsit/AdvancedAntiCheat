@@ -86,8 +86,8 @@ class RuleRepository(private val pool: JdbcPool) {
     fun loadCheckRules(): Map<String, CheckRuleRow> = pool.withConnection { connection ->
         connection.createStatement().use { statement ->
             statement.executeQuery(
-                "SELECT check_name, enabled, decay, setback, experimental, description, thresholds, updated_at " +
-                    "FROM check_rule"
+                "SELECT check_name, enabled, decay, setback, experimental, description, thresholds, " +
+                    "updated_at, updated_by FROM check_rule"
             ).use { rows ->
                 val out = HashMap<String, CheckRuleRow>(32)
                 while (rows.next()) {
@@ -100,7 +100,8 @@ class RuleRepository(private val pool: JdbcPool) {
                         experimental = rows.getBoolean("experimental"),
                         description = rows.getString("description"),
                         thresholds = fromJson(rows.getString("thresholds")),
-                        updatedAt = Sql.millis(rows, "updated_at")
+                        updatedAt = Sql.millis(rows, "updated_at"),
+                        updatedBy = rows.getString("updated_by")
                     )
                 }
                 out

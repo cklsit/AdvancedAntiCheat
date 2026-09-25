@@ -36,10 +36,10 @@ package com.anticheat.core.check.impl.autoclicker
 object ClickStreaks {
 
     /**
-     * 段的长度超过该值才计入违规（即需要连续 **6 tick** 以上不间断）。
+     * 段长度门槛的**默认值**（可被 `core.checks.AutoClickerD.min-streak` 覆盖）。
      *
-     * <p>参考实现取 5。原版 1.8 客户端的出手间隔约 10 tick，
-     * 6 拍已经是不可能出现的密度。</p>
+     * <p>段的长度超过该值才计入违规（即默认需要连续 **6 tick** 以上不间断）。
+     * 参考实现取 5；原版 1.8 客户端的出手间隔约 10 tick，6 拍已是不可能出现的密度。</p>
      */
     const val MIN_STREAK = 5
 
@@ -57,10 +57,18 @@ object ClickStreaks {
      *
      * @param acted 每个 tick 是否发生了被统计的动作（攻击包）
      * @param multiPerTick 每个 tick 是否发生了同 tick 多次动作（长度不足的位置按 false 处理）
-     * @return 违规级别；调用方按 `>=` [FLAG_VL] 判定。0 表示窗口内没有足够长的段。
+     * @param minStreak 段长度门槛；超过它才计入。默认 [MIN_STREAK]，
+     *   由 [com.anticheat.core.check.impl.autoclicker.AutoClickerD] 从配置下发，
+     *   使该判据可以被自动调参收紧（常量在字节码里内联，运行时改不了）。
+     * @return 违规级别；调用方按 `>=` FLAG_VL 判定。0 表示窗口内没有足够长的段。
      */
     @JvmStatic
-    fun violationLevel(acted: BooleanArray, multiPerTick: BooleanArray): Double {
+    @JvmOverloads
+    fun violationLevel(
+        acted: BooleanArray,
+        multiPerTick: BooleanArray,
+        minStreak: Int = MIN_STREAK
+    ): Double {
         var streak = 0
         var multiSeen = false
         var vl = 0.0
@@ -68,7 +76,7 @@ object ClickStreaks {
         for (i in acted.indices) {
             if (!acted[i]) {
                 // 段在此结束：只有足够长才计入
-                if (streak > MIN_STREAK) {
+                if (streak > minStreak) {
                     vl += streak + if (multiSeen) ADJUST_WITH_MULTI else ADJUST_WITHOUT_MULTI
                 }
                 streak = 0

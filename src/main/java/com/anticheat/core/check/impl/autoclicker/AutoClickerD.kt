@@ -69,6 +69,14 @@ class AutoClickerD(player: PlayerData) : Check(player), ServerTickListener {
     private var longestStreak = 0
     private var peakVl = 0.0
 
+    /** 段长度门槛；由 `min-streak` 下发，可被自动调参收紧。 */
+    @Volatile
+    private var minStreak: Int = ClickStreaks.MIN_STREAK
+
+    /** 窗口内触发告警所需的违规级别；由 `flag-vl` 下发，可被自动调参收紧。 */
+    @Volatile
+    private var flagVl: Double = DEFAULT_FLAG_VL
+
     @Volatile
     private var calibrate: Boolean = false
 
@@ -97,7 +105,7 @@ class AutoClickerD(player: PlayerData) : Check(player), ServerTickListener {
     }
 
     private fun analyse() {
-        val vl = ClickStreaks.violationLevel(acted, multi)
+        val vl = ClickStreaks.violationLevel(acted, multi, minStreak)
         val streak = ClickStreaks.longestStreak(acted)
 
         var attackTicksThisWindow = 0
@@ -106,10 +114,10 @@ class AutoClickerD(player: PlayerData) : Check(player), ServerTickListener {
         }
         trackCalibration(attackTicksThisWindow, streak, vl)
 
-        if (vl >= ClickStreaks.FLAG_VL) {
+        if (vl >= flagVl) {
             flag(
                 "窗口内连续攻击段过长：违规级别 " + format(vl) +
-                    "（最长段 " + streak + " tick，阈值 " + ClickStreaks.FLAG_VL +
+                    "（最长段 " + streak + " tick，阈值 " + format(flagVl) +
                     "；窗口 " + WINDOW_TICKS + " tick 内有 " + attackTicksThisWindow + " 拍攻击）",
                 VIOLATION_WEIGHT
             )
@@ -133,7 +141,7 @@ class AutoClickerD(player: PlayerData) : Check(player), ServerTickListener {
                 " 攻击tick=" + attackTicks +
                 " 最长段=" + longestStreak + " tick" +
                 " 违规级别峰值=" + format(peakVl) +
-                "（判定线 " + ClickStreaks.FLAG_VL + "）"
+                "（判定线 " + format(flagVl) + "）"
         )
         longestStreak = 0
         peakVl = 0.0
@@ -160,6 +168,8 @@ class AutoClickerD(player: PlayerData) : Check(player), ServerTickListener {
     override fun reload() {
         super.reload()
         val manager = AntiCheatCore.configManager
+        minStreak = manager.optionInt(configName, "min-streak", ClickStreaks.MIN_STREAK)
+        flagVl = manager.optionDouble(configName, "flag-vl", DEFAULT_FLAG_VL)
         calibrate = manager.optionBoolean(configName, "calibrate", false)
         calibrateWindows = manager.optionInt(
             configName, "calibrate-windows", DEFAULT_CALIBRATE_WINDOWS.toInt()
@@ -183,5 +193,25 @@ class AutoClickerD(player: PlayerData) : Check(player), ServerTickListener {
         const val JOIN_GRACE_TICKS = 100L
 
         const val VIOLATION_WEIGHT = 1.0
+
+        /** 判定线的默认值（可被 `core.checks.AutoClickerD.flag-vl` 覆盖）。 */
+        const val DEFAULT_FLAG_VL = ClickStreaks.FLAG_VL
+
+        /**
+         * 自动调参的硬下限。
+         *
+         * <p>依据：一个**刚好越过门槛**的段（6 拍）贡献 `6 + 2 = 8` 分，
+         * 自动调整不得让**单个刚过线的段**就单独告警（那等于把门槛游戏化），
+         * 所以判定线必须严格大于 8，取 10。</p>
+         */
+        const val AUTO_TUNE_FLOOR_FLAG_VL = 10.0
+
+        /**
+         * `min-streak` 的自动调参硬下限。
+         *
+         * <p>与 `CombatCheckThresholdsTest` 的断言同源：门槛低于 3 时
+         * 人类的高频点击（蝴蝶点击）也能连成这么长的段。</p>
+         */
+        const val AUTO_TUNE_FLOOR_MIN_STREAK = 3
     }
 }

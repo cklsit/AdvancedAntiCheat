@@ -171,7 +171,14 @@ class CheckRuleRow(
     val description: String?,
     /** 该检测的专属阈值（例如 `max-reach` / `tolerance` / `ping-slack`），来自 config.yml。 */
     val thresholds: Map<String, String>,
-    val updatedAt: Long
+    val updatedAt: Long,
+    /**
+     * 最后一次改动者（`check_rule.updated_by`）。
+     *
+     * <p>自动调参把自己的标识写进这一列，用来在重启后认出"这个阈值是我改的"——
+     * 观察期状态只在内存里，重启就没了，至少要让管理员看得见痕迹。</p>
+     */
+    val updatedBy: String? = null
 )
 
 /** 惩罚阶梯的一级（`punishment_ladder`）。 */

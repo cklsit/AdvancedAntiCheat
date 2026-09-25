@@ -35,11 +35,11 @@ class CombatCheckThresholdsTest {
     void aimCSingleStrongestSnapCannotFlagAlone() {
         double strongest = RotationSnap.weight(RotationSnap.IMPOSSIBLE_DEGREES + 1.0);
 
-        assertTrue(strongest < AimC.FLAG_BALANCE,
-                "单次最强证据 " + strongest + " >= 累积线 " + AimC.FLAG_BALANCE
+        assertTrue(strongest < AimC.DEFAULT_FLAG_BALANCE,
+                "单次最强证据 " + strongest + " >= 累积线 " + AimC.DEFAULT_FLAG_BALANCE
                         + "：一次甩枪（PVP 基本功）就能单独把人踢下线");
-        assertTrue(AimC.FLAG_BALANCE / strongest <= 2.0,
-                "累积线需要 " + (AimC.FLAG_BALANCE / strongest) + " 次最强证据才触发："
+        assertTrue(AimC.DEFAULT_FLAG_BALANCE / strongest <= 2.0,
+                "累积线需要 " + (AimC.DEFAULT_FLAG_BALANCE / strongest) + " 次最强证据才触发："
                         + "灵敏度过低，连续的大角度瞬转也会被放过");
     }
 
@@ -48,7 +48,7 @@ class CombatCheckThresholdsTest {
     void aimCBalanceDecaysWithinSeconds() {
         assertTrue(AimC.DECAY_PER_TICK > 0.0, "余额没有降温通道");
 
-        double secondsToZero = AimC.FLAG_BALANCE / AimC.DECAY_PER_TICK / 20.0;
+        double secondsToZero = AimC.DEFAULT_FLAG_BALANCE / AimC.DECAY_PER_TICK / 20.0;
         assertTrue(secondsToZero >= 5.0,
                 "证据 " + secondsToZero + " 秒就散光了：连续作战中的瞬转攒不到判定线");
         assertTrue(secondsToZero <= 30.0,

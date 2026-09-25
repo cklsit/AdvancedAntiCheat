@@ -64,6 +64,15 @@ class AimC(player: PlayerData) : Check(player), ServerTickListener {
     /** 证据累积器（单位：权重分）。 */
     private var balance = 0.0
 
+    /**
+     * 累积到该值才告警。
+     *
+     * <p>做成**可调**（而不是编译期常量）是为了让"归因 → 自动调参"能作用到它：
+     * 常量在字节码里被内联，运行时改不了。默认值仍是 [DEFAULT_FLAG_BALANCE]。</p>
+     */
+    @Volatile
+    private var flagBalance: Double = DEFAULT_FLAG_BALANCE
+
     override fun onServerTick() {
         // 先降温：证据是有时效的，很久以前的甩枪不该和现在的拼在一起
         balance = (balance - DECAY_PER_TICK).coerceAtLeast(0.0)
@@ -94,14 +103,14 @@ class AimC(player: PlayerData) : Check(player), ServerTickListener {
         }
 
         balance += RotationSnap.weight(lastMotion)
-        if (balance > FLAG_BALANCE) {
+        if (balance > flagBalance) {
             // 只扣掉一个阈值而不是清零：连续瞬转能持续告警，
             // 同时避免同一批证据被反复用来触发多次
-            balance -= FLAG_BALANCE
+            balance -= flagBalance
             flag(
                 "单帧瞬转：|Δyaw| 三拍=" + format(twoAgo) + "/" + format(lastMotion) + "/" + format(motion) +
                     "°，本次权重 " + format(RotationSnap.weight(lastMotion)) +
-                    "（累积 " + format(balance + FLAG_BALANCE) + "）",
+                    "（累积 " + format(balance + flagBalance) + "）",
                 VIOLATION_WEIGHT
             )
         }
@@ -139,6 +148,12 @@ class AimC(player: PlayerData) : Check(player), ServerTickListener {
         return now - player.lastSwingMillis <= COMBAT_WINDOW_MILLIS
     }
 
+    override fun reload() {
+        super.reload()
+        flagBalance = AntiCheatCore.configManager
+            .optionDouble(configName, "flag-balance", DEFAULT_FLAG_BALANCE)
+    }
+
     private fun reset() {
         lastYaw = Float.NaN
         motionBeforeLast = 0.0
@@ -149,13 +164,23 @@ class AimC(player: PlayerData) : Check(player), ServerTickListener {
 
     companion object {
         /**
-         * 累积到该值才告警。
+         * 累积到该值的**默认值**（可被 `core.checks.AimC.flag-balance` 覆盖）。
          *
          * <p>60 分约等于"两次 90 度以上的单帧瞬转"，或"五六次刚好过线的小幅瞬转"。
          * 取值明显高于参考实现（其等效阈值约 30，但它额外做了 `vl /= 3` 的
          * 低帧率补偿）：本检测没有 FPS 数据，只能靠更高的门槛来买保守。</p>
          */
-        const val FLAG_BALANCE = 60.0
+        const val DEFAULT_FLAG_BALANCE = 60.0
+
+        /**
+         * 自动调参的**硬下限**——任何自动调整都不得把 `flag-balance` 降到它以下。
+         *
+         * <p>依据不是拍的：最强的一次瞬转证据权重是 [RotationSnap.BASE_WEIGHT] 之上的
+         * 最高档 50 分（`RotationSnap.weight(>178°)`），而
+         * `CombatCheckThresholdsTest` 断言了「单次最强证据不能单独触发告警」。
+         * 55 是满足那条不变量的最小整数级取值——**不变量测试就是这道护栏的定义**。</p>
+         */
+        const val AUTO_TUNE_FLOOR = 55.0
 
         /**
          * 每个 tick 的证据降温量。

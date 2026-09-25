@@ -469,6 +469,34 @@ class DatabaseService(
         return runCatching { rules!!.listWhitelist(limit) }.getOrDefault(emptyList())
     }
 
+    /**
+     * 覆盖某个检测的专属阈值。
+     *
+     * <p>这是"自动调参"的落点：`config.yml` 里的默认值**不会**被改写
+     * （那会让升级时的配置合并逻辑与人工编辑互相打架），改的是库里的
+     * `check_rule.thresholds` —— 它优先级最高，且改完调用
+     * [com.anticheat.core.AntiCheatCore.reload] 即热生效，不必重启。</p>
+     *
+     * @return 受影响行数；0 表示该检测在库里还没有规则行（需先跑一次规则登记）
+     */
+    fun setCheckThresholds(checkName: String, thresholds: Map<String, Any?>, by: String): Int {
+        if (!isReady) return 0
+        return runCatching {
+            rules!!.setCheckThresholds(checkName, thresholds, by, System.currentTimeMillis())
+        }.getOrDefault(0)
+    }
+
+    /**
+     * 某时间点之后各检测的违规条数（按条数降序）。
+     *
+     * <p>给自动调参的观察期用：判断"某个检测被调紧之后是否开始大量误报"，
+     * 最直接的信号就是它在**改动之后**产生的违规条数。</p>
+     */
+    fun topViolatingChecksSince(sinceMillis: Long, limit: Int = 10): List<Pair<String, Long>> {
+        if (!isReady) return emptyList()
+        return runCatching { violations!!.topChecksSince(sinceMillis, limit) }.getOrDefault(emptyList())
+    }
+
     fun checkHitRates(): List<HitRateRow> {
         if (!isReady) return emptyList()
         return runCatching { rules!!.checkHitRates() }.getOrDefault(emptyList())

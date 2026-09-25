@@ -211,6 +211,8 @@ public class BountyManager {
             loadBaselines();
         }
 
+        com.anticheat.core.bounty.AutoTuner.start(plugin);
+
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 1L);
         saveTask = Bukkit.getScheduler().runTaskTimer(plugin, this::maybeSaveBaseline, 200L, 200L);
         plugin.getLogger().info("[Bounty] 赏金模块已启动（每日额度 " + (dailyLimitSeconds / 60) + " 分钟，基线"
@@ -443,11 +445,15 @@ public class BountyManager {
         final int flags;
         final double maxVl;
         final int samples;
+        /** 任务期间的逐 tick 采样——自动调参的归因输入。 */
+        final java.util.List<com.anticheat.core.bounty.BountySample> sampleData;
         final BountyEvidence evidence;
 
         TaskOutcome(UUID uuid, String name, BountyTaskType task, JudgeResult result, AnomalyResult anomaly,
                     Map<String, Double> metrics, Map<String, String> baselineText,
-                    int flags, double maxVl, int samples, BountyEvidence evidence) {
+                    int flags, double maxVl, int samples,
+                    java.util.List<com.anticheat.core.bounty.BountySample> sampleData,
+                    BountyEvidence evidence) {
             this.uuid = uuid;
             this.name = name;
             this.task = task;
@@ -458,6 +464,7 @@ public class BountyManager {
             this.flags = flags;
             this.maxVl = maxVl;
             this.samples = samples;
+            this.sampleData = sampleData;
             this.evidence = evidence;
         }
     }
@@ -505,6 +512,16 @@ public class BountyManager {
 
                 if (outcome.result.getVerdict().isFinding()) {
                     broadcastFinding(outcome, id);
+                    // 自动调参：归因 + （影子 / 正式）调整。
+                    // 单独包一层 try：调参失败绝不该把「案例已记录」这件事变成失败。
+                    try {
+                        com.anticheat.core.bounty.AutoTuner.onCaseSettled(
+                                id, outcome.name, outcome.result.getVerdict(),
+                                outcome.result.getConfidence(), outcome.anomaly.getReady(),
+                                outcome.sampleData);
+                    } catch (Throwable t) {
+                        plugin.getLogger().warning("[Bounty] 自动调参失败（不影响判定）: " + t.getMessage());
+                    }
                 }
             } catch (Throwable t) {
                 plugin.getLogger().warning("[Bounty] 落盘/落库失败（判定结果不会重试，请人工核对）: "

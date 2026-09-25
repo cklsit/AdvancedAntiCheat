@@ -75,7 +75,7 @@ object RotationSnap {
      * 这里用的是归一化约定（|Δyaw| ∈ [0, 180]），所以档位边界整体下移。</p>
      *
      * <p>角度越大越"不可能是人手"，权重按档位跃升；基础档 7 分意味着
-     * 弱证据需要累积多次才能告警（见 [AimC.FLAG_BALANCE]），
+     * 弱证据需要累积多次才能告警（见 [AimC.DEFAULT_FLAG_BALANCE]），
      * 而一次 180 度的单帧转向几乎立刻触发。</p>
      */
     @JvmStatic
