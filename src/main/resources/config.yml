@@ -486,6 +486,12 @@ core:
     AutoClickerD:
       enabled: true
       decay: 0.1
+      # 段长度门槛：连续超过这么多 tick 不间断攻击才计入（默认 5，即连续 6 拍）。
+      # 原版 1.8 客户端左键冷却 10 tick，真人不可能连续 6 拍都出手。
+      min-streak: 5
+      # 窗口内触发告警所需的违规级别（默认 20）。
+      # ⚠ 自动调参最多把它降到 10 —— 再低会让「单个刚过线的段」单独告警。
+      flag-vl: 20.0
       calibrate: false
       calibrate-windows: 150
 
@@ -517,6 +523,10 @@ core:
     AimC:
       enabled: true
       decay: 0.05
+      # 累积到该值才告警（可调）。默认 60 ≈ 两次 90 度以上的单帧瞬转。
+      # ⚠ 自动调参（bounty.auto-tune）最多把它降到 55 —— 该下限来自代码里的
+      #   AUTO_TUNE_FLOOR，与 CombatCheckThresholdsTest 的「单次最强证据不能单独告警」同源。
+      flag-balance: 60.0
 
     # ---- 伸手与视线（射线类）----
     # 攻击距离超限。已做延迟补偿：在玩家与目标各自最近 8 tick 的位置之间取最小距离，
