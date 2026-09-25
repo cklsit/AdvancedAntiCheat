@@ -20,7 +20,8 @@ import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerOp
  * 组成的状态机，不能去问 Bukkit——问服务端得到的是"真实状态"，
  * 那就永远发现不了"客户端在没开窗的情况下点击容器"这种欺骗。</p>
  *
- * <p>状态机刻意做成**宁松勿严**：任何一方发出关闭都会把状态清掉。
+ * <p>状态机刻意做成**宁松勿严**：任何一方发出关闭都会把状态清掉，
+ * 服务端下发 `RESPAWN` 时也清一次（见 [handleServerSend]）。
  * 宁可漏判一次（下次点击会重新触发），也不要因为状态卡在"已打开"
  * 而让后面的所有点击检查失效。</p>
  */
@@ -49,23 +50,53 @@ object PacketInventoryTracker {
     }
 
     /**
-     * 服务端发包：打开窗口。
+     * 服务端发包：打开窗口 / 重生。
      *
      * <p>注意同时给 [com.anticheat.core.player.PlayerData.openWindowId] 赋值：
      * 「未开窗点击」判据需要区分「windowId==0 的自身背包」与「真的没开的容器」，
      * 只看一个布尔量做不到。</p>
+     *
+     * <p>`RESPAWN` 也归这里管，是因为它是窗口状态机的**兜底清位**：
+     * 死亡与切换维度都走这个包，而这两种情况下客户端不一定会发 `CLOSE_WINDOW`。
+     * 状态卡在"已打开"对 `InventoryA` 只是让它少判几次（无害），
+     * 对 [com.anticheat.core.check.impl.movement.InventoryMoveA] 却是致命的——
+     * 那会让一个正常玩家此后的**所有移动**都被判成违规。</p>
      */
     fun handleServerSend(event: PacketSendEvent): Boolean {
-        if (event.packetType != PacketType.Play.Server.OPEN_WINDOW) return false
+        return when (event.packetType) {
+            PacketType.Play.Server.OPEN_WINDOW -> {
+                handleOpenWindow(event)
+                true
+            }
+
+            PacketType.Play.Server.RESPAWN -> {
+                clearWindowState(event)
+                true
+            }
+
+            else -> false
+        }
+    }
+
+    private fun handleOpenWindow(event: PacketSendEvent) {
         try {
-            val data = AntiCheatCore.playerDataManager.getByUser(event.user) ?: return true
+            val data = AntiCheatCore.playerDataManager.getByUser(event.user) ?: return
             val windowId = WrapperPlayServerOpenWindow(event).containerId
             data.openWindowId = windowId
             data.inventoryOpen = true
         } catch (t: Throwable) {
             CoreLog.debug("打开窗口包处理异常: " + t.message)
         }
-        return true
+    }
+
+    private fun clearWindowState(event: PacketSendEvent) {
+        try {
+            val data = AntiCheatCore.playerDataManager.getByUser(event.user) ?: return
+            data.inventoryOpen = false
+            data.openWindowId = InventoryClickUpdate.PLAYER_INVENTORY_WINDOW_ID
+        } catch (t: Throwable) {
+            CoreLog.debug("清窗口状态异常: " + t.message)
+        }
     }
 
     private fun handleClick(event: PacketReceiveEvent) {

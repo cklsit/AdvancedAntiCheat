@@ -21,7 +21,6 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     private BanManager banManager;
     private ReportManager reportManager;
-    private DetectionManager detectionManager;
     private ConfigManager configManager;
     private CheckClientManager checkClientManager;
     private CheckClientConfigManager checkClientConfigManager;
@@ -34,7 +33,6 @@ public class AdvancedAntiCheat extends JavaPlugin {
     private com.anticheat.listeners.ProfileGUIListener profileGUIListener;
     /** /ac config 多级管理界面 */
     private com.anticheat.listeners.ConfigGUIListener configGUIListener;
-    private AdvancedDetectionManager advancedDetectionManager;
     /** AI 实验室：特征工程 + 个人基线 + 孤立森林 + 集群发现 + 自适应阈值 + 监督闭环 */
     private com.anticheat.ai.AILabManager aiLabManager;
 
@@ -95,9 +93,6 @@ public class AdvancedAntiCheat extends JavaPlugin {
         if (aiLabManager != null) {
             aiLabManager.shutdown();
         }
-        if (advancedDetectionManager != null) {
-            advancedDetectionManager.shutdown();
-        }
         getLogger().info("§4[AdvancedAntiCheat] 插件已禁用！");
     }
 
@@ -111,7 +106,6 @@ public class AdvancedAntiCheat extends JavaPlugin {
         checkClientConfigManager = new CheckClientConfigManager(this);
         banManager = new BanManager(this);
         reportManager = new ReportManager(this);
-        detectionManager = new DetectionManager(this);
         checkClientManager = new CheckClientManager(this);
         behaviorTracker = new BehaviorTracker(this);
         captchaManager = new CaptchaManager(this);
@@ -119,10 +113,7 @@ public class AdvancedAntiCheat extends JavaPlugin {
         profileManager = new ProfileManager(this);
         whitelistManager = new WhitelistManager(this);
 
-        advancedDetectionManager = new AdvancedDetectionManager(this);
-        advancedDetectionManager.initialize(this);
-
-        // AI 实验室（依赖 ProfileManager / AdvancedDetectionManager 就绪）
+        // AI 实验室（依赖 ProfileManager 就绪）
         try {
             aiLabManager = new com.anticheat.ai.AILabManager(this);
             aiLabManager.initialize();
@@ -192,9 +183,10 @@ public class AdvancedAntiCheat extends JavaPlugin {
     }
 
     private void registerListeners() {
-        getServer().getPluginManager().registerEvents(new PlayerMoveListener(this), this);
+        // 移动 / 战斗的逐包判定已整体交给核心层（PacketEvents + CheckManager），
+        // 旧的 PlayerMoveListener / PlayerCommandListener 随旧引擎一起删除：
+        // 它们只做一件事——把 Bukkit 事件转给旧检测，而旧检测正是本次线上误封的源头。
         getServer().getPluginManager().registerEvents(new PlayerJoinListener(this), this);
-        getServer().getPluginManager().registerEvents(new PlayerCommandListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerLoginListener(this), this);
         getServer().getPluginManager().registerEvents(new PlayerCheckListener(this), this);
         getServer().getPluginManager().registerEvents(new BehaviorListener(this), this);
@@ -253,10 +245,6 @@ public class AdvancedAntiCheat extends JavaPlugin {
         return reportManager;
     }
 
-    public DetectionManager getDetectionManager() {
-        return detectionManager;
-    }
-
     public ConfigManager getConfigManager() {
         return configManager;
     }
@@ -295,10 +283,6 @@ public class AdvancedAntiCheat extends JavaPlugin {
 
     public com.anticheat.listeners.ConfigGUIListener getConfigGUIListener() {
         return configGUIListener;
-    }
-
-    public AdvancedDetectionManager getAdvancedDetectionManager() {
-        return advancedDetectionManager;
     }
 
     public com.anticheat.ai.AILabManager getAILabManager() {

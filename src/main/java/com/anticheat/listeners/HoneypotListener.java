@@ -1,7 +1,7 @@
 package com.anticheat.listeners;
 
 import com.anticheat.AdvancedAntiCheat;
-import com.anticheat.detection.ViolationRecord;
+import com.anticheat.core.honeypot.HoneypotHooks;
 import com.anticheat.utils.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -223,12 +223,9 @@ public class HoneypotListener implements Listener {
             if (drop.ownerApproached) {
                 Player owner = Bukkit.getPlayer(drop.owner);
                 if (owner != null && owner.isOnline()) {
-                    plugin.getDetectionManager().getViolationManager().recordViolation(
-                        owner,
-                        com.anticheat.detection.ViolationRecord.ViolationType.FAKE_DROP,
-                        "收集了虚假掉落物（自动拾取/ESP）",
-                        0.85
-                    );
+                    HoneypotHooks.report(owner,
+                "收集了虚假掉落物（自动拾取/ESP）",
+                0.85);
                     plugin.getLogger().warning("[Honeypot] 检测到自动拾取/ESP: " + owner.getName());
                 }
             }
@@ -242,16 +239,19 @@ public class HoneypotListener implements Listener {
         UUID uuid = player.getUniqueId();
         if (escapedPlayers.contains(uuid)) return;
 
-        int total = plugin.getDetectionManager().getViolationManager()
-            .getViolationHistory(uuid).size();
-        int threshold = plugin.getConfig().getInt("honeypot.fake-escape.threshold", 10);
-        if (total < threshold) return;
+        // 阈值量纲变化：原实现数的是旧引擎里的"违规条数"，现在用核心层的**加权证据分**
+        // （蜜罐命中权重 0.8~1.0，所以默认阈值同为 10 时门槛相当）。
+        double evidence = HoneypotHooks.evidence(player);
+        double threshold = plugin.getConfig().getDouble("honeypot.fake-escape.threshold", 10.0);
+        if (evidence < threshold) return;
 
         escapedPlayers.add(uuid);
 
         // 情报记录：输出该玩家的全部违规画像
         plugin.getLogger().warning("[Honeypot] 假逃脱蜜罐：玩家 " + player.getName() +
-            " 累计违规 " + total + " 次，已重定向至沙箱幻象，记录其作弊行为");
+            " 累计蜜罐证据分 " + String.format(java.util.Locale.ROOT, "%.1f", evidence)
+                + "（阈值 " + String.format(java.util.Locale.ROOT, "%.1f", threshold) + "），"
+                + "已重定向至沙箱幻象，记录其作弊行为");
 
         String sandboxWorld = plugin.getConfig().getString("honeypot.fake-escape.sandbox-world", "");
         if (sandboxWorld != null && !sandboxWorld.isEmpty()) {
@@ -268,12 +268,9 @@ public class HoneypotListener implements Listener {
             }
         }
 
-        plugin.getDetectionManager().getViolationManager().recordViolation(
-            player,
-            com.anticheat.detection.ViolationRecord.ViolationType.FAKE_ESCAPE,
-            "确认作弊者重定向至沙箱（假逃脱蜜罐）",
-            0.9
-        );
+        HoneypotHooks.report(player,
+                "确认作弊者重定向至沙箱（假逃脱蜜罐）",
+                0.9);
     }
 
     // ---------------- 不可能破坏进度 ----------------
@@ -300,12 +297,9 @@ public class HoneypotListener implements Listener {
         if (isHologramOre(blockLoc)) {
             event.setCancelled(true);
             
-            plugin.getDetectionManager().getViolationManager().recordViolation(
-                event.getPlayer(),
-                com.anticheat.detection.ViolationRecord.ViolationType.X_RAY,
+            HoneypotHooks.report(event.getPlayer(),
                 "幻象矿石检测: 挖掘了不存在的钻石矿",
-                1.0
-            );
+                1.0);
             
             plugin.getLogger().warning("[Honeypot] 检测到透视作弊: " + event.getPlayer().getName() + 
                 " 在位置 " + blockLoc.getWorld().getName() + ":" + 
@@ -317,12 +311,9 @@ public class HoneypotListener implements Listener {
         // 不可能破坏进度：开始挖掘到完成破坏的时间过短 → 脚本化瞬挖
         Long start = blockBreakStartTimes.remove(blockKey(blockLoc));
         if (start != null && System.currentTimeMillis() - start < IMPOSSIBLE_BREAK_MS) {
-            plugin.getDetectionManager().getViolationManager().recordViolation(
-                event.getPlayer(),
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+            HoneypotHooks.report(event.getPlayer(),
                 "不可能破坏进度: 瞬挖方块（耗时<" + IMPOSSIBLE_BREAK_MS + "ms）",
-                0.8
-            );
+                0.8);
         }
         
         recordBreakTime(event.getPlayer());
@@ -360,12 +351,9 @@ public class HoneypotListener implements Listener {
         }
         
         if (isGhostEntity(event.getEntity())) {
-            plugin.getDetectionManager().getViolationManager().recordViolation(
-                targetPlayer,
-                com.anticheat.detection.ViolationRecord.ViolationType.CHEST_ESP,
+            HoneypotHooks.report(targetPlayer,
                 "幽灵实体检测: 攻击了隐形实体",
-                1.0
-            );
+                1.0);
             
             plugin.getLogger().warning("[Honeypot] 检测到ESP/自瞄作弊: " + targetPlayer.getName());
         }
@@ -392,12 +380,9 @@ public class HoneypotListener implements Listener {
         if (isGhostEntity(entity)) {
             event.setCancelled(true);
             
-            plugin.getDetectionManager().getViolationManager().recordViolation(
-                player,
-                com.anticheat.detection.ViolationRecord.ViolationType.CHEST_ESP,
+            HoneypotHooks.report(player,
                 "幽灵实体检测: 攻击了隐形生物",
-                1.0
-            );
+                1.0);
             
             plugin.getLogger().warning("[Honeypot] 检测到ESP/自瞄作弊: " + player.getName() + 
                 " 攻击了幽灵实体");
@@ -414,12 +399,9 @@ public class HoneypotListener implements Listener {
             
             if (distance > plugin.getConfig().getDouble("honeypot.impossible-break.max-distance", 4.5)) {
                 if (!hasLineOfSight(player, entityLoc)) {
-                    plugin.getDetectionManager().getViolationManager().recordViolation(
-                        player,
-                        com.anticheat.detection.ViolationRecord.ViolationType.KILLAURA,
-                        "不可能攻击距离检测: " + String.format("%.2f", distance) + " 格",
-                        1.0
-                    );
+                    HoneypotHooks.report(player,
+                "不可能攻击距离检测: " + String.format("%.2f", distance) + " 格",
+                1.0);
                 }
             }
             
@@ -447,12 +429,9 @@ public class HoneypotListener implements Listener {
         if (lastBreak != null && currentTime - lastBreak < MIN_BREAK_TIME_MS) {
             Location playerLoc = player.getLocation();
             
-            plugin.getDetectionManager().getViolationManager().recordViolation(
-                player,
-                com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
+            HoneypotHooks.report(player,
                 "自动脚本检测: 挖掘间隔异常",
-                1.0
-            );
+                1.0);
             
             plugin.getLogger().warning("[Honeypot] 检测到自动脚本: " + player.getName() + 
                 " 挖掘间隔 " + (currentTime - lastBreak) + "ms");
@@ -476,12 +455,9 @@ public class HoneypotListener implements Listener {
             boolean isRegular = checkTimingRegularity(timings);
             
             if (isRegular) {
-                plugin.getDetectionManager().getViolationManager().recordViolation(
-                    player,
-                    com.anticheat.detection.ViolationRecord.ViolationType.AUTO_MINER,
-                    "自动攻击检测: 攻击间隔过于规律",
-                    1.0
-                );
+                HoneypotHooks.report(player,
+                "自动攻击检测: 攻击间隔过于规律",
+                1.0);
                 
                 plugin.getLogger().warning("[Honeypot] 检测到自动攻击: " + player.getName() + 
                     " 攻击间隔标准差过低");

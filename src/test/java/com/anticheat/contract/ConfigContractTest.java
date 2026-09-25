@@ -80,8 +80,12 @@ class ConfigContractTest {
     @DisplayName("顶层功能段齐全：删掉一整段会让功能静默失效，必须拦住")
     void topLevelSectionsExist() {
         Set<String> expected = new LinkedHashSet<>(java.util.Arrays.asList(
-                "notify", "detection", "ban", "database", "check-client", "bounty",
-                "honeypot", "fingerprint", "behavior", "ailab",
+                // 2026-09-25：旧引擎（com.anticheat.detection + DetectionManager 等）
+                // 整体移除，`detection:` 与 `fingerprint:` 两段随之删除。
+                // 这两条是**刻意**去掉的，不是漏配——旧引擎的检测项已由核心层的
+                // `core.checks.<名字>` 取代，此处保留旧段名反而会掩盖"配置写了不生效"。
+                "notify", "ban", "database", "check-client", "bounty",
+                "honeypot", "behavior", "ailab",
                 "gui", "captcha"));
         Set<String> missing = new TreeSet<>();
         for (String key : expected) {

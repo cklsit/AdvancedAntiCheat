@@ -281,11 +281,6 @@ public class ConfigManager {
         return secs * 1000L;
     }
 
-    /** 设置指定检测项字段（Web 面板热更新用），值类型由调用方保证合法。 */
-    public void setDetectionField(String id, String field, Object value) {
-        config.set("detection." + id + "." + field, value);
-    }
-
     /** 设置顶层字段（Web 面板热更新用）。 */
     public void setField(String path, Object value) {
         config.set(path, value);

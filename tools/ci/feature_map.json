@@ -1,7 +1,7 @@
 {
   "_comment": "改动路径 → 功能面 → 必须通过的测试/必须被断言的接口。规则自上而下匹配，首条命中即生效。",
   "_maintain": "新增功能时：加一条规则 + 在 tests 里指名测试类 + 在 endpoints/commands 里列出接口。change_gate.py 会强制它们真实存在且通过。",
-  "_removed": "Web 面板与观察者回放已整体下线（2026-09-19）：原 web-panel / replay / frontend 三条规则、全部 /api/* endpoints 与 /ac replay 命令一并移除；HTTP 层已不存在，端到端断言只剩 startup + console。",
+  "_removed": "Web 面板与观察者回放已整体下线（2026-09-19）：原 web-panel / replay / frontend 三条规则、全部 /api/* endpoints 与 /ac replay 命令一并移除；HTTP 层已不存在，端到端断言只剩 startup + console。 旧检测引擎已整体移除（2026-09-25）：`com/anticheat/detection/**`（50 文件）与 DetectionManager / AdvancedDetectionManager / ViolationManager / DetectionCoordinator / PerformanceMonitor、integration/ProtocolLib*、listeners/PlayerMove{ment,Command}Listener 一并删除。移动/战斗判定由核心层（PacketEvents + CheckManager）承担；蜜罐上报改接 core 的 HoneypotA；detection / fingerprint 两段配置与对应功能面规则同时移除。",
   "rules": [
     {
       "id": "ai-core",
@@ -28,18 +28,6 @@
       "tests": [
         "com.anticheat.captcha.dtw.DtwMatcherTest"
       ],
-      "gate": "block"
-    },
-    {
-      "id": "detection",
-      "paths": [
-        "src/main/java/com/anticheat/detection/**"
-      ],
-      "feature": "检测模块（移动 / 战斗 / 背包 / 世界 / 玩家）+ 融合决策",
-      "tests": [
-        "com.anticheat.detection.fusion.DecisionActionCenterTest"
-      ],
-      "notes": "跨版本陷阱由 tools/audit_dual_version.py 第 1/2/3/5 项兜底；真机加载由 E2E startup 断言兜底",
       "gate": "block"
     },
     {

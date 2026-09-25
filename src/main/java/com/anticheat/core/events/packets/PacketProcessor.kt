@@ -45,6 +45,9 @@ class PacketProcessor : PacketListener {
             if (PacketCombatTracker.handle(event)) return
             if (PacketInventoryTracker.handle(event)) return
             if (PacketBlockTracker.handle(event)) return
+            // 玩家自身状态（疾跑 / 潜行）。放在方块追踪器之后：ENTITY_ACTION 不与前面
+            // 任何一个包类型重叠，顺序不影响正确性，但按"动作 → 状态 → 移动"排更可读。
+            if (PacketPlayerStateTracker.handle(event)) return
             // 位置 / 朝向（内部按 WrapperPlayClientPlayerFlying 判定，非飞行包直接返回）
             PacketPlayerUpdate.handle(event)
         } catch (t: Throwable) {
@@ -69,8 +72,13 @@ class PacketProcessor : PacketListener {
 
     override fun onPacketSend(event: PacketSendEvent) {
         try {
-            // 发包侧目前只用于维护「窗口是否打开」的状态机（见 PacketInventoryTracker）
+            // 发包侧要维护两件事：
+            // 1) 「窗口是否打开」的状态机（InventoryA 的未开窗点击判据依赖它）；
+            // 2) 「服务端刚对这个玩家施加了外力」（击退 / 爆炸）——
+            //    位移类检测必须在随后的窗口内让路，否则每一次 PvP 对拼都会被误判。
+            // 两者互不重叠，都返回 false 时不短路。
             PacketInventoryTracker.handleServerSend(event)
+            PacketVelocityTracker.handleServerSend(event)
         } catch (t: Throwable) {
             CoreLog.debug("发包路由异常: " + t.message)
         }

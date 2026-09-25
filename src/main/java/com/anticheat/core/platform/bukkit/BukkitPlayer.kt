@@ -21,6 +21,8 @@ class BukkitPlayer(private val player: Player) : PlatformPlayer {
 
     override val name: String get() = player.name
 
+    override val entityId: Int get() = player.entityId
+
     override fun sendMessage(message: String) {
         player.sendMessage(message)
     }
@@ -47,6 +49,8 @@ class BukkitPlayer(private val player: Player) : PlatformPlayer {
         // 眼球高度随姿态变化（站立 1.62 / 潜行 1.54 / 爬行 0.4 / 鞘翅 0.4），
         // 猜错会直接把 reach / 视线类判据带偏（reach 必须从眼睛出发）。
         val eye = runCatching { player.eyeLocation }.getOrNull()
+        val feetBlock = runCatching { location.block }.getOrNull()
+        val eyeBlock = runCatching { eye?.block }.getOrNull()
 
         return ServerSnapshot(
             world.name,
@@ -60,9 +64,15 @@ class BukkitPlayer(private val player: Player) : PlatformPlayer {
             eye?.y ?: (location.y + FALLBACK_EYE_HEIGHT),
             eye?.z ?: location.z,
             runCatching { player.vehicle?.entityId }.getOrNull() ?: ServerSnapshot.NO_VEHICLE,
-            BukkitEntityCompat.isGliding(player)
+            BukkitEntityCompat.isGliding(player),
+            BukkitMovementCompat.isFlightAllowed(player),
+            BukkitMovementCompat.isInLiquid(feetBlock, eyeBlock),
+            BukkitMovementCompat.isMovementAlteredByBlock(feetBlock, eyeBlock),
+            BukkitMovementCompat.hasMovementEffect(player)
         )
     }
+
+    override fun hasGroundSupport(depth: Double): Boolean = BukkitMovementCompat.hasGroundSupport(player, depth)
 
     companion object {
         /** 仅在 `getEyeLocation()` 取不到时使用的兜底站立眼球高度。 */

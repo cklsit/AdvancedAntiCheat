@@ -89,7 +89,6 @@ public class ConfigGUI {
     /** 面板标题前缀默认值（可在 config.yml 的 gui.title-prefix 覆盖） */
     private static final String DEFAULT_TITLE_PREFIX = "§8AAC";
 
-    private static final String[] DETECTION_TYPES = {"fly", "speed", "esp", "killaura", "reach"};
 
     /**
      * 第 4 层封禁选项。{@code duration == null} 表示仅踢出（不写入封禁名单）。
@@ -181,13 +180,21 @@ public class ConfigGUI {
 
     private List<String> statusLore() {
         List<String> lore = new ArrayList<>();
+        // 检测开关现在只有一处来源：core.checks.<名字>.enabled。
+        // 旧引擎的 detection.fly/speed/... 键已随它删除，继续按那几个名字读会永远返回默认值。
         int enabled = 0;
-        for (String type : DETECTION_TYPES) {
-            if (plugin.getConfigManager().isDetectionEnabled(type)) {
-                enabled++;
+        int total = 0;
+        org.bukkit.configuration.ConfigurationSection checks =
+                plugin.getConfig().getConfigurationSection("core.checks");
+        if (checks != null) {
+            for (String key : checks.getKeys(false)) {
+                total++;
+                if (checks.getBoolean(key + ".enabled", true)) {
+                    enabled++;
+                }
             }
         }
-        lore.add("§7检测模块: §a" + enabled + " §7/ §f" + DETECTION_TYPES.length + " §7已启用");
+        lore.add("§7检测模块: §a" + enabled + " §7/ §f" + total + " §7已启用");
         boolean aiLoaded = plugin.getAILabManager() != null;
         lore.add("§7AI 实验室: " + (aiLoaded ? "§a已加载" : "§8未启用（纯规则模式）"));
         String dbType = "未知";

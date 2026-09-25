@@ -233,11 +233,33 @@ public class AntiCheatCommand implements TabExecutor {
         sender.sendMessage("§c│            §6检测统计               §c│");
         sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");
-        sender.sendMessage(" §7飞行检测: " + (plugin.getConfigManager().isDetectionEnabled("fly") ? "§a启用" : "§c禁用"));
-        sender.sendMessage(" §7速度检测: " + (plugin.getConfigManager().isDetectionEnabled("speed") ? "§a启用" : "§c禁用"));
-        sender.sendMessage(" §7透视检测: " + (plugin.getConfigManager().isDetectionEnabled("esp") ? "§a启用" : "§c禁用"));
-        sender.sendMessage(" §7杀戮光环: " + (plugin.getConfigManager().isDetectionEnabled("killaura") ? "§a启用" : "§c禁用"));
-        sender.sendMessage(" §7攻击距离: " + (plugin.getConfigManager().isDetectionEnabled("reach") ? "§a启用" : "§c禁用"));
+        // 旧引擎整体移除后，检测只剩一份来源：Grim 式核心层。
+        // 这里**刻意不再列** detection.fly / speed / esp / killaura / reach 那几个旧键：
+        // 它们随旧引擎一起从 config.yml 删掉了，继续显示只会让管理员以为"改了有效"。
+        int total = 0;
+        int enabled = 0;
+        int experimental = 0;
+        for (Class<? extends com.anticheat.core.check.Check> type
+                : com.anticheat.core.manager.CheckManager.Companion.getCHECK_CLASSES()) {
+            total++;
+            com.anticheat.core.check.CheckData data =
+                    type.getAnnotation(com.anticheat.core.check.CheckData.class);
+            String key = (data == null || data.name().isEmpty()) ? type.getSimpleName() : data.name();
+            if (!plugin.getConfig().getBoolean("core.checks." + key + ".enabled", true)) {
+                continue;
+            }
+            enabled++;
+            if (data != null && data.experimental()) {
+                experimental++;
+            }
+        }
+        sender.sendMessage(" §7检测引擎: §f核心层（Grim 式，PacketEvents）");
+        sender.sendMessage(" §7检测项: §a" + enabled + "§7/§f" + total + " 已启用"
+                + (experimental > 0 ? " §8（实验性 " + experimental + " 项）" : ""));
+        sender.sendMessage(" §7惩罚: " + (plugin.getConfig().getBoolean("core.punishment.enabled", false)
+                ? "§a已开启（按阶梯）" : "§e仅告警"));
+        sender.sendMessage(" §7数据库: §f" + (plugin.getDatabaseManager() == null
+                ? "未就绪" : plugin.getDatabaseManager().getDatabaseType()));
         sender.sendMessage("");
         sender.sendMessage("§c└─────────────────────────────────────┘");
         sender.sendMessage("");

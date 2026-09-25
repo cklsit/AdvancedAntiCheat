@@ -14,6 +14,20 @@ package com.anticheat.core.platform.api.player
  * - [vehicleEntityId]：骑乘中的实体 id（[NO_VEHICLE] 表示没有）。移动包节奏由**载具**
  *   驱动而非玩家客户端时钟，计时器类判据必须对骑乘玩家让路。
  * - [gliding]：是否在滑翔。鞘翅状态下的移动包节奏与眼球高度都与常规不同。
+ *
+ * <p>移动类检测（`check/impl/movement`）还依赖下面四个"为什么这个位移是合法的"上下文。
+ * 它们**只会让检测让路、绝不会让检测触发**，因此取值的偏向是"宁可多让路"：
+ * 任何一项算错的方向都是漏判而不是误封。为什么必须在平台层算而不能在检测里猜——
+ * 这四项都要读方块 / 药水 / 游戏模式，全是平台能力；检测里去猜等价于把误报写死。</p>
+ *
+ * - [flightAllowed]：**服务端允许这个玩家飞行**。创造模式、旁观模式，以及
+ *   被插件 `/fly` 授予飞行权限的玩家都为 true。这是飞行类检测的头号误报来源——
+ *   大厅服普遍给玩家开飞行，只看"在空中不下落"会把整个大厅的人判成作弊。
+ * - [inLiquid]：脚部或眼睛所在方块是水 / 岩浆。游泳、上浮、水中下沉都不遵循重力模型。
+ * - [movementAlteredByBlock]：脚部方块会改写垂直运动（梯子 / 藤蔓 / 蜘蛛网 /
+ *   脚手架 / 细雪 / 甜浆果丛 / 竹子）。这些方块里"匀速上升或匀速缓慢下落"是原版行为。
+ * - [movementEffectActive]：身上带着会改写移动的药水效果（漂浮 / 缓降 / 跳跃提升 /
+ *   迅捷 / 海豚的恩惠）。缓降的每 tick 重力只有 0.01，与作弊的悬停在数值上无法区分。
  */
 class ServerSnapshot(
     val world: String,
@@ -27,7 +41,11 @@ class ServerSnapshot(
     val eyeY: Double,
     val eyeZ: Double,
     val vehicleEntityId: Int,
-    val gliding: Boolean
+    val gliding: Boolean,
+    val flightAllowed: Boolean,
+    val inLiquid: Boolean,
+    val movementAlteredByBlock: Boolean,
+    val movementEffectActive: Boolean
 ) {
 
     /** 是否骑乘在某个实体上。 */

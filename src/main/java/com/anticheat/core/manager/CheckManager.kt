@@ -14,8 +14,14 @@ import com.anticheat.core.check.impl.badpackets.BadPacketsC
 import com.anticheat.core.check.impl.badpackets.BadPacketsD
 import com.anticheat.core.check.impl.combat.NoSwingA
 import com.anticheat.core.check.impl.combat.ToolSwitchA
+import com.anticheat.core.check.impl.honeypot.HoneypotA
 import com.anticheat.core.check.impl.inventory.InventoryA
 import com.anticheat.core.check.impl.inventory.InventoryB
+import com.anticheat.core.check.impl.movement.FlyA
+import com.anticheat.core.check.impl.movement.GroundSpoofA
+import com.anticheat.core.check.impl.movement.InventoryMoveA
+import com.anticheat.core.check.impl.movement.SpeedA
+import com.anticheat.core.check.impl.movement.SprintA
 import com.anticheat.core.check.impl.reach.ReachA
 import com.anticheat.core.check.impl.reach.ReachB
 import com.anticheat.core.check.impl.reach.TargetTracker
@@ -23,6 +29,7 @@ import com.anticheat.core.check.impl.timer.TimerA
 import com.anticheat.core.check.impl.timer.TimerB
 import com.anticheat.core.check.impl.world.BreakRestartA
 import com.anticheat.core.check.impl.world.FastPlaceA
+import com.anticheat.core.check.impl.world.NukerA
 import com.anticheat.core.check.type.AttackListener
 import com.anticheat.core.check.type.BlockDigListener
 import com.anticheat.core.check.type.BlockPlaceListener
@@ -67,6 +74,16 @@ import com.github.retrooper.packetevents.event.PacketSendEvent
 class CheckManager(val player: PlayerData) {
 
     private val byClass = LinkedHashMap<Class<out CoreProcessor>, CoreProcessor>()
+
+    /**
+     * `checkName` → 检测实例。
+     *
+     * <p>给**外部证据入口**用（目前只有蜜罐：它的命中来自方块/实体事件，
+     * 不是包驱动，没有对应的回调接口）。外部来源必须能拿到具体检测实例
+     * 才能走 `Check.flag` 这条唯一违规入口；否则就得自己再写一套处罚逻辑，
+     * 而那正是本项目"两个引擎各有一套封禁阈值"的老问题。</p>
+     */
+    private val byName = LinkedHashMap<String, Check>()
 
     val checks: List<Check>
 
@@ -115,9 +132,20 @@ class CheckManager(val player: PlayerData) {
         // 战斗动作
         register(NoSwingA(player))
         register(ToolSwitchA(player))
+        // 移动（2026-09-23 新增：参照 LiquidBounce 的移动 / 免摔家族补齐）
+        register(FlyA(player))
+        register(GroundSpoofA(player))
+        register(SprintA(player))
+        register(SpeedA(player))
+        register(InventoryMoveA(player))
+        // 蜜罐（外部上报：幻象矿石 / 假掉落 / 不可能破坏进度 / 假逃脱）
+        // 它不实现任何监听接口——命中来自蜜罐自己的方块/实体事件，
+        // 由 com.anticheat.core.honeypot.HoneypotHooks 按名字取实例后调 flag。
+        register(HoneypotA(player))
         // 世界交互
         register(BreakRestartA(player))
         register(FastPlaceA(player))
+        register(NukerA(player))
         // ---------------- 登记表结束 ----------------
 
         val all: List<CoreProcessor> = byClass.values.toList()
@@ -140,7 +168,13 @@ class CheckManager(val player: PlayerData) {
 
     fun register(processor: CoreProcessor) {
         byClass[processor.javaClass] = processor
+        if (processor is Check) {
+            byName[processor.checkName] = processor
+        }
     }
+
+    /** 按 [Check.checkName] 取检测实例；不存在返回 null。 */
+    fun check(name: String): Check? = byName[name]
 
     @Suppress("UNCHECKED_CAST")
     fun <T : CoreProcessor> get(type: Class<T>): T? = byClass[type] as T?
@@ -184,8 +218,15 @@ class CheckManager(val player: PlayerData) {
             ReachB::class.java,
             NoSwingA::class.java,
             ToolSwitchA::class.java,
+            FlyA::class.java,
+            GroundSpoofA::class.java,
+            SprintA::class.java,
+            SpeedA::class.java,
+            InventoryMoveA::class.java,
             BreakRestartA::class.java,
-            FastPlaceA::class.java
+            FastPlaceA::class.java,
+            NukerA::class.java,
+            HoneypotA::class.java
         )
     }
 

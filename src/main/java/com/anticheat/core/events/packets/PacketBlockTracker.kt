@@ -61,6 +61,9 @@ object PacketBlockTracker {
                 data.breakingBlock = true
                 data.lastDigStartMillis = now
                 data.digStartTick = AntiCheatCore.tickManager.currentTick
+                // 本 tick 计数：nuker 类作弊的特征是"一 tick 内对多个方块下手"，
+                // 墙钟时间戳数不出这个（同一 tick 内可以出现多个不同时刻）
+                data.digStartsThisTick++
             } else if (update.isFinish || update.isCancel) {
                 data.breakingBlock = false
                 data.lastDigStopMillis = now

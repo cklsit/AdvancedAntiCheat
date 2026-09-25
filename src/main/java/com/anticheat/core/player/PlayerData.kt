@@ -29,6 +29,16 @@ class PlayerData(
 
     val name: String = platformPlayer.name
 
+    /**
+     * 服务端为本玩家分配的实体 id。
+     *
+     * <p>构造时取一次就够了：一个玩家在一次连接里的实体 id 不会变。
+     * 缓存下来而不是每次去问平台层，是因为读它的是**发包侧的 Netty 线程**
+     * （见 [com.anticheat.core.events.packets.PacketVelocityTracker]），
+     * 那条路径上每个包都会跑一次。</p>
+     */
+    val entityId: Int = platformPlayer.entityId
+
     val clientVersion: ClientVersion get() = user.clientVersion
 
     /** 每玩家一份的检测实例集合，首次访问时构建。 */
@@ -61,6 +71,17 @@ class PlayerData(
 
     @Volatile
     var lastOnGround: Boolean = false
+
+    /**
+     * 客户端上报的疾跑状态（`ENTITY_ACTION` 的 START/STOP_SPRINTING）。
+     *
+     * <p>为什么不问 Bukkit 的 `isSprinting()`：服务端那个值同样源自客户端上报，
+     * 但**经过服务端自己的移动处理**，会与客户端当前认为的状态错开若干 tick。
+     * 疾跑方向判据比较的是「客户端此刻声称的疾跑」与「客户端此刻上报的位移方向」，
+     * 两者必须来自同一条上报链路，否则延迟就会变成误报。</p>
+     */
+    @Volatile
+    var sprinting: Boolean = false
 
     // ------------------------------------------------------------------ 服务端权威状态
 
@@ -100,6 +121,45 @@ class PlayerData(
 
     /** 是否骑乘中。移动包节奏由载具驱动，计时器类判据必须让路。 */
     val serverInVehicle: Boolean get() = serverVehicleEntityId > -1
+
+    /**
+     * 服务端是否**允许**该玩家飞行（创造 / 旁观 / 插件 `/fly` 授权）。
+     *
+     * <p>飞行类检测的头号误报来源：大厅服与建筑服普遍在生存模式下给玩家开飞行，
+     * 只看"悬在空中不下落"会把整服的人判成作弊。这一项由平台层读
+     * `getAllowFlight()` 得到，比"比游戏模式"更全（覆盖插件授权）。</p>
+     */
+    @Volatile
+    var serverFlightAllowed: Boolean = false
+
+    /** 脚部或眼睛所在方块是水 / 岩浆。游泳与上浮不遵循重力模型。 */
+    @Volatile
+    var serverInLiquid: Boolean = false
+
+    /** 脚部或眼睛所在方块会改写垂直运动（梯子 / 藤蔓 / 蜘蛛网 / 脚手架 / 细雪等）。 */
+    @Volatile
+    var serverMovementAlteredByBlock: Boolean = false
+
+    /** 身上带着会改写移动的药水效果（漂浮 / 缓降 / 跳跃提升 / 迅捷 / 海豚的恩惠）。 */
+    @Volatile
+    var serverMovementEffectActive: Boolean = false
+
+    /**
+     * 移动类检测的**公共让路条件**。
+     *
+     * <p>命中任何一项都表示「原版的移动物理模型此刻不适用」：载具与鞘翅各有自己的
+     * 运动方程，液体与梯子 / 蜘蛛网会改写垂直运动，药水效果直接改系数，
+     * 而允许飞行时"悬在空中不下落"本身就是合法状态。</p>
+     *
+     * <p>刻意做成一个共享属性而不是各检测自己拼条件：这几个标志是**一起**
+     * 才有意义的（漏掉任何一个都会在某类合法场景里成批误报），
+     * 分散到五个检测里各写一遍，迟早有一处忘了同步。</p>
+     *
+     * <p>传送窗口不在这里：它需要"当前 tick"才能算，由各检测自己判。</p>
+     */
+    val movementPhysicsExempt: Boolean
+        get() = serverInVehicle || serverGliding || serverFlightAllowed ||
+            serverInLiquid || serverMovementAlteredByBlock || serverMovementEffectActive
 
     /** 最近一次「站在地面且未异常」的位置，setback 的落点。 */
     @Volatile
@@ -194,6 +254,21 @@ class PlayerData(
     @Volatile
     var lastTeleportTick: Long = -1000L
 
+    /**
+     * 最近一次「服务端对本玩家施加外力」（击退 / 爆炸）的 tick。
+     *
+     * <p>与 [lastTeleportTick] 是同一类东西：**位移的来源不是玩家自己的输入**。
+     * 外力可以把速度推到远超玩家自主移动的上限，方向也完全由攻击者决定，
+     * 因此速度类与方向类判据都必须在这个窗口内让路——否则每一次 PvP 对拼
+     * 都会被判成速度作弊。写入方见
+     * [com.anticheat.core.events.packets.PacketVelocityTracker]。</p>
+     *
+     * <p>初值同样取一个不大的负数而不是 `Long.MIN_VALUE`：相减会溢出成负数，
+     * 结果就是「免疫窗口永远成立」。</p>
+     */
+    @Volatile
+    var lastExternalVelocityTick: Long = -1000L
+
     @Volatile
     var alive: Boolean = true
 
@@ -258,6 +333,16 @@ class PlayerData(
     var inventoryClicksThisTick: Int = 0
 
     /**
+     * 本 tick 内 `START_DIGGING` 的次数。
+     *
+     * <p>用于「一 tick 内对多个方块下手」这类判据（nuker / 瞬破）。
+     * 计数写在 [breakingBlock] 旁边而不是复用 `lastDigStartMillis`：
+     * 墙钟时间戳在同一个 tick 内可以出现多次，数不出"这一 tick 到底开始了几次"。</p>
+     */
+    @Volatile
+    var digStartsThisTick: Int = 0
+
+    /**
      * 最近一次攻击 / 挥手 / 开始挖掘的墙钟时间（毫秒）。
      *
      * <p>为什么这类间隔用墙钟而不是 tick：点击间隔是**亚 tick 级**的物理量
@@ -318,6 +403,10 @@ class PlayerData(
         serverEyeZ = snapshot.eyeZ
         serverVehicleEntityId = snapshot.vehicleEntityId
         serverGliding = snapshot.gliding
+        serverFlightAllowed = snapshot.flightAllowed
+        serverInLiquid = snapshot.inLiquid
+        serverMovementAlteredByBlock = snapshot.movementAlteredByBlock
+        serverMovementEffectActive = snapshot.movementEffectActive
         if (snapshot.onGround) {
             setbackWorld = snapshot.world
             setbackPosition = Vector3d(snapshot.x, snapshot.y, snapshot.z)
@@ -330,6 +419,7 @@ class PlayerData(
         attacksThisTick = 0
         swingsThisTick = 0
         inventoryClicksThisTick = 0
+        digStartsThisTick = 0
         attackTargetsThisTick = emptyList()
     }
 
