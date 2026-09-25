@@ -5,9 +5,11 @@ import com.anticheat.core.check.Check
 import com.anticheat.core.check.CoreProcessor
 import com.anticheat.core.check.impl.aim.AimA
 import com.anticheat.core.check.impl.aim.AimB
+import com.anticheat.core.check.impl.aim.AimC
 import com.anticheat.core.check.impl.autoclicker.AutoClickerA
 import com.anticheat.core.check.impl.autoclicker.AutoClickerB
 import com.anticheat.core.check.impl.autoclicker.AutoClickerC
+import com.anticheat.core.check.impl.autoclicker.AutoClickerD
 import com.anticheat.core.check.impl.badpackets.BadPacketsA
 import com.anticheat.core.check.impl.badpackets.BadPacketsB
 import com.anticheat.core.check.impl.badpackets.BadPacketsC
@@ -21,6 +23,7 @@ import com.anticheat.core.check.impl.movement.FlyA
 import com.anticheat.core.check.impl.movement.GroundSpoofA
 import com.anticheat.core.check.impl.movement.InventoryMoveA
 import com.anticheat.core.check.impl.movement.SpeedA
+import com.anticheat.core.check.impl.movement.SpeedB
 import com.anticheat.core.check.impl.movement.SprintA
 import com.anticheat.core.check.impl.reach.ReachA
 import com.anticheat.core.check.impl.reach.ReachB
@@ -123,9 +126,11 @@ class CheckManager(val player: PlayerData) {
         register(AutoClickerA(player))
         register(AutoClickerB(player))
         register(AutoClickerC(player))
+        register(AutoClickerD(player))
         // 瞄准
         register(AimA(player))
         register(AimB(player))
+        register(AimC(player))
         // 伸手与视线（射线类）
         register(ReachA(player))
         register(ReachB(player))
@@ -137,6 +142,7 @@ class CheckManager(val player: PlayerData) {
         register(GroundSpoofA(player))
         register(SprintA(player))
         register(SpeedA(player))
+        register(SpeedB(player))
         register(InventoryMoveA(player))
         // 蜜罐（外部上报：幻象矿石 / 假掉落 / 不可能破坏进度 / 假逃脱）
         // 它不实现任何监听接口——命中来自蜜罐自己的方块/实体事件，
@@ -212,8 +218,10 @@ class CheckManager(val player: PlayerData) {
             AutoClickerA::class.java,
             AutoClickerB::class.java,
             AutoClickerC::class.java,
+            AutoClickerD::class.java,
             AimA::class.java,
             AimB::class.java,
+            AimC::class.java,
             ReachA::class.java,
             ReachB::class.java,
             NoSwingA::class.java,
@@ -222,6 +230,7 @@ class CheckManager(val player: PlayerData) {
             GroundSpoofA::class.java,
             SprintA::class.java,
             SpeedA::class.java,
+            SpeedB::class.java,
             InventoryMoveA::class.java,
             BreakRestartA::class.java,
             FastPlaceA::class.java,

@@ -139,6 +139,44 @@ class MovementCheckThresholdsTest {
                         + " 太低：被撞一下的滑行距离就能告警");
     }
 
+    // ------------------------------------------------------------------ SpeedB
+
+    @Test
+    @DisplayName("SpeedB：单次证据封顶小于累积线（一次攒包不可能触发告警）")
+    void speedBSingleAnomalyCannotFlag() {
+        assertTrue(SpeedB.MAX_EXCESS_PER_UPDATE < SpeedB.FLAG_BALANCE,
+                "封顶 " + SpeedB.MAX_EXCESS_PER_UPDATE + " >= 累积线 " + SpeedB.FLAG_BALANCE
+                        + "：一次孤立的超速读数就能单独触发告警");
+    }
+
+    @Test
+    @DisplayName("SpeedB：阈值必须落在实测合法区间之外，又不能放过常见作弊档位")
+    void speedBAverageThresholdSitsBetweenCheatingAndLegal() {
+        // 实测（真实绕过证据包）：普通地面疾跑窗口平均 0.256（理论值约 0.28），
+        // 含飞行类作弊动作的那段也才 0.75 —— 所以 1.2 以下会碰到合法区间；
+        // 而常见的持续超速档位在 1.5~2.0 左右，阈值高过 2.5 就等于放过它们。
+        assertTrue(SpeedB.DEFAULT_MAX_AVG_SPEED >= 1.2,
+                "阈值 " + SpeedB.DEFAULT_MAX_AVG_SPEED
+                        + " 太低：会压到冰道交通与攒包噪声所在的合法区间");
+        assertTrue(SpeedB.DEFAULT_MAX_AVG_SPEED <= 2.5,
+                "阈值 " + SpeedB.DEFAULT_MAX_AVG_SPEED
+                        + " 太高：常见的持续超速档位会被放过");
+    }
+
+    @Test
+    @DisplayName("SpeedB：窗口足够长，能把一次攒包补发摊平")
+    void speedBWindowSmoothsBatchedPackets() {
+        // 证据包里出现过 2.05 格/tick 的单拍极值（多拍位移被合并成一包送达）。
+        // 窗口里混入这样一次尖峰，它对平均值的贡献是 2.0 / WINDOW_TICKS。
+        double contamination = 2.0 / SpeedB.WINDOW_TICKS;
+        assertTrue(contamination <= SpeedB.MAX_EXCESS_PER_UPDATE,
+                "窗口 " + SpeedB.WINDOW_TICKS + " tick 太短：一次攒包就贡献 "
+                        + contamination + " 的证据，足以单独推动告警");
+        assertTrue(SpeedB.WINDOW_TICKS >= 10,
+                "窗口 " + SpeedB.WINDOW_TICKS + " tick 太短：平均值会被单拍尖峰主导，"
+                        + "那与 SpeedA 的逐次判据就没有区别了");
+    }
+
     // ------------------------------------------------------------------ NukerA
 
     @Test
@@ -176,6 +214,7 @@ class MovementCheckThresholdsTest {
         assertFalse(GroundSpoofA.DECAY_PER_TICK <= 0.0, "GroundSpoofA 的余额没有降温通道");
         assertFalse(SprintA.DECAY_PER_TICK <= 0.0, "SprintA 的余额没有降温通道");
         assertFalse(SpeedA.DECAY_PER_UPDATE <= 0.0, "SpeedA 的余额没有降温通道");
+        assertFalse(SpeedB.DECAY_PER_UPDATE <= 0.0, "SpeedB 的余额没有降温通道");
         assertFalse(InventoryMoveA.DECAY_PER_TICK <= 0.0, "InventoryMoveA 的余额没有降温通道");
         assertFalse(NukerA.DECAY_PER_HIT <= 0.0, "NukerA 的余额没有降温通道");
     }

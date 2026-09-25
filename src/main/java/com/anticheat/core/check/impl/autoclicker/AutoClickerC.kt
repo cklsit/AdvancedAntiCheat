@@ -13,7 +13,9 @@ import com.anticheat.core.util.update.AttackUpdate
  * 每秒攻击次数超限（ClickSpeedLimiter）。
  *
  * <h3>判据</h3>
- * 用 20 tick 的滑动窗口统计攻击次数，超过 `max-cps`（默认 20）即记违规。
+ * 用 20 tick 的滑动窗口统计攻击次数，**达到** `max-cps`（默认 20）即记违规。
+ * 这里刻意用"达到"而不是"超过"：上限被当成允许值会让"把频率精确压在阈值上"
+ * 成为一条现成的绕过通路（见 [onServerTick] 里的注释）。
  * 另外单独看**单 tick 内的攻击数**：原版攻击有 10 tick 的攻击冷却，
  * 一个 tick 内出现多次攻击包在协议层就是不可能的，
  * 这属于"强的判据"，权重单独加大。
@@ -66,7 +68,14 @@ class AutoClickerC(player: PlayerData) : Check(player), AttackListener, ServerTi
         }
 
         val current = tracker.count()
-        if (current <= maxCps) {
+        // 注意比较方向：`<` 而不是 `<=`。
+        // 原实现写的是 `<=`，于是「恰好等于 max-cps」被放行——而 20 CPS 对
+        // 原版客户端本来就是不可能的（1.8 左键冷却 10 tick，20 tick 窗口内
+        // 最多出手 2~3 次）。把上限当成"允许值"等于给作弊留了一条
+        // 「把频率精确压在阈值上」的现成通路：实测证据里就出现过
+        // 攻击包贴着同一数值连发的形态。现在语义是「达到上限即违规」，
+        // 想放宽请上调 max-cps 本身，而不是指望恰好等于它不会触发。
+        if (current < maxCps) {
             reward()
             return
         }

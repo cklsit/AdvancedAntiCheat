@@ -35,6 +35,8 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion
  *
  * <h3>为什么 1.13+ 关闭</h3>
  * 同 [AutoClickerA]：1.13+ 客户端的连点时序不同，阈值不成立。生产服为 1.8.8。
+ * 由此产生的"现代客户端无点击检测"盲区由 [AutoClickerD] 补
+ * （只看攻击包所在 tick，与客户端版本无关）；**不要**靠删掉这里的版本门来解决。
  *
  * <p>参考 intave `check/combat/clickpatterns/Entropy`
  * （窗口 100、熵区间 [0.35, 1.0]、熵历史 4 段且标准差阈值 0.3、4 秒窗口门）。</p>

@@ -32,6 +32,13 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion
  * 本项目生产服是 1.8.8，因此**按参考实现直接对 1.13+ 关闭**。
  * 若将来要覆盖现代客户端，需要重新标定阈值而不是简单打开。
  *
+ * <h3>这道门留下的盲区由谁补</h3>
+ * 玩家只要换一个现代客户端（经 ViaVersion 连到本服务端），点击类检测就整类失效。
+ * 把这个门直接删掉不是"覆盖现代客户端"，而是"用未标定的阈值去判定"——
+ * 那是拿误报换检出。现代客户端那一侧的空白由 [AutoClickerD] 承担：
+ * 它只数"哪些 tick 发出了攻击包"，不依赖任何版本相关的时序假设。
+ * **要覆盖现代客户端请调它，不要动这道门。**
+ *
  * <p>参考 intave `check/combat/clickpatterns/Deviation`
  * （窗口 50、SD-of-SD 阈值 25ms、强判据 10ms、4 秒窗口门）。</p>
  */

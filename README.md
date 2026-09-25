@@ -168,9 +168,11 @@ flowchart LR
 | 计时 | `TimerB` | 移动包连续长间隔（客户端攒包 / blink） |
 | 自动点击 | `AutoClickerA` | 点击间隔标准差长期过低且稳定（1.13 以下） |
 | 自动点击 | `AutoClickerB` | 点击间隔香农熵过低（1.13 以下） |
-| 自动点击 | `AutoClickerC` | 每秒攻击次数超限；单 tick 多次攻击加重 |
-| 瞄准 | `AimA` | 攻击期间朝向增量过于均匀（机械瞄准） |
+| 自动点击 | `AutoClickerC` | 每秒攻击次数**达到**上限即违规；单 tick 多次攻击加重 |
+| 自动点击 | `AutoClickerD` | 连续多个 tick 不间断发送攻击包（机械连击 / KillAura 连发）——不依赖客户端时序，**全版本生效** |
+| 瞄准 | `AimA` | 攻击期间朝向增量过于均匀（机械瞄准 / 平滑 aimbot） |
 | 瞄准 | `AimB` | 对准移动目标长期百发百中（命中率，实验性：需 `experimental-checks`） |
+| 瞄准 | `AimC` | 单帧把准星瞬移到目标（snap aim）——补 `AimA` 只抓平滑瞄准、抓不到暴力瞬转的盲区 |
 | 射线 | `ReachA` | 攻击距离超原版上限（按延迟动态容差 + 8 tick 延迟补偿，只累积不单次判定） |
 | 射线 | `ReachB` | 攻击了完全不在视线内的实体（无视线攻击 / silent aura） |
 | 战斗 | `NoSwingA` | 攻击了却没有挥手包（silent aura） |
@@ -179,6 +181,7 @@ flowchart LR
 | 移动 | `GroundSpoofA` | 声称落地却在快速下坠，且脚下无支撑（NoFall 免摔） |
 | 移动 | `SprintA` | 疾跑时位移方向偏离朝向超 75 度（全向疾跑 / KeepSprint） |
 | 移动 | `SpeedA` | 水平速度持续超物理上限（Speed / LongJump，实验性：需 `experimental-checks`） |
+| 移动 | `SpeedB` | 滑动窗口**平均**速度持续超上限（持续超速，默认启用；单拍极值不可用，见其类注释） |
 | 移动 | `InventoryMoveA` | 容器窗口打开期间自主移动（InventoryMove） |
 | 世界 | `BreakRestartA` | 同一方块被反复重启挖掘（fastbreak / nuker） |
 | 世界 | `FastPlaceA` | 同 tick 多次放置 / 每秒放置次数超限（fastplace） |

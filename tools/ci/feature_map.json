@@ -141,9 +141,13 @@
         "com.anticheat.contract.ConfigContractTest",
         "com.anticheat.contract.CoreCheckContractTest",
         "com.anticheat.core.util.LadderPolicyTest",
-        "com.anticheat.core.bounty.BountyLogicTest"
+        "com.anticheat.core.bounty.BountyLogicTest",
+        "com.anticheat.core.check.impl.aim.RotationSnapTest",
+        "com.anticheat.core.check.impl.autoclicker.ClickStreaksTest",
+        "com.anticheat.core.check.BountyBypassReplayTest",
+        "com.anticheat.core.check.CombatCheckThresholdsTest"
       ],
-      "notes": "Kotlin 源码有三处工具扫描盲区，改动核心层时必须手工兜底：① ConfigContractTest.everyConfigPathReadByCodeExists 只扫 .java，core.* 的读取在 CoreConfigManager.kt —— 改配置键必须逐字核对 src/main/resources/config.yml 的 core: 段（CoreCheckContractTest 已把「检测 ↔ core.checks 配置项」双向一致性补上，但 decay/setback/专属参数的默认值仍需手工核对）；② tools/audit_dual_version.py 第 4/5 项（Material 常量 / @EventHandler 事件类型）也只扫 .java —— 核心层新增 Kotlin 代码引用 org.bukkit 类型时需自行确认 1.8.8 存在（审计第 1/2/3 项走字节码，对 Kotlin 同样生效）；③ 包层回调跑在 Netty 线程上，新增检测触碰 Bukkit API 必须先 runOnMainThread",
+      "notes": "Kotlin 源码有三处工具扫描盲区，改动核心层时必须手工兜底：① ConfigContractTest.everyConfigPathReadByCodeExists 只扫 .java，core.* 的读取在 CoreConfigManager.kt —— 改配置键必须逐字核对 src/main/resources/config.yml 的 core: 段（CoreCheckContractTest 已把「检测 ↔ core.checks 配置项」双向一致性补上，但 decay/setback/专属参数的默认值仍需手工核对）；② tools/audit_dual_version.py 第 4/5 项（Material 常量 / @EventHandler 事件类型）也只扫 .java —— 核心层新增 Kotlin 代码引用 org.bukkit 类型时需自行确认 1.8.8 存在（审计第 1/2/3 项走字节码，对 Kotlin 同样生效）；③ 包层回调跑在 Netty 线程上，新增检测触碰 Bukkit API 必须先 runOnMainThread；④ 新判据 AimC / AutoClickerD / SpeedB 的回归基线是**真实绕过证据包**（赏金沙箱 combat-basic 逐 tick 采样，见 src/test/resources/bounty-evidence/ 与 BountyBypassReplayTest）——改阈值前先跑它，抓不到绕过或误伤对照组都会直接变红。",
       "gate": "block"
     },
     {
