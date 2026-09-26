@@ -99,6 +99,16 @@ object AutoTuner {
 
     // ------------------------------------------------------------------ 配置
 
+    /**
+     * 重读 `bounty.auto-tune.*`。
+     *
+     * <p>**必须同时挂到 `/ac reload` 上**（见 `BountyManager.reload`）。
+     * 只在插件启用时读一次是不够的：管理员改完 config.yml 执行 `/ac reload`，
+     * 会以为配置生效了，而实际跑的还是启动时的旧值——这种"静默不生效"
+     * 比报错难查得多（2026-09-26 就踩过一次：改完配置 + reload，
+     * 三次绕过一条审计都没写，因为内存里 enabled 还是 false）。</p>
+     */
+    @JvmStatic
     fun loadConfig(plugin: Plugin) {
         val section = plugin.config
         val allow = section.getStringList("bounty.auto-tune.allow")
@@ -136,6 +146,35 @@ object AutoTuner {
     }
 
     fun currentConfig(): Config = config
+
+    /**
+     * 把人类基线的就绪情况告诉自动调参，让"开关是开的、但永远不会通过准入"
+     * 这件事**明确出现在日志里**。
+     *
+     * <p>准入里有一道「基线未就绪 → 拒绝」。基线是攒出来的（非重叠窗口，
+     * 需若干个指标各达到 `min-samples` 观测量），在小服/新服上可能要很久。
+     * 期间自动调参就是完全静默的空转：管理员把开关打开、配置改对、反复跑绕过，
+     * 却什么都看不到，也无从判断卡在哪——2026-09-26 就是这么被问到的。</p>
+     *
+     * <p>所以这条日志的作用不是"报告状态"，而是**把一次静默失败变成一次显式失败**。
+     * 同类问题的修法是加断言；这里没法断言（依赖运行时数据），退而求其次：
+     * 在唯一的两个加载入口（插件启用 / `/ac reload`）各说一次。</p>
+     */
+    @JvmStatic
+    fun noteBaselineReadiness(ready: Boolean, detail: String) {
+        val cfg = config
+        if (!cfg.enabled) return
+        if (ready) {
+            CoreLog.info("自动调参：人类基线已就绪（" + detail + "），准入的基线检查这道门是开着的")
+            return
+        }
+        CoreLog.warn(
+            "自动调参：人类基线未就绪（" + detail + "）——" +
+                "准入会把**每一个**案例都判为「基线未就绪」而拒绝，因此当前不会产生任何调整。" +
+                "这不是开关没生效，是判定所需的旁证还没攒够；" +
+                "在基线达标之前，任何绕过都不会触发自动修复。"
+        )
+    }
 
     // ------------------------------------------------------------------ 准入（纯逻辑）
 

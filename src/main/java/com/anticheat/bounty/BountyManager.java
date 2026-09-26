@@ -148,7 +148,7 @@ public class BountyManager {
         );
 
         this.baselineEnabled = config.getBoolean("bounty.baseline.enabled", true);
-        this.baselineSampleIntervalTicks = Math.max(1L, config.getLong("bounty.baseline.sample-interval-ticks", 20L));
+        this.baselineSampleIntervalTicks = Math.max(1L, config.getLong("bounty.baseline.sample-interval-ticks", 1L));
         this.baselineWindowTicks = (int) Math.max(40L, config.getLong("bounty.baseline.window-ticks", 200L));
         this.baselineSaveIntervalSeconds = Math.max(30L, config.getLong("bounty.baseline.save-interval-seconds", 300L));
         this.baselineMaxTrackedPlayers = (int) Math.max(1L, config.getLong("bounty.baseline.max-tracked-players", 40L));
@@ -212,6 +212,7 @@ public class BountyManager {
         }
 
         com.anticheat.core.bounty.AutoTuner.start(plugin);
+        reportBaselineReadiness();
 
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 1L);
         saveTask = Bukkit.getScheduler().runTaskTimer(plugin, this::maybeSaveBaseline, 200L, 200L);
@@ -326,6 +327,37 @@ public class BountyManager {
     /** 供 `/ac reload` 用。 */
     public void reload() {
         loadConfig();
+        // 自动调参的参数也必须在 reload 时重读。它的 enabled / shadow 原本只在插件
+        // 启用时读过一次，于是"改完 config.yml 执行 /ac reload"看起来生效了、
+        // 实际跑的仍是启动时的旧值——2026-09-26 就是这么踩的：配置改成
+        // enabled=true / shadow=false，reload 后又跑了三次绕过，一条审计都没写。
+        com.anticheat.core.bounty.AutoTuner.loadConfig(plugin);
+        reportBaselineReadiness();
+    }
+
+    /**
+     * 把基线就绪情况上报给自动调参。
+     *
+     * <p>它决定自动调参能不能通过准入的第一道数据门，所以必须在加载时说出来——
+     * 否则"功能开着但永远不触发"会以完全静默的方式发生。</p>
+     */
+    private void reportBaselineReadiness() {
+        BaselineModel model = cachedModel;
+        long minSamples = baselineModelTemplate.getMinSamples();
+        int minMetrics = baselineModelTemplate.getMinReadyMetrics();
+
+        int usable = 0;
+        StringBuilder detail = new StringBuilder();
+        for (MetricBaseline baseline : model.getBaselines().values()) {
+            if (baseline.getSamples() >= minSamples) usable++;
+            if (detail.length() > 0) detail.append('、');
+            detail.append(baseline.getKey()).append(' ').append(baseline.getSamples());
+        }
+        if (detail.length() == 0) detail.append("尚无任何指标样本");
+        detail.append("；需至少 ").append(minMetrics)
+                .append(" 个指标各达 ").append(minSamples).append(" 样本");
+
+        com.anticheat.core.bounty.AutoTuner.noteBaselineReadiness(usable >= minMetrics, detail.toString());
     }
 
     private void saveBaselineNow() {

@@ -4,9 +4,13 @@ import com.anticheat.core.check.impl.aim.AimC;
 import com.anticheat.core.check.impl.aim.RotationSnap;
 import com.anticheat.core.check.impl.autoclicker.AutoClickerD;
 import com.anticheat.core.check.impl.autoclicker.ClickStreaks;
+import com.anticheat.contract.Repo;
 import com.anticheat.core.check.impl.movement.SpeedB;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -134,6 +138,28 @@ class AutoTunerTest {
                 "下限高于默认值会让默认配置本身就违规");
         assertTrue(SpeedB.AUTO_TUNE_FLOOR <= SpeedB.DEFAULT_MAX_AVG_SPEED,
                 "下限高于默认值会让默认配置本身就违规");
+    }
+
+    @Test
+    @DisplayName("配置必须挂在 /ac reload 上（否则改了配置也不会生效）")
+    void configIsWiredIntoReload() throws IOException {
+        // 这条断言是**源码级**的，它守的是「AutoTuner.loadConfig 必须被
+        // BountyManager.reload() 调用」。
+        //
+        // 漏掉它的后果是完全静默的：管理员改完 config.yml、执行 /ac reload，
+        // 以为功能开了，实际跑的还是插件启动时读到的旧值，而且不报任何错、
+        // 不写任何审计。2026-09-26 就是这么踩的——把 enabled 改成 true、
+        // shadow 改成 false 之后又跑了三次绕过，audit_log 里一条都没有。
+        Path source = Repo.mainJava().resolve("com/anticheat/bounty/BountyManager.java");
+        assertTrue(java.nio.file.Files.exists(source), "找不到 " + source);
+        String code = java.nio.file.Files.readString(source, java.nio.charset.StandardCharsets.UTF_8);
+
+        int reloadAt = code.indexOf("public void reload()");
+        assertTrue(reloadAt > 0, "BountyManager 里找不到 reload()");
+        String reloadBody = code.substring(reloadAt, Math.min(code.length(), reloadAt + 900));
+        assertTrue(reloadBody.contains("AutoTuner.loadConfig"),
+                "BountyManager.reload() 必须调用 AutoTuner.loadConfig —— "
+                        + "少了它，改完配置执行 /ac reload 不会让自动调参生效，且不会有任何报错");
     }
 
     @Test

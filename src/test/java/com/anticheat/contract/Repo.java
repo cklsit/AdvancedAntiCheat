@@ -23,13 +23,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>这些测试都直接读仓库里的文件（而不是 classpath 资源），
  * 目的就是让"改了代码忘了改配置 / 忘了注册命令"这类漂移在 CI 里立刻暴露。
  */
-final class Repo {
+public final class Repo {
 
     private Repo() {
     }
 
     /** 从 user.dir 向上找到含 pom.xml 的目录作为仓库根。 */
-    static Path root() {
+    public static Path root() {
         Path cur = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
         for (int i = 0; i < 8 && cur != null; i++) {
             if (Files.isRegularFile(cur.resolve("pom.xml"))) {
@@ -45,7 +45,7 @@ final class Repo {
         return root().resolve("src/main/resources");
     }
 
-    static Path mainJava() {
+    public static Path mainJava() {
         return root().resolve("src/main/java");
     }
 

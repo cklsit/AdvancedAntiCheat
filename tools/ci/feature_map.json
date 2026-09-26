@@ -208,9 +208,10 @@
         "com.anticheat.core.bounty.BountyLogicTest",
         "com.anticheat.core.db.DatabaseLayerTest",
         "com.anticheat.core.bounty.AttributionTest",
-        "com.anticheat.core.bounty.AutoTunerTest"
+        "com.anticheat.core.bounty.AutoTunerTest",
+        "com.anticheat.contract.BountyBaselineContractTest"
       ],
-      "notes": "改这块前先读 core/bounty/BountyHooks.kt 的类注释：沙箱用的是**独立的 sandbox 标记**，不是 PlayerData.exempt —— 后者会让 Check.flag 第一行就返回、检测完全不跑，于是沙箱拿不到任何证据。三个不可退让的约束：① 进入沙箱必须**先暂存再清空**背包（原实现只清不还，玩家进一次就丢光家当）；② 沙箱内不得写 violation 表（会污染风险评分与命中率，文档第六节的\"特征库污染防护\"）；③ 判定结果里INCONCLUSIVE 是必备状态——没有它就会像原实现那样\"每次任务都广播绕过成功\"。；自动调参（2026-09-25 新增）默认关闭 + 影子模式；它只吃 MEDIUM 及以上置信度（LOW 档的「完成目标」不携带作弊信息），只调 check_rule.thresholds 里的数值、不碰判定逻辑，且不得越过各检测声明的 autoTuneFloor —— 那条下限与 CombatCheckThresholdsTest / MovementCheckThresholdsTest 的不变量同源。归因（Attribution）必须复用判据自己的纯逻辑实现，否则窗口口径漂移会让它指向错误的检测；AttributionTest 用真实证据包钉住了三个判据的得分。",
+      "notes": "改这块前先读 core/bounty/BountyHooks.kt 的类注释：沙箱用的是**独立的 sandbox 标记**，不是 PlayerData.exempt —— 后者会让 Check.flag 第一行就返回、检测完全不跑，于是沙箱拿不到任何证据。三个不可退让的约束：① 进入沙箱必须**先暂存再清空**背包（原实现只清不还，玩家进一次就丢光家当）；② 沙箱内不得写 violation 表（会污染风险评分与命中率，文档第六节的\"特征库污染防护\"）；③ 判定结果里INCONCLUSIVE 是必备状态——没有它就会像原实现那样\"每次任务都广播绕过成功\"。；自动调参（2026-09-25 新增）默认关闭 + 影子模式；它只吃 MEDIUM 及以上置信度（LOW 档的「完成目标」不携带作弊信息），只调 check_rule.thresholds 里的数值、不碰判定逻辑，且不得越过各检测声明的 autoTuneFloor —— 那条下限与 CombatCheckThresholdsTest / MovementCheckThresholdsTest 的不变量同源。归因（Attribution）必须复用判据自己的纯逻辑实现，否则窗口口径漂移会让它指向错误的检测；AttributionTest 用真实证据包钉住了三个判据的得分。；基线采样必须与判定侧同为逐 tick（sample-interval-ticks=1）——BountyMetrics 的指标没有时间基参数，基线按 1 Hz 采样会让 move-jitter 的量级差 38 倍，异常分对所有正常玩家饱和到 100（历史上因基线从未就绪而未暴露）；BountyBaselineContractTest 已把这条量纲约束钉住。",
       "gate": "block"
     }
   ]
