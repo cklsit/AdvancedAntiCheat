@@ -346,15 +346,28 @@ public class BountyManager {
         long minSamples = baselineModelTemplate.getMinSamples();
         int minMetrics = baselineModelTemplate.getMinReadyMetrics();
 
+        // 把**采样参数本身**也打出来：它是量纲约束的载体（见 BountyBaselineContractTest），
+        // 而配置合并规则是"键已存在就不覆盖"——升级时仓库里的新默认值不会自动落到生产，
+        // 于是"我以为改了、生产还是旧值"是这里的常态。让日志自己证明用的是哪套参数。
         int usable = 0;
-        StringBuilder detail = new StringBuilder();
+        StringBuilder metrics = new StringBuilder();
         for (MetricBaseline baseline : model.getBaselines().values()) {
             if (baseline.getSamples() >= minSamples) usable++;
-            if (detail.length() > 0) detail.append('、');
-            detail.append(baseline.getKey()).append(' ').append(baseline.getSamples());
+            if (metrics.length() > 0) metrics.append('、');
+            metrics.append(baseline.getKey()).append(' ').append(baseline.getSamples());
         }
-        if (detail.length() == 0) detail.append("尚无任何指标样本");
-        detail.append("；需至少 ").append(minMetrics)
+        if (metrics.length() == 0) metrics.append("尚无任何指标样本");
+
+        StringBuilder detail = new StringBuilder();
+        // 把**采样参数本身**也打出来：它是量纲约束的载体（见 BountyBaselineContractTest），
+        // 而配置合并规则是"键已存在就不覆盖"——升级时仓库里的新默认值不会自动落到生产，
+        // 于是"我以为改了、生产还是旧值"是这里的常态。让日志自己证明用的是哪套参数。
+        detail.append("采样间隔 ").append(baselineSampleIntervalTicks).append(" tick、窗口 ")
+                .append(baselineWindowTicks).append(" 条（约 ")
+                .append(String.format(java.util.Locale.ROOT, "%.1f",
+                        baselineWindowTicks * (double) baselineSampleIntervalTicks / 20.0))
+                .append(" 秒）；").append(metrics)
+                .append("；需至少 ").append(minMetrics)
                 .append(" 个指标各达 ").append(minSamples).append(" 样本");
 
         com.anticheat.core.bounty.AutoTuner.noteBaselineReadiness(usable >= minMetrics, detail.toString());
